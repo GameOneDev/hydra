@@ -119,7 +119,7 @@ jobs:
           path: artifacts
 
       - name: Install js-yaml
-        run: npm install --no-save --ignore-scripts js-yaml
+        run: npm install --no-save --ignore-scripts --engine-strict=false js-yaml
 
       - name: Collect release assets
         run: node scripts/collect-release-assets.cjs artifacts release-assets
