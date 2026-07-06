@@ -6,9 +6,11 @@ concurrency:
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - v*
+    inputs:
+      tag:
+        description: "Release tag, must match package.json version (e.g. v4.0.5). Leave empty to only build, without creating a release."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -41,6 +43,10 @@ jobs:
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        if: inputs.tag != ''
+        run: node -e "const v = 'v' + require('./package.json').version; const tag = '${{ inputs.tag }}'; if (tag !== v) { console.error('Tag ' + tag + ' does not match package.json version ' + v + '. Bump the version in package.json first.'); process.exit(1); }"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -99,7 +105,7 @@ jobs:
             dist/*.blockmap
 
   release:
-    if: startsWith(github.ref, 'refs/tags/')
+    if: inputs.tag != ''
     needs: build
     runs-on: ubuntu-latest
 
@@ -118,10 +124,14 @@ jobs:
       - name: Collect release assets
         run: node scripts/collect-release-assets.cjs artifacts release-assets
 
+      # Creates a draft release; the git tag is created automatically
+      # when the draft is published, pointing at the commit built here
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
