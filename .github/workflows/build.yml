@@ -99,6 +99,7 @@ jobs:
           name: Build-staging-${{ matrix.os }}
           path: |
             dist/*-portable.exe
+            dist/*-setup.exe
             dist/*.zip
             dist/*.dmg
             dist/*.deb
@@ -198,6 +199,7 @@ jobs:
           name: Build-production-${{ matrix.os }}
           path: |
             dist/*-portable.exe
+            dist/*-setup.exe
             dist/*.zip
             dist/*.dmg
             dist/*.deb
