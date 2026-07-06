@@ -35,6 +35,8 @@ jobs:
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
 
     steps:
       - name: Check out Git repository
