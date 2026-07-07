@@ -1114,7 +1114,7 @@
 
 "@electron/node-gyp@https://github.com/electron/node-gyp#06b29aafb7708acef8b3669835c8a7857ebc92d2":
   version "10.2.0-electron.1"
-  resolved "git+ssh://git@github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2"
+  resolved "git+https://github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2"
   integrity sha512-CrYo6TntjpoMO1SHjl5Pa/JoUsECNqNdB7Kx49WLQpWzPw53eEITJ2Hs9fh/ryUYDn4pxZz11StaBYBrLFJdqg==
   dependencies:
     env-paths "^2.2.0"
@@ -8260,9 +8260,9 @@ state-local@^1.0.6:
   resolved "https://registry.npmjs.org/state-local/-/state-local-1.0.7.tgz"
   integrity sha512-HTEHMNieakEnoe33shBYcZ7NX83ACUjCu8c40iOGEZsngj9zRnkqS9j1pqQPXwobB0ZcVTk27REb7COQ0UR59w==
 
-"steam-shortcut-editor@https://github.com/hydralauncher/steam-shortcut-editor":
+"steam-shortcut-editor@git+https://github.com/hydralauncher/steam-shortcut-editor.git":
   version "3.1.3"
-  resolved "git+ssh://git@github.com/hydralauncher/steam-shortcut-editor.git#7d9ba44eced1f8840cf6c7d2cd40dd4d3d5c660f"
+  resolved "git+https://github.com/hydralauncher/steam-shortcut-editor.git#7d9ba44eced1f8840cf6c7d2cd40dd4d3d5c660f"
   dependencies:
     lodash "^4.17.21"
     object-sizeof "^1.2.0"
