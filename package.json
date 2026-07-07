@@ -102,7 +102,7 @@
     "recharts": "^3.8.1",
     "sharp": "^0.34.5",
     "sound-play": "^1.1.0",
-    "steam-shortcut-editor": "https://github.com/hydralauncher/steam-shortcut-editor",
+    "steam-shortcut-editor": "git+https://github.com/hydralauncher/steam-shortcut-editor.git",
     "string-argv": "^0.3.2",
     "sudo-prompt": "^9.2.1",
     "tar": "^7.5.16",
