@@ -24,9 +24,6 @@ jobs:
             build-script: build:win
             python-version: "3.9"
             artifact-suffix: windows
-          # Windows arm64: Electron and the Rust addon build natively, but
-          # libtorrent has no win-arm64 wheels, so the Python RPC is built
-          # with x64 Python and runs under Windows on ARM x64 emulation
           - os: windows-11-arm
             build-script: build:win-arm64
             python-version: "3.9"
