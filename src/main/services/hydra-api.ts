@@ -265,23 +265,33 @@ export class HydraApi {
         },
         (error) => {
           logger.error(" ---- RESPONSE ERROR -----");
+          /* Errors thrown before the request is dispatched (e.g. an invalid
+             or empty base URL) carry no config — logging must not throw and
+             swallow the original error. */
           const { config } = error;
 
-          const data = JSON.parse(config.data ?? null);
+          if (config) {
+            let data: unknown = null;
+            try {
+              data = JSON.parse(config.data ?? null);
+            } catch {
+              data = config.data;
+            }
 
-          logger.error(
-            config.method,
-            config.baseURL,
-            config.url,
-            omit(config.headers, [
-              "accessToken",
-              "refreshToken",
-              "Authorization",
-            ]),
-            Array.isArray(data)
-              ? data
-              : omit(data, ["accessToken", "refreshToken"])
-          );
+            logger.error(
+              config.method,
+              config.baseURL,
+              config.url,
+              omit(config.headers, [
+                "accessToken",
+                "refreshToken",
+                "Authorization",
+              ]),
+              Array.isArray(data) || typeof data !== "object"
+                ? data
+                : omit(data, ["accessToken", "refreshToken"])
+            );
+          }
           if (error.response) {
             logger.error(
               "Response error:",
