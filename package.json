@@ -29,6 +29,7 @@
     "build:python-rpc": "python3 python_rpc/setup.py build || python python_rpc/setup.py build",
     "build:unpack": "npm run build && npm run build:python-rpc && electron-builder --dir",
     "build:win": "npm run build:native && npm run build:python-rpc && electron-vite build && electron-builder --win",
+    "build:win-arm64": "npm run build:native && npm run build:python-rpc && electron-vite build && electron-builder --win --arm64 --config electron-builder-win-arm64.yml",
     "build:mac": "npm run build:native && npm run build:python-rpc && electron-vite build && electron-builder --mac",
     "build:linux": "npm run build:native && npm run build:python-rpc && electron-vite build && electron-builder --linux",
     "dev:big-picture": "vite dev src/big-picture",
