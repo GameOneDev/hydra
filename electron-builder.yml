@@ -73,5 +73,3 @@ publish:
   provider: github
   owner: GameOneDev
   repo: hydra
-electronDownload:
-  mirror: https://npmmirror.com/mirrors/electron/
