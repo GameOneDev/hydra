@@ -1,0 +1,105 @@
+@use "../../scss/globals.scss";
+
+.online-friends-bar {
+  display: flex;
+  align-items: center;
+  gap: globals.$spacing-unit;
+  border-bottom: solid 1px globals.$border-color;
+  background-color: globals.$dark-background-color;
+  padding: calc(globals.$spacing-unit / 2) calc(globals.$spacing-unit * 3);
+
+  &__label {
+    flex-shrink: 0;
+    color: #8e919b;
+    font-size: globals.$small-font-size;
+  }
+
+  &__list {
+    display: flex;
+    align-items: center;
+    gap: calc(globals.$spacing-unit / 2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  &__item {
+    flex-shrink: 0;
+  }
+
+  &__friend {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+    padding: calc(globals.$spacing-unit / 2) globals.$spacing-unit;
+    border-radius: 8px;
+    color: globals.$body-color;
+    cursor: pointer;
+    transition: background-color ease 0.2s;
+
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+  }
+
+  &__avatar {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  &__status-dot {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: solid 2px globals.$dark-background-color;
+    background-color: globals.$success-color;
+  }
+
+  &__details {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+  }
+
+  &__name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: globals.$small-font-size;
+    font-weight: 600;
+  }
+
+  &__game {
+    display: flex;
+    align-items: center;
+    gap: calc(globals.$spacing-unit / 2);
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: globals.$success-color;
+    font-size: 11px;
+
+    &--idle {
+      color: #8e919b;
+    }
+  }
+
+  &__game-icon {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+  }
+}
