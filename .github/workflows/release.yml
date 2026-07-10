@@ -5,21 +5,57 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    branches:
-      - release/**
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, must match package.json version (e.g. v4.0.5). Leave empty to only build, without creating a release."
+        required: false
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
     strategy:
       matrix:
-        os: [windows-2022, ubuntu-latest]
+        include:
+          - os: windows-2022
+            build-script: build:win
+            python-version: "3.9"
+            artifact-suffix: windows
+          - os: windows-11-arm
+            build-script: build:win-arm64
+            python-version: "3.9"
+            python-arch: x64
+            artifact-suffix: windows-arm64
+          - os: ubuntu-latest
+            build-script: build:linux
+            python-version: "3.9"
+            artifact-suffix: linux
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            build-script: build:mac
+            python-version: "3.11"
+            artifact-suffix: macos
+          # macOS x64 (Intel)
+          - os: macos-15-intel
+            build-script: build:mac
+            python-version: "3.11"
+            artifact-suffix: macos-intel
+      fail-fast: false
 
     runs-on: ${{ matrix.os }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
 
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        if: inputs.tag != ''
+        run: node -e "const v = 'v' + require('./package.json').version; const tag = '${{ inputs.tag }}'; if (tag !== v) { console.error('Tag ' + tag + ' does not match package.json version ' + v + '.'); process.exit(1); }"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -30,90 +66,51 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: yarn --frozen-lockfile
-
       - name: Install Python
         uses: actions/setup-python@v5
         with:
-          python-version: 3.9
+          python-version: ${{ matrix.python-version }}
+          architecture: ${{ matrix.python-arch }}
+
+      - name: Install dependencies
+        run: yarn --frozen-lockfile
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Build Python RPC with cx_Freeze
-        run: python python_rpc/setup.py build
+      - name: Build
+        run: yarn ${{ matrix.build-script }}
+        env:
+          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
+          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
+          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
+          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
+          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
+          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
+          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+          # No Apple Developer certificate: skip codesign discovery
+          # (electron-builder ad-hoc signs the app instead)
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
+      - name: Rename builder debug file per platform
+        shell: bash
         run: |
-          yarn build:linux
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
-
-      - name: Build Windows
-        if: matrix.os == 'windows-2022'
-        run: yarn build:win
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+          if [[ -f dist/builder-debug.yml ]]; then
+            cp dist/builder-debug.yml dist/builder-debug-${{ matrix.artifact-suffix }}.yml
+          fi
 
       - name: Create artifact
         uses: actions/upload-artifact@v4
         with:
           name: Build-${{ matrix.os }}
           path: |
-            dist/win-unpacked/**
-            dist/*-portable.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
-            dist/*.yml
-            dist/*.blockmap
-
-      - name: Upload build
-        env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          S3_BUILDS_BUCKET_NAME: ${{ secrets.S3_BUILDS_BUCKET_NAME }}
-          BUILDS_URL: ${{ secrets.BUILDS_URL }}
-          BUILD_WEBHOOK_URL: ${{ secrets.BUILD_WEBHOOK_URL }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_ACTOR_ID: ${{ github.actor_id }}
-          BUILD_FLAVOR: production
-        run: node scripts/upload-build.cjs
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
-            dist/*.exe
+            dist/*-portable*.exe
+            dist/*-setup*.exe
             dist/*.zip
             dist/*.dmg
             dist/*.AppImage
@@ -123,5 +120,36 @@ jobs:
             dist/*.tar.gz
             dist/*.yml
             dist/*.blockmap
+            !dist/builder-debug.yml
+
+  release:
+    if: inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Install js-yaml
+        run: npm install --no-save --ignore-scripts --engine-strict=false js-yaml
+
+      - name: Collect release assets
+        run: node scripts/collect-release-assets.cjs artifacts release-assets
+
+      # Creates a draft release; the git tag is created automatically
+      # when the draft is published, pointing at the commit built here
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
