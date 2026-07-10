@@ -66,62 +66,50 @@ export function OnlineFriendsBar() {
   if (!userDetails || onlineFriends.length === 0) return null;
 
   return (
-    <div className="online-friends-bar">
-      <span className="online-friends-bar__label">
-        {t("online_friends", { count: onlineFriends.length })}
-      </span>
+    <ul className="online-friends-bar">
+      {onlineFriends.map((friend) => (
+        <li key={friend.id} className="online-friends-bar__item">
+          <button
+            type="button"
+            className="online-friends-bar__friend"
+            onClick={() => navigate(`/profile/${friend.id}`)}
+            title={
+              friend.currentGame
+                ? t("online_friend_playing", {
+                    displayName: friend.displayName,
+                    title: friend.currentGame.title,
+                  })
+                : friend.displayName
+            }
+          >
+            <div className="online-friends-bar__avatar">
+              <Avatar
+                size={18}
+                src={friend.profileImageUrl}
+                alt={friend.displayName}
+              />
+              <span className="online-friends-bar__status-dot" />
+            </div>
 
-      <ul className="online-friends-bar__list">
-        {onlineFriends.map((friend) => (
-          <li key={friend.id} className="online-friends-bar__item">
-            <button
-              type="button"
-              className="online-friends-bar__friend"
-              onClick={() => navigate(`/profile/${friend.id}`)}
-              title={
-                friend.currentGame
-                  ? t("online_friend_playing", {
-                      displayName: friend.displayName,
-                      title: friend.currentGame.title,
-                    })
-                  : friend.displayName
-              }
-            >
-              <div className="online-friends-bar__avatar">
-                <Avatar
-                  size={28}
-                  src={friend.profileImageUrl}
-                  alt={friend.displayName}
-                />
-                <span className="online-friends-bar__status-dot" />
-              </div>
+            <span className="online-friends-bar__name">
+              {friend.displayName}
+            </span>
 
-              <div className="online-friends-bar__details">
-                <span className="online-friends-bar__name">
-                  {friend.displayName}
-                </span>
-
-                {friend.currentGame ? (
-                  <span className="online-friends-bar__game">
-                    {friend.currentGame.iconUrl && (
-                      <img
-                        className="online-friends-bar__game-icon"
-                        src={friend.currentGame.iconUrl}
-                        alt=""
-                      />
-                    )}
-                    {friend.currentGame.title}
-                  </span>
-                ) : (
-                  <span className="online-friends-bar__game online-friends-bar__game--idle">
-                    {t("online")}
-                  </span>
+            {friend.currentGame && (
+              <span className="online-friends-bar__game">
+                {friend.currentGame.iconUrl && (
+                  <img
+                    className="online-friends-bar__game-icon"
+                    src={friend.currentGame.iconUrl}
+                    alt=""
+                  />
                 )}
-              </div>
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
+                {friend.currentGame.title}
+              </span>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

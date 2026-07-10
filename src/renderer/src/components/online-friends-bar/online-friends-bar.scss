@@ -3,97 +3,80 @@
 .online-friends-bar {
   display: flex;
   align-items: center;
-  gap: globals.$spacing-unit;
-  border-bottom: solid 1px globals.$border-color;
-  background-color: globals.$dark-background-color;
-  padding: calc(globals.$spacing-unit / 2) calc(globals.$spacing-unit * 3);
+  gap: calc(globals.$spacing-unit / 2);
+  margin: 0 calc(globals.$spacing-unit * 2) 0 auto;
+  padding: 0;
+  max-width: 50vw;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
 
-  &__label {
-    flex-shrink: 0;
-    color: #8e919b;
-    font-size: globals.$small-font-size;
-  }
-
-  &__list {
-    display: flex;
-    align-items: center;
-    gap: calc(globals.$spacing-unit / 2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    overflow-x: auto;
-    scrollbar-width: none;
-
-    &::-webkit-scrollbar {
-      display: none;
-    }
+  &::-webkit-scrollbar {
+    display: none;
   }
 
   &__item {
     flex-shrink: 0;
+    display: flex;
   }
 
   &__friend {
     display: flex;
     align-items: center;
-    gap: globals.$spacing-unit;
-    padding: calc(globals.$spacing-unit / 2) globals.$spacing-unit;
-    border-radius: 8px;
-    color: globals.$body-color;
+    gap: calc(globals.$spacing-unit / 2);
+    padding: 3px globals.$spacing-unit;
+    border-radius: 4px;
+    color: globals.$muted-color;
+    opacity: 0.8;
+    font-size: globals.$small-font-size;
     cursor: pointer;
-    transition: background-color ease 0.2s;
+    transition:
+      opacity ease 0.1s,
+      background-color ease 0.1s;
 
     &:hover {
-      background-color: rgba(255, 255, 255, 0.08);
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.1);
     }
   }
 
   &__avatar {
     position: relative;
     flex-shrink: 0;
+    display: flex;
   }
 
   &__status-dot {
     position: absolute;
     right: -2px;
     bottom: -2px;
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     border: solid 2px globals.$dark-background-color;
     background-color: globals.$success-color;
-  }
-
-  &__details {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    min-width: 0;
+    box-sizing: border-box;
   }
 
   &__name {
-    max-width: 140px;
+    max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: globals.$small-font-size;
-    font-weight: 600;
+    font-weight: 500;
   }
 
   &__game {
     display: flex;
     align-items: center;
     gap: calc(globals.$spacing-unit / 2);
-    max-width: 140px;
+    max-width: 160px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: globals.$success-color;
+    color: #4ade80;
     font-size: 11px;
-
-    &--idle {
-      color: #8e919b;
-    }
   }
 
   &__game-icon {
