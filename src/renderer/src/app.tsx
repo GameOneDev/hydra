@@ -551,6 +551,8 @@ export function App() {
             )}
           </h4>
 
+          <OnlineFriendsBar />
+
           <button
             type="button"
             className="title-bar__big-picture"
@@ -635,8 +637,6 @@ export function App() {
 
         <article className="container">
           <Header />
-
-          <OnlineFriendsBar />
 
           <section
             ref={contentRef}
