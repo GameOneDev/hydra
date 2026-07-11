@@ -1,7 +1,7 @@
 @use "../../../scss/globals.scss";
 
-$cell-size: 13px;
 $cell-gap: 3px;
+$label-size: 12px;
 
 .playtime-heatmap {
   display: flex;
@@ -19,18 +19,21 @@ $cell-gap: 3px;
     flex-direction: column;
     gap: $cell-gap;
     /* Same offset as the months row so weekday labels align with the grid */
-    padding-top: calc($cell-size + $cell-gap);
+    padding-top: calc($label-size + $cell-gap);
   }
 
   &__weekday {
-    height: $cell-size;
-    line-height: $cell-size;
+    flex: 1;
+    display: flex;
+    align-items: center;
     min-width: 28px;
     color: #8e919b;
     font-size: 10px;
   }
 
   &__weeks {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: $cell-gap;
@@ -39,16 +42,17 @@ $cell-gap: 3px;
   &__months {
     display: flex;
     gap: $cell-gap;
-    height: $cell-size;
+    height: $label-size;
   }
 
   &__month {
-    width: $cell-size;
+    flex: 1;
+    min-width: 0;
     overflow: visible;
     white-space: nowrap;
     color: #8e919b;
     font-size: 10px;
-    line-height: $cell-size;
+    line-height: $label-size;
   }
 
   &__grid {
@@ -57,14 +61,16 @@ $cell-gap: 3px;
   }
 
   &__week {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: $cell-gap;
   }
 
   &__cell {
-    width: $cell-size;
-    height: $cell-size;
+    width: 100%;
+    aspect-ratio: 1;
     border-radius: 3px;
 
     &--level-0 {
@@ -104,6 +110,12 @@ $cell-gap: 3px;
     gap: $cell-gap;
     color: #8e919b;
     font-size: 10px;
+
+    .playtime-heatmap__cell {
+      flex: 0 0 auto;
+      width: 10px;
+      height: 10px;
+    }
 
     span:first-child {
       margin-right: calc(globals.$spacing-unit / 2);
