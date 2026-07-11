@@ -21,7 +21,7 @@ interface PlaytimeDay {
   games: PlaytimeGame[];
 }
 
-const WEEKS_TO_SHOW = 5;
+const WEEKS_TO_SHOW = 13;
 const HEATMAP_LEVELS = 4;
 const TOOLTIP_ID = "playtime-heatmap-tooltip";
 
