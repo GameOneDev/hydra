@@ -9,6 +9,11 @@ $label-size: 12px;
   gap: globals.$spacing-unit;
   padding: calc(globals.$spacing-unit * 2);
 
+  &__empty {
+    color: #8e919b;
+    font-size: globals.$small-font-size;
+  }
+
   &__chart {
     display: flex;
     gap: calc(globals.$spacing-unit / 2);
