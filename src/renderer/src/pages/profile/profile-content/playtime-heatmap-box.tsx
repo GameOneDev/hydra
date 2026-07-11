@@ -125,9 +125,7 @@ export function PlaytimeHeatmapBox({ userId, isMe }: PlaytimeHeatmapBoxProps) {
     [i18n.language]
   );
 
-  /* On someone else's profile an empty chart is just noise (they may not be
-     on this server at all); on your own it shows the feature exists. */
-  if (days === null || (!isMe && days.length === 0)) return null;
+  const hasData = (days?.length ?? 0) > 0;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -183,6 +181,12 @@ export function PlaytimeHeatmapBox({ userId, isMe }: PlaytimeHeatmapBoxProps) {
   return (
     <ProfileSection title={t("playtime")} defaultOpen={true}>
       <div className="playtime-heatmap">
+        {!hasData && (
+          <small className="playtime-heatmap__empty">
+            {t("no_playtime_data")}
+          </small>
+        )}
+
         <div className="playtime-heatmap__chart">
           <div className="playtime-heatmap__weekdays" aria-hidden="true">
             {weeks[0].map((date, row) => (
