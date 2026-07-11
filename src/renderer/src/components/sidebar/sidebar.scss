@@ -138,6 +138,12 @@
       }
     }
 
+    &--running {
+      .sidebar__menu-item-button-label {
+        color: #22c55e;
+      }
+    }
+
     &--decky {
       background: linear-gradient(
         135deg,
