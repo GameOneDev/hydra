@@ -12,6 +12,7 @@ import "./playtime-heatmap-box.scss";
 interface PlaytimeGame {
   shop: GameShop;
   objectId: string;
+  name?: string | null;
   seconds: number;
 }
 
@@ -19,6 +20,11 @@ interface PlaytimeDay {
   day: string;
   totalSeconds: number;
   games: PlaytimeGame[];
+}
+
+export interface PlaytimeHeatmapBoxProps {
+  userId: string;
+  isMe: boolean;
 }
 
 const WEEKS_TO_SHOW = 13;
@@ -31,7 +37,7 @@ const localDayKey = (date: Date) => {
   return `${date.getFullYear()}-${month}-${day}`;
 };
 
-export function PlaytimeHeatmapBox() {
+export function PlaytimeHeatmapBox({ userId, isMe }: PlaytimeHeatmapBoxProps) {
   const { t, i18n } = useTranslation("user_profile");
   const { library } = useLibrary();
   const { numberFormatter } = useFormat();
@@ -39,15 +45,20 @@ export function PlaytimeHeatmapBox() {
   const [days, setDays] = useState<PlaytimeDay[] | null>(null);
 
   useEffect(() => {
+    setDays(null);
+
     /* Only the self-hosted cloud server implements this endpoint; when it's
        not configured the request fails and the section stays hidden. */
     window.electron.hydraApi
-      .get<PlaytimeDay[]>("/profile/playtime", {
-        params: { days: WEEKS_TO_SHOW * 7 },
-      })
+      .get<PlaytimeDay[]>(
+        isMe
+          ? "/profile/playtime"
+          : `/profile/playtime/${encodeURIComponent(userId)}`,
+        { params: { days: WEEKS_TO_SHOW * 7 } }
+      )
       .then((response) => setDays(Array.isArray(response) ? response : []))
       .catch(() => setDays(null));
-  }, []);
+  }, [userId, isMe]);
 
   const titleByGame = useMemo(() => {
     const map = new Map<string, string>();
@@ -114,7 +125,9 @@ export function PlaytimeHeatmapBox() {
     [i18n.language]
   );
 
-  if (days === null) return null;
+  /* On someone else's profile an empty chart is just noise (they may not be
+     on this server at all); on your own it shows the feature exists. */
+  if (days === null || (!isMe && days.length === 0)) return null;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -147,7 +160,7 @@ export function PlaytimeHeatmapBox() {
     const amount = formatAmount(entry.totalSeconds);
     const topGame = entry.games[0];
     const topGameTitle = topGame
-      ? titleByGame.get(`${topGame.shop}:${topGame.objectId}`)
+      ? (topGame.name ?? titleByGame.get(`${topGame.shop}:${topGame.objectId}`))
       : undefined;
 
     if (topGameTitle) {
