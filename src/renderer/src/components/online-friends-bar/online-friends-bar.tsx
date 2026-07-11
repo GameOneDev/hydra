@@ -63,6 +63,34 @@ export function OnlineFriendsBar() {
     };
   }, [fetchOnlineFriends]);
 
+  const formatSessionDuration = (seconds: number) => {
+    const totalMinutes = Math.max(1, Math.floor(seconds / 60));
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    if (hours > 0) return t("session_duration_hours", { hours, minutes });
+    return t("session_duration_minutes", { minutes });
+  };
+
+  const friendTooltip = (friend: UserFriend) => {
+    if (!friend.currentGame) return friend.displayName;
+
+    if (friend.currentGame.sessionDurationInSeconds > 0) {
+      return t("online_friend_playing_for", {
+        displayName: friend.displayName,
+        title: friend.currentGame.title,
+        duration: formatSessionDuration(
+          friend.currentGame.sessionDurationInSeconds
+        ),
+      });
+    }
+
+    return t("online_friend_playing", {
+      displayName: friend.displayName,
+      title: friend.currentGame.title,
+    });
+  };
+
   if (!userDetails || onlineFriends.length === 0) return null;
 
   return (
@@ -73,14 +101,7 @@ export function OnlineFriendsBar() {
             type="button"
             className="online-friends-bar__friend"
             onClick={() => navigate(`/profile/${friend.id}`)}
-            title={
-              friend.currentGame
-                ? t("online_friend_playing", {
-                    displayName: friend.displayName,
-                    title: friend.currentGame.title,
-                  })
-                : friend.displayName
-            }
+            title={friendTooltip(friend)}
           >
             <div className="online-friends-bar__avatar">
               <Avatar
