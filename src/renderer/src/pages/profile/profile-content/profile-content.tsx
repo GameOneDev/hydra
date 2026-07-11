@@ -415,7 +415,7 @@ export function ProfileContent() {
                 <UserStatsBox />
               </ProfileSection>
             )}
-            {isMe && <PlaytimeHeatmapBox />}
+            <PlaytimeHeatmapBox userId={userProfile.id} isMe={isMe} />
             {userProfile?.badges.length > 0 && (
               <ProfileSection
                 title={t("badges")}
