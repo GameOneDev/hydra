@@ -23,6 +23,7 @@ import { useFormat } from "@renderer/hooks/use-format";
 import {
   ChevronRightIcon,
   CommentDiscussionIcon,
+  HistoryIcon,
   PlayIcon,
   PlusIcon,
   VideoIcon,
@@ -69,9 +70,19 @@ export function Sidebar() {
 
   const location = useLocation();
 
+  const [sortByRecentActivity, setSortByRecentActivity] = useState(
+    window.localStorage.getItem("sidebarSortByRecentActivity") === "true"
+  );
+
   const sortedLibrary = useMemo(() => {
-    return sortBy(library, (game) => game.title);
-  }, [library]);
+    const sortedByTitle = sortBy(library, (game) => game.title);
+
+    if (!sortByRecentActivity) return sortedByTitle;
+
+    return sortBy(sortedByTitle, (game) =>
+      game.lastTimePlayed ? -new Date(game.lastTimePlayed).getTime() : 0
+    );
+  }, [library, sortByRecentActivity]);
 
   const { hasActiveSubscription } = useUserDetails();
 
@@ -114,6 +125,15 @@ export function Sidebar() {
 
   const handlePlayButtonClick = () => {
     setShowPlayableOnly(!showPlayableOnly);
+  };
+
+  const handleSortButtonClick = () => {
+    const newValue = !sortByRecentActivity;
+    setSortByRecentActivity(newValue);
+    window.localStorage.setItem(
+      "sidebarSortByRecentActivity",
+      String(newValue)
+    );
   };
 
   const handleAddGameButtonClick = () => {
@@ -408,6 +428,18 @@ export function Sidebar() {
                 >
                   <PlayIcon size={16} />
                 </button>
+                <button
+                  type="button"
+                  className={cn("sidebar__sort-button", {
+                    "sidebar__sort-button--active": sortByRecentActivity,
+                  })}
+                  onClick={handleSortButtonClick}
+                  data-tooltip-id="sort-by-recent-activity-tooltip"
+                  data-tooltip-content={t("sort_by_recent_activity_tooltip")}
+                  data-tooltip-place="top"
+                >
+                  <HistoryIcon size={16} />
+                </button>
               </div>
             </div>
 
@@ -514,6 +546,7 @@ export function Sidebar() {
 
       <Tooltip id="add-custom-game-tooltip" />
       <Tooltip id="show-playable-only-tooltip" />
+      <Tooltip id="sort-by-recent-activity-tooltip" />
     </aside>
   );
 }
