@@ -128,6 +128,16 @@
       }
     }
 
+    &--not-playable {
+      .sidebar__menu-item-button-label {
+        color: rgba(255, 255, 255, 0.4);
+      }
+
+      &:hover .sidebar__menu-item-button-label {
+        color: rgba(255, 255, 255, 0.6);
+      }
+    }
+
     &--decky {
       background: linear-gradient(
         135deg,

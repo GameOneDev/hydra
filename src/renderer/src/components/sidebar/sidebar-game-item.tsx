@@ -73,6 +73,7 @@ export function SidebarGameItem({
           "sidebar__menu-item--active":
             location.pathname === `/game/${game.shop}/${game.objectId}`,
           "sidebar__menu-item--muted": game.download?.status === "removed",
+          "sidebar__menu-item--not-playable": !canPlay,
         })}
       >
         <button
