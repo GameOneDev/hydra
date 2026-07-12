@@ -16,7 +16,7 @@ import {
   VideoIcon,
   ShieldCheckIcon,
 } from "@primer/octicons-react";
-import { Gamepad2, Wrench } from "lucide-react";
+import { CloudUpload, Gamepad2, Wrench } from "lucide-react";
 import { SettingsContextGeneral } from "./settings-context-general";
 import { SettingsContextDownloads } from "./settings-context-downloads";
 import { SettingsContextNotifications } from "./settings-context-notifications";
@@ -25,6 +25,7 @@ import { SettingsContextIntegrations } from "./settings-context-integrations";
 import { SettingsContextCompatibility } from "./settings-context-compatibility";
 import { SettingsContextBigPicture } from "./settings-context-big-picture";
 import { SettingsContextEmulation } from "./emulation/settings-context-emulation";
+import { SettingsContextCloudSaves } from "./settings-context-cloud-saves";
 
 export default function Settings() {
   const { t } = useTranslation("settings");
@@ -52,6 +53,11 @@ export default function Settings() {
         id: "content_gameplay" as const,
         label: t("content_gameplay"),
         icon: <PlayIcon size={16} />,
+      },
+      {
+        id: "cloud_saves" as const,
+        label: t("cloud_saves"),
+        icon: <CloudUpload size={16} />,
       },
       {
         id: "integrations" as const,
@@ -111,6 +117,10 @@ export default function Settings() {
 
             if (selectedCategoryId === "content_gameplay") {
               return <SettingsContextContentGameplay />;
+            }
+
+            if (selectedCategoryId === "cloud_saves") {
+              return <SettingsContextCloudSaves />;
             }
 
             if (selectedCategoryId === "integrations") {
