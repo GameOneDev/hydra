@@ -49,7 +49,9 @@ export const LibraryGameCard = memo(function LibraryGameCard({
     [game.achievementCount, game.unlockedAchievementCount]
   );
 
-  const isInstalled = Boolean(game.executablePath);
+  const isSteamManaged =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
+  const isInstalled = Boolean(game.executablePath) || isSteamManaged;
 
   const sources = [
     game.customIconUrl, // Level 0
@@ -167,7 +169,11 @@ export const LibraryGameCard = memo(function LibraryGameCard({
           {isInstalled && (
             <div
               className="library-game-card__installed-badge"
-              title={t("installed_tooltip")}
+              title={t(
+                isSteamManaged
+                  ? "installed_via_steam_tooltip"
+                  : "installed_tooltip"
+              )}
             >
               <CheckCircleFillIcon
                 size={11}
