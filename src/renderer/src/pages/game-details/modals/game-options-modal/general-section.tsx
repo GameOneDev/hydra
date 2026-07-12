@@ -423,6 +423,9 @@ export function GeneralSettingsSection({
 
   const effectiveDest = selectedDrive || customPath.trim();
 
+  const launchesThroughSteam =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
+
   return (
     <>
       {/* Title */}
@@ -465,9 +468,20 @@ export function GeneralSettingsSection({
             </h4>
           </div>
 
+          {launchesThroughSteam && (
+            <div className="game-options-modal__steam-launch-info">
+              <SteamLogo className="game-options-modal__steam-launch-info-icon" />
+              <span>{t("game_launches_through_steam")}</span>
+            </div>
+          )}
+
           <div className="game-options-modal__executable-field">
             <TextField
-              value={game.executablePath || ""}
+              value={
+                launchesThroughSteam
+                  ? `steam://rungameid/${game.objectId}`
+                  : game.executablePath || ""
+              }
               readOnly
               theme="dark"
               disabled
