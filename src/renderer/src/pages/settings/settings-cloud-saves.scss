@@ -1,0 +1,136 @@
+@use "../../scss/globals.scss";
+
+.settings-cloud-saves {
+  &__description {
+    color: globals.$muted-color;
+    font-size: globals.$small-font-size;
+  }
+
+  &__manager-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: calc(globals.$spacing-unit * 2);
+
+    > div {
+      display: flex;
+      flex-direction: column;
+      gap: calc(globals.$spacing-unit / 2);
+    }
+  }
+
+  &__summary {
+    color: globals.$muted-color;
+    font-size: globals.$small-font-size;
+  }
+
+  &__state {
+    color: globals.$muted-color;
+  }
+
+  &__upgrade {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: calc(globals.$spacing-unit * 1.5);
+  }
+
+  &__game {
+    display: flex;
+    flex-direction: column;
+    gap: globals.$spacing-unit;
+    padding: calc(globals.$spacing-unit * 1.5);
+    border: 1px solid globals.$border-color;
+    border-radius: 8px;
+    background-color: globals.$background-color;
+  }
+
+  &__game-header {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+
+    h4 {
+      margin: 0;
+      font-size: globals.$body-font-size;
+    }
+  }
+
+  &__game-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    object-fit: cover;
+  }
+
+  &__game-meta {
+    margin-left: auto;
+    color: globals.$muted-color;
+    font-size: globals.$small-font-size;
+  }
+
+  &__artifacts {
+    display: flex;
+    flex-direction: column;
+    gap: globals.$spacing-unit;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__artifact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(globals.$spacing-unit * 2);
+    padding: globals.$spacing-unit;
+    border: 1px solid globals.$border-color;
+    border-radius: 6px;
+  }
+
+  &__artifact-info {
+    display: flex;
+    flex-direction: column;
+    gap: calc(globals.$spacing-unit / 2);
+    min-width: 0;
+  }
+
+  &__artifact-title {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__artifact-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(globals.$spacing-unit * 1.5);
+    color: globals.$muted-color;
+    font-size: globals.$small-font-size;
+
+    span {
+      display: flex;
+      align-items: center;
+      gap: calc(globals.$spacing-unit / 2);
+    }
+  }
+
+  &__sync-icon {
+    animation: settings-cloud-saves-spin 1s linear infinite;
+  }
+}
+
+@keyframes settings-cloud-saves-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
