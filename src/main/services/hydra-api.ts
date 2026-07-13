@@ -64,6 +64,12 @@ export class HydraApi {
     /* Achievement-count fallback for profile stats the official API only
        computes for subscribers */
     "/profile/stats",
+    /* Daily playtime buckets for the profile heatmap — only exists on the
+       self-hosted server */
+    "/profile/playtime",
+    /* Same-server membership lookup for the profile badge — only exists on
+       the self-hosted server */
+    "/profile/members",
   ];
 
   /* Banner uploads are subscription-gated on the official API. With a REAL

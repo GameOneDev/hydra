@@ -11,6 +11,7 @@ import { BadgesBox } from "./badges-box";
 import { FriendsBox, FriendsBoxAddButton } from "./friends-box";
 import { RecentGamesBox } from "./recent-games-box";
 import { UserStatsBox } from "./user-stats-box";
+import { PlaytimeHeatmapBox } from "./playtime-heatmap-box";
 import { ProfileSection } from "../profile-section/profile-section";
 import { DeleteReviewModal } from "@renderer/pages/game-details/modals/delete-review-modal";
 import { GAME_STATS_ANIMATION_DURATION_IN_MS } from "./profile-animations";
@@ -414,6 +415,7 @@ export function ProfileContent() {
                 <UserStatsBox />
               </ProfileSection>
             )}
+            <PlaytimeHeatmapBox userId={userProfile.id} isMe={isMe} />
             {userProfile?.badges.length > 0 && (
               <ProfileSection
                 title={t("badges")}

@@ -1,4 +1,10 @@
-import { BottomPanel, Header, Sidebar, Toast } from "@renderer/components";
+import {
+  BottomPanel,
+  Header,
+  OnlineFriendsBar,
+  Sidebar,
+  Toast,
+} from "@renderer/components";
 import { VideoIcon } from "@primer/octicons-react";
 import {
   DashIcon,
@@ -544,6 +550,8 @@ export function App() {
               <span className="title-bar__cloud-text"> Cloud</span>
             )}
           </h4>
+
+          <OnlineFriendsBar />
 
           <button
             type="button"
