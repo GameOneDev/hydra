@@ -383,6 +383,12 @@ export interface GameArtifact {
   downloadCount: number;
   label?: string;
   isFrozen: boolean;
+  /* Present when listing artifacts across all games (self-hosted cloud
+     server); absent on per-game responses from the official API. */
+  shop?: GameShop;
+  objectId?: string;
+  gameName?: string | null;
+  gameCoverUrl?: string | null;
 }
 
 export interface ArtifactShare {
