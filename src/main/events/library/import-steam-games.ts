@@ -11,6 +11,7 @@ import {
   logger,
   WindowManager,
 } from "@main/services";
+import { getAutomaticCloudSyncDefault } from "@main/helpers";
 
 interface ImportedSteamGame {
   objectId: string;
@@ -66,6 +67,7 @@ const importSteamGames = async (): Promise<SteamImportResult> => {
       addedToLibraryAt: new Date(),
       platform: null,
       launchThroughSteam: true,
+      automaticCloudSync: await getAutomaticCloudSyncDefault(),
     };
 
     await gamesSublevel.put(gameKey, game);

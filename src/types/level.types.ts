@@ -194,6 +194,9 @@ export interface UserPreferences {
   autoRunGamemode?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
+  /* New library entries get automaticCloudSync pre-enabled, instead of the
+     user turning it on game by game. */
+  enableCloudSavesByDefault?: boolean;
   /* Self-hosted Hydra Cloud storage server. When set, subscription-gated
      features (cloud saves, achievement sync, download source sync) are routed
      to this server while accounts, friends and everything else keep using the
