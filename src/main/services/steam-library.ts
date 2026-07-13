@@ -11,7 +11,7 @@ export interface InstalledSteamGame {
   title: string;
 }
 
-const getSteamLibraryFolders = (steamLocation: string): string[] => {
+export const getSteamLibraryFolders = (steamLocation: string): string[] => {
   const libraryFoldersPath = path.join(
     steamLocation,
     "steamapps",
