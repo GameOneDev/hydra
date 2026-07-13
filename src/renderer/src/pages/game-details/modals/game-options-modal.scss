@@ -123,6 +123,21 @@
     margin-top: globals.$spacing-unit;
   }
 
+  &__steam-launch-info {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+    margin-bottom: globals.$spacing-unit;
+    color: globals.$body-color;
+    font-size: globals.$small-font-size;
+
+    &-icon {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+  }
+
   &__warning {
     margin: 0;
     color: #f5a623;

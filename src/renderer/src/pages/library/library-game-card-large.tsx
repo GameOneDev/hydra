@@ -44,7 +44,9 @@ export const LibraryGameCardLarge = memo(function LibraryGameCardLarge({
   const { formatPlayTime, handleCardClick, handleContextMenuClick } =
     useGameCard(game, onContextMenu);
 
-  const isInstalled = Boolean(game.executablePath);
+  const isSteamManaged =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
+  const isInstalled = Boolean(game.executablePath) || isSteamManaged;
 
   const sizeBars = useMemo(() => {
     const items: {
@@ -231,7 +233,11 @@ export const LibraryGameCardLarge = memo(function LibraryGameCardLarge({
             {isInstalled && (
               <div
                 className="library-game-card-large__installed-badge"
-                title={t("installed_tooltip")}
+                title={t(
+                  isSteamManaged
+                    ? "installed_via_steam_tooltip"
+                    : "installed_tooltip"
+                )}
               >
                 <CheckCircleFillIcon
                   size={12}
