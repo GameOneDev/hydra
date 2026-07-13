@@ -28,4 +28,5 @@ export * from "./classics-onboarding-modal/classics-onboarding-modal";
 export * from "./classics-scan-indicator/classics-scan-indicator";
 export * from "./classics-spinner/classics-spinner";
 export * from "./error-boundary/error-fallback";
+export * from "./online-friends-bar/online-friends-bar";
 export * from "./error-boundary/error-boundary";
