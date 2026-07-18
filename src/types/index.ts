@@ -389,6 +389,31 @@ export interface GameArtifact {
   downloadCount: number;
   label?: string;
   isFrozen: boolean;
+  /* Present when listing artifacts across all games (self-hosted cloud
+     server); absent on per-game responses from the official API. */
+  shop?: GameShop;
+  objectId?: string;
+  gameName?: string | null;
+  gameCoverUrl?: string | null;
+}
+
+export interface ArtifactShare {
+  id: string;
+  recipientId: string;
+  recipientDisplayName: string | null;
+  recipientProfileImageUrl: string | null;
+  createdAt: string;
+}
+
+export interface SharedGameArtifact extends GameArtifact {
+  shop: GameShop;
+  objectId: string;
+  sharedAt: string;
+  sharedBy: {
+    id: string;
+    displayName: string;
+    profileImageUrl: string | null;
+  };
 }
 
 export type NotificationType =
@@ -407,7 +432,8 @@ export type LocalNotificationType =
   | "DOWNLOAD_COMPLETE"
   | "UPDATE_AVAILABLE"
   | "ACHIEVEMENT_UNLOCKED"
-  | "SCAN_GAMES_COMPLETE";
+  | "SCAN_GAMES_COMPLETE"
+  | "STEAM_IMPORT_COMPLETE";
 
 export interface Notification {
   id: string;
