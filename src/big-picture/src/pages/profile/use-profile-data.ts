@@ -427,16 +427,19 @@ async function fetchSelfHostedAchievementGroups(
         });
 
       const catalogueAchievements = ensureArray(catalogue);
+      /* Case-insensitive, matching how the launcher joins its own unlocks:
+         names recorded from achievement files don't reliably match the
+         catalogue's casing. */
       const metadataByName = new Map(
         catalogueAchievements.map((achievement) => [
-          achievement.name,
+          achievement.name.toUpperCase(),
           achievement,
         ])
       );
 
       const resolved = achievements
         .map(({ name, unlockTime }) => {
-          const metadata = metadataByName.get(name);
+          const metadata = metadataByName.get(name.toUpperCase());
           if (!metadata) return null;
 
           return {
