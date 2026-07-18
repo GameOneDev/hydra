@@ -55,6 +55,10 @@ export class HydraApi {
 
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
+    /* Custom game images (covers, icons, logos, banners). Uploads already
+       route here via needsSubscription; the read side has no such flag, and
+       these listing endpoints only exist on the self-hosted server. */
+    "/profile/games/artwork",
     "/profile/emulation-saves",
     "/profile/download-sources",
     /* Banner fallback lookup/removal — these endpoints only exist on the
@@ -64,6 +68,11 @@ export class HydraApi {
     /* Achievement-count fallback for profile stats the official API only
        computes for subscribers */
     "/profile/stats",
+    /* Recently unlocked achievements for a profile. Deliberately not under
+       "/profile/games/achievements": the sync mirrors that path to BOTH this
+       server and the official API, and routing the prefix would swallow the
+       official half. */
+    "/profile/achievements",
     /* Daily playtime buckets for the profile heatmap — only exists on the
        self-hosted server */
     "/profile/playtime",
