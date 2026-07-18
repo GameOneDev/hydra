@@ -6,6 +6,11 @@ import { average } from "color.js";
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import {
+  applySelfHostedArtwork,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "@renderer/services/self-hosted-artwork.service";
 
 export interface UserProfileContext {
   userProfile: UserProfile | null;
@@ -88,6 +93,25 @@ export function UserProfileContextProvider({
   const [isLoadingLibraryGames, setIsLoadingLibraryGames] = useState(false);
   const previousUserIdRef = useRef(userId);
 
+  /* Custom game images this profile's owner keeps on the self-hosted server.
+     Fetched once per profile and shared by every library request below, so
+     paging through a library doesn't re-request the whole set. */
+  const artworkRef = useRef<{
+    userId: string;
+    promise: Promise<SelfHostedArtworkMap | null>;
+  } | null>(null);
+
+  const getSelfHostedArtwork = useCallback(() => {
+    if (artworkRef.current?.userId !== userId) {
+      artworkRef.current = {
+        userId,
+        promise: fetchSelfHostedArtwork(userId, selfHostedCloudUrl),
+      };
+    }
+
+    return artworkRef.current.promise;
+  }, [userId, selfHostedCloudUrl]);
+
   const isMe = userDetails?.id === userProfile?.id;
 
   const getHeroBackgroundFromImageUrl = async (imageUrl: string) => {
@@ -169,14 +193,17 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await window.electron.hydraApi.get<{
-          library: UserGame[];
-          pinnedGames: UserGame[];
-        }>(url, { needsAuth: false });
+        const [response, artwork] = await Promise.all([
+          window.electron.hydraApi.get<{
+            library: UserGame[];
+            pinnedGames: UserGame[];
+          }>(url, { needsAuth: false }),
+          getSelfHostedArtwork(),
+        ]);
 
         if (response) {
-          setLibraryGames(response.library);
-          setPinnedGames(response.pinnedGames);
+          setLibraryGames(applySelfHostedArtwork(response.library, artwork));
+          setPinnedGames(applySelfHostedArtwork(response.pinnedGames, artwork));
           setHasMoreLibraryGames(response.library.length === 12);
         } else {
           setLibraryGames([]);
@@ -191,7 +218,7 @@ export function UserProfileContextProvider({
         setIsLoadingLibraryGames(false);
       }
     },
-    [userId]
+    [userId, getSelfHostedArtwork]
   );
 
   const loadMoreLibraryGames = useCallback(
@@ -216,16 +243,22 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await window.electron.hydraApi.get<{
-          library: UserGame[];
-          pinnedGames: UserGame[];
-        }>(url, { needsAuth: false });
+        const [response, artwork] = await Promise.all([
+          window.electron.hydraApi.get<{
+            library: UserGame[];
+            pinnedGames: UserGame[];
+          }>(url, { needsAuth: false }),
+          getSelfHostedArtwork(),
+        ]);
 
         if (response && response.library.length > 0) {
           setLibraryGames((prev) => {
             const existingIds = new Set(prev.map((game) => game.objectId));
-            const newGames = response.library.filter(
-              (game) => !existingIds.has(game.objectId)
+            const newGames = applySelfHostedArtwork(
+              response.library.filter(
+                (game) => !existingIds.has(game.objectId)
+              ),
+              artwork
             );
             return [...prev, ...newGames];
           });
@@ -243,7 +276,13 @@ export function UserProfileContextProvider({
         setIsLoadingLibraryGames(false);
       }
     },
-    [userId, libraryPage, hasMoreLibraryGames, isLoadingLibraryGames]
+    [
+      userId,
+      libraryPage,
+      hasMoreLibraryGames,
+      isLoadingLibraryGames,
+      getSelfHostedArtwork,
+    ]
   );
 
   const getUserProfile = useCallback(async () => {
@@ -281,6 +320,17 @@ export function UserProfileContextProvider({
           }
         }
 
+        /* The profile response embeds its own game lists, which need the
+           same custom images as the paged library above. */
+        const artwork = await getSelfHostedArtwork();
+        if (artwork?.size) {
+          profile = {
+            ...profile,
+            libraryGames: applySelfHostedArtwork(profile.libraryGames, artwork),
+            recentGames: applySelfHostedArtwork(profile.recentGames, artwork),
+          };
+        }
+
         setUserProfile(profile);
 
         if (profile.profileImageUrl) {
@@ -300,6 +350,7 @@ export function UserProfileContextProvider({
     showErrorToast,
     userId,
     selfHostedCloudUrl,
+    getSelfHostedArtwork,
     t,
   ]);
 
