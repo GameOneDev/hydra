@@ -130,6 +130,11 @@ export type SelfHostedUnlockedAchievement = {
 export type SelfHostedAchievementGame = {
   shop: GameShop;
   objectId: string;
+  /* Resolved by the server from its metadata cache, so a game can still be
+     named when it isn't in the viewer's or the owner's readable library. */
+  title: string | null;
+  coverUrl: string | null;
+  unlockedCount: number;
   achievements: SelfHostedUnlockedAchievement[];
 };
 

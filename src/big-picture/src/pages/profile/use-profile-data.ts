@@ -20,6 +20,7 @@ import {
   fetchSelfHostedRecentAchievements,
   getCatalogueLanguage,
   getProfileArtwork,
+  type SelfHostedAchievementGame,
 } from "./self-hosted-profile";
 
 const PROFILE_RECENT_ACHIEVEMENT_GROUP_LIMIT = 2;
@@ -343,6 +344,40 @@ async function fetchGameAchievements(
 }
 
 /**
+ * Stands in for a game the viewer can't find in the profile's library.
+ *
+ * A library only lists what the official API will disclose, and a game with
+ * synced unlocks is often missing from it. The self-hosted server sends the
+ * name and cover along with the unlocks precisely so those achievements can
+ * still be shown rather than silently dropped.
+ */
+function toLibrarylessGame(
+  entry: SelfHostedAchievementGame,
+  achievementCount: number
+): UserGame {
+  return {
+    objectId: entry.objectId,
+    shop: entry.shop,
+    title: entry.title ?? entry.objectId,
+    iconUrl: entry.coverUrl,
+    coverImageUrl: entry.coverUrl,
+    libraryHeroImageUrl: null,
+    libraryImageUrl: null,
+    logoImageUrl: null,
+    logoPosition: null,
+    downloadSources: [],
+    playTimeInSeconds: 0,
+    lastTimePlayed: null,
+    unlockedAchievementCount: entry.unlockedCount,
+    achievementCount,
+    achievementsPointsEarnedSum: 0,
+    hasManuallyUpdatedPlaytime: false,
+    isFavorite: false,
+    isPinned: false,
+  };
+}
+
+/**
  * Recent achievements for a profile whose owner has no official
  * subscription, built from the self-hosted server's synced unlocks.
  *
@@ -376,14 +411,8 @@ async function fetchSelfHostedAchievementGroups(
      nothing, the library couldn't name the game, or the catalogue didn't
      recognise the achievements. */
   const settled = await Promise.allSettled(
-    achievementGames.map(async ({ shop, objectId, achievements }) => {
-      const game = libraryByGame.get(getGameIdentityKey({ shop, objectId }));
-      if (!game) {
-        logger.info(
-          `[self-hosted] ${shop}/${objectId} has unlocks but is not in the first ${PROFILE_SELF_HOSTED_LIBRARY_TAKE} library entries`
-        );
-        return null;
-      }
+    achievementGames.map(async (entry) => {
+      const { shop, objectId, achievements } = entry;
 
       const catalogue = await globalThis.window.electron.hydraApi
         .get<
@@ -397,8 +426,12 @@ async function fetchSelfHostedAchievementGroups(
           return [] as SteamAchievement[];
         });
 
+      const catalogueAchievements = ensureArray(catalogue);
       const metadataByName = new Map(
-        ensureArray(catalogue).map((entry) => [entry.name, entry])
+        catalogueAchievements.map((achievement) => [
+          achievement.name,
+          achievement,
+        ])
       );
 
       const resolved = achievements
@@ -425,17 +458,21 @@ async function fetchSelfHostedAchievementGroups(
         );
       }
 
-      return { game, achievements: resolved };
+      return {
+        game:
+          libraryByGame.get(getGameIdentityKey({ shop, objectId })) ??
+          toLibrarylessGame(entry, catalogueAchievements.length),
+        achievements: resolved,
+      };
     })
   );
 
   const achievementsByGame = settled
     .filter(
-      (result): result is PromiseFulfilledResult<AchievementGame | null> =>
+      (result): result is PromiseFulfilledResult<AchievementGame> =>
         result.status === "fulfilled"
     )
     .map(({ value }) => value)
-    .filter((entry): entry is AchievementGame => entry !== null)
     .filter(({ achievements }) => achievements.length > 0);
 
   return buildRecentAchievementGroups(achievementsByGame);
