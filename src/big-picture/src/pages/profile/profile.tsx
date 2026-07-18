@@ -51,12 +51,15 @@ import {
   formatRelativeDate,
   getGameIdentityKey,
   resolveImageSource,
-  getGameLandscapeImageSource,
-  sortFriendsByOnlineStatus,
 } from "../../helpers";
 import { useHeroBackgroundLayers } from "../../components/pages/library/hero/use-hero-background-layers";
 import { useFocusAnimatedCover } from "../../components/pages/library/card-presentation";
-import { useFormat, useLibrary, useUserDetails } from "../../hooks";
+import {
+  useFormat,
+  useLibrary,
+  useUserDetails,
+  useUserPreferences,
+} from "../../hooks";
 import { BIG_PICTURE_SIDEBAR_PROFILE_ID } from "../../layout";
 import type { FocusOverrides } from "../../services";
 import { useNavigationIsFocused } from "../../stores";
@@ -84,6 +87,7 @@ import {
   useProfileLibraryData,
   useRecentAchievements,
 } from "./use-profile-data";
+import { useHasSelfHostedArtwork } from "./self-hosted-profile";
 
 interface ProfileHeroUser {
   id: string;
@@ -210,7 +214,13 @@ function getProfileHeroUser(
       username: userDetails.username,
       displayName: userDetails.displayName,
       profileImageUrl: userDetails.profileImageUrl,
-      backgroundImageUrl: userDetails.backgroundImageUrl,
+      /* Own banner may only exist on the self-hosted server, where the
+         profile fetch picks it up but the official account data does not. */
+      backgroundImageUrl:
+        userDetails.backgroundImageUrl ??
+        (externalProfile?.id === userDetails.id
+          ? externalProfile.backgroundImageUrl
+          : null),
       badges:
         externalProfile?.id === userDetails.id
           ? (externalProfile.badges ?? [])
@@ -1822,6 +1832,12 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const targetHasActiveSubscription = isOwnProfileTarget
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
+  const hasSelfHostedCloud = Boolean(useUserPreferences()?.selfHostedCloudUrl);
+  /* Custom images also come from a self-hosted cloud server, whose members
+     have no official subscription for the check above to find. */
+  const hasSelfHostedArtwork = useHasSelfHostedArtwork(targetUserId);
+  const preferCustomArtwork =
+    targetHasActiveSubscription || hasSelfHostedArtwork;
   const {
     userStats,
     remoteLibraryGames,
@@ -1900,7 +1916,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     useProfileGames(
       profileUser,
       isOwnProfileTarget,
-      targetHasActiveSubscription,
+      preferCustomArtwork,
       library,
       remoteLibraryGames,
       remoteFavoriteGame,
@@ -1909,8 +1925,15 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const totalLibraryGames = profileUser?.isOwnProfile
     ? library.length
     : (userStats?.libraryCount ?? remoteLibraryTotalCount);
+  /* On a self-hosted server achievements come from there rather than a
+     subscription, so the section stays open and resolves to its own "no
+     recent achievements" empty state. Telling these members to buy Hydra
+     Cloud would be wrong: the data is either on the server or nowhere. */
   const canViewRecentAchievements =
-    Boolean(profileUser) && targetHasActiveSubscription;
+    Boolean(profileUser) &&
+    (targetHasActiveSubscription ||
+      hasSelfHostedCloud ||
+      recentAchievementGroups.length > 0);
   const canFocusRecentAchievements =
     canViewRecentAchievements && Boolean(profileUser?.isOwnProfile);
   const {
@@ -1966,7 +1989,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
 
             <ProfileActivity
               games={recentActivityGames}
-              preferCustomArtwork={targetHasActiveSubscription}
+              preferCustomArtwork={preferCustomArtwork}
               firstFocusId={firstActivityFocusId}
               lastFocusId={lastActivityFocusId}
               heroActionsFocusId={heroActionsFocusId}
