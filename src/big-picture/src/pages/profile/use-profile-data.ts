@@ -23,6 +23,9 @@ import {
 const PROFILE_RECENT_ACHIEVEMENT_GROUP_LIMIT = 2;
 const PROFILE_RECENT_ACHIEVEMENTS_PER_GAME = 2;
 const PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE = 12;
+/* Wide enough that the handful of games the self-hosted server reports as
+   recently played are almost certainly present to be named. */
+const PROFILE_SELF_HOSTED_LIBRARY_TAKE = 100;
 const PROFILE_FRIENDS_LIMIT = 5;
 const PROFILE_REMOTE_LIBRARY_PAGE_SIZE = 12;
 const PROFILE_FAVORITE_GAME_LIMIT = 1;
@@ -271,11 +274,17 @@ async function fetchAchievementGames(
   targetUserId: string,
   /* The official API leaves unlock counts off non-subscribers' libraries, so
      the self-hosted path can't filter on them — it already knows which games
-     have unlocks and only needs this list to name and illustrate them. */
-  { requireUnlockedCount = true }: { requireUnlockedCount?: boolean } = {}
+     have unlocks and only needs this list to name and illustrate them. It
+     also has to look up specific games rather than take the top of the list,
+     so it reads a wider page: a recently played game sitting outside the
+     first few would otherwise be dropped for want of a title. */
+  {
+    requireUnlockedCount = true,
+    take = PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE,
+  }: { requireUnlockedCount?: boolean; take?: number } = {}
 ): Promise<UserGame[]> {
   const searchParams = new URLSearchParams({
-    take: String(PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE),
+    take: String(take),
     skip: "0",
     sortBy: "achievementCount",
   });
@@ -344,7 +353,10 @@ async function fetchSelfHostedAchievementGroups(
 ): Promise<ProfileRecentAchievementGroup[]> {
   const [achievementGames, library] = await Promise.all([
     fetchSelfHostedRecentAchievements(targetUserId),
-    fetchAchievementGames(targetUserId, { requireUnlockedCount: false }),
+    fetchAchievementGames(targetUserId, {
+      requireUnlockedCount: false,
+      take: PROFILE_SELF_HOSTED_LIBRARY_TAKE,
+    }),
   ]);
 
   if (!achievementGames.length) return [];
@@ -369,16 +381,16 @@ async function fetchSelfHostedAchievementGroups(
       return {
         game,
         achievements: achievements
-          .map(({ name, unlockedAt }) => {
+          .map(({ name, unlockTime }) => {
             const metadata = metadataByName.get(name);
             if (!metadata) return null;
 
             return {
-              key: `${name}-${unlockedAt}`,
+              key: `${name}-${unlockTime}`,
               icon: metadata.icon,
               displayName: metadata.displayName,
               description: metadata.description ?? "",
-              unlockTime: unlockedAt,
+              unlockTime,
             };
           })
           .filter(

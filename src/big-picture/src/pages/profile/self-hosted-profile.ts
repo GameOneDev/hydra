@@ -115,7 +115,9 @@ export const fetchSelfHostedBanner = async (
 
 export type SelfHostedUnlockedAchievement = {
   name: string;
-  unlockedAt: number;
+  /* Same field the launcher uses for its own achievements, so the value
+     needs no conversion before it reaches the shared rendering path. */
+  unlockTime: number;
 };
 
 export type SelfHostedAchievementGame = {
