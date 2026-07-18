@@ -12,11 +12,13 @@ import type {
 } from "@types";
 import { useCallback, useEffect, useState } from "react";
 import { applySelfHostedArtwork } from "@renderer/services/self-hosted-artwork.service";
+import { logger } from "@renderer/logger";
 import { getGameIdentityKey } from "../../helpers";
 import {
   fetchSelfHostedAchievementSum,
   fetchSelfHostedBanner,
   fetchSelfHostedRecentAchievements,
+  getCatalogueLanguage,
   getProfileArtwork,
 } from "./self-hosted-profile";
 
@@ -351,53 +353,79 @@ async function fetchGameAchievements(
 async function fetchSelfHostedAchievementGroups(
   targetUserId: string
 ): Promise<ProfileRecentAchievementGroup[]> {
-  const [achievementGames, library] = await Promise.all([
+  const [achievementGames, library, language] = await Promise.all([
     fetchSelfHostedRecentAchievements(targetUserId),
     fetchAchievementGames(targetUserId, {
       requireUnlockedCount: false,
       take: PROFILE_SELF_HOSTED_LIBRARY_TAKE,
     }),
+    getCatalogueLanguage(),
   ]);
 
-  if (!achievementGames.length) return [];
+  if (!achievementGames.length) {
+    logger.info("[self-hosted] no synced achievements for", targetUserId);
+    return [];
+  }
 
   const libraryByGame = new Map(
     library.map((game) => [getGameIdentityKey(game), game])
   );
 
+  /* Each step below drops entries it can't resolve. Say which and why:
+     an empty section otherwise looks the same whether the server had
+     nothing, the library couldn't name the game, or the catalogue didn't
+     recognise the achievements. */
   const settled = await Promise.allSettled(
     achievementGames.map(async ({ shop, objectId, achievements }) => {
       const game = libraryByGame.get(getGameIdentityKey({ shop, objectId }));
-      if (!game) return null;
+      if (!game) {
+        logger.info(
+          `[self-hosted] ${shop}/${objectId} has unlocks but is not in the first ${PROFILE_SELF_HOSTED_LIBRARY_TAKE} library entries`
+        );
+        return null;
+      }
 
-      const catalogue = await globalThis.window.electron.hydraApi.get<
-        SteamAchievement[]
-      >(`/games/${shop}/${objectId}/achievements`);
+      const catalogue = await globalThis.window.electron.hydraApi
+        .get<
+          SteamAchievement[]
+        >(`/games/${shop}/${objectId}/achievements?language=${language}`)
+        .catch((error) => {
+          logger.error(
+            `[self-hosted] catalogue lookup failed for ${shop}/${objectId}`,
+            error
+          );
+          return [] as SteamAchievement[];
+        });
 
       const metadataByName = new Map(
         ensureArray(catalogue).map((entry) => [entry.name, entry])
       );
 
-      return {
-        game,
-        achievements: achievements
-          .map(({ name, unlockTime }) => {
-            const metadata = metadataByName.get(name);
-            if (!metadata) return null;
+      const resolved = achievements
+        .map(({ name, unlockTime }) => {
+          const metadata = metadataByName.get(name);
+          if (!metadata) return null;
 
-            return {
-              key: `${name}-${unlockTime}`,
-              icon: metadata.icon,
-              displayName: metadata.displayName,
-              description: metadata.description ?? "",
-              unlockTime,
-            };
-          })
-          .filter(
-            (achievement): achievement is ProfileRecentAchievement =>
-              achievement !== null
-          ),
-      };
+          return {
+            key: `${name}-${unlockTime}`,
+            icon: metadata.icon,
+            displayName: metadata.displayName,
+            description: metadata.description ?? "",
+            unlockTime,
+          };
+        })
+        .filter(
+          (achievement): achievement is ProfileRecentAchievement =>
+            achievement !== null
+        );
+
+      if (!resolved.length) {
+        logger.info(
+          `[self-hosted] none of ${achievements.length} unlocks for ${shop}/${objectId} matched the catalogue's ${metadataByName.size} achievements`
+        );
+      }
+
+      return { game, achievements: resolved };
     })
   );
 

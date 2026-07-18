@@ -17,20 +17,27 @@ import {
 type PreferencesBridge = {
   getUserPreferences?: () => Promise<{
     selfHostedCloudUrl?: string | null;
+    language?: string | null;
   } | null>;
 };
 
-const getSelfHostedCloudUrl = async (): Promise<string | null> => {
+const readPreferences = async () => {
   const electron = globalThis.window.electron as PreferencesBridge;
   if (typeof electron.getUserPreferences !== "function") return null;
 
   try {
-    const preferences = await electron.getUserPreferences();
-    return preferences?.selfHostedCloudUrl ?? null;
+    return await electron.getUserPreferences();
   } catch {
     return null;
   }
 };
+
+/** Catalogue lookups are localised; the launcher always sends a language. */
+export const getCatalogueLanguage = async (): Promise<string> =>
+  (await readPreferences())?.language ?? "en";
+
+const getSelfHostedCloudUrl = async (): Promise<string | null> =>
+  (await readPreferences())?.selfHostedCloudUrl ?? null;
 
 /* One page load fetches its library several times over (paged library,
    achievement leaders, the profile's own embedded lists). Memoising per user
