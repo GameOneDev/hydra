@@ -1,4 +1,12 @@
-import type { ArtworkKind, GameShop, UserGame } from "@types";
+import type { ArtworkKind, GameShop } from "@types";
+
+import { artworkKey, type SelfHostedArtworkMap } from "./self-hosted-artwork";
+
+export {
+  applySelfHostedArtwork,
+  artworkKey,
+  type SelfHostedArtworkMap,
+} from "./self-hosted-artwork";
 
 interface RemoteArtworkEntry {
   shop: GameShop;
@@ -6,13 +14,6 @@ interface RemoteArtworkEntry {
   kind: ArtworkKind;
   url: string;
 }
-
-export type SelfHostedArtworkMap = Map<
-  string,
-  Partial<Record<ArtworkKind, string>>
->;
-
-const artworkKey = (shop: GameShop, objectId: string) => `${shop}:${objectId}`;
 
 /**
  * Custom game images a user has stored on the self-hosted cloud server.
@@ -44,30 +45,4 @@ export const fetchSelfHostedArtwork = async (
   } catch {
     return null;
   }
-};
-
-/**
- * Overlays the self-hosted images onto games from the official API. The
- * official values stay as the fallback, so games customized by a real Hydra
- * Cloud subscriber keep the images that API already returned.
- */
-export const applySelfHostedArtwork = <T extends UserGame>(
-  games: T[],
-  artwork: SelfHostedArtworkMap | null
-): T[] => {
-  if (!artwork?.size) return games;
-
-  return games.map((game) => {
-    const custom = artwork.get(artworkKey(game.shop, game.objectId));
-    if (!custom) return game;
-
-    return {
-      ...game,
-      customLibraryImageUrl: custom.grids ?? game.customLibraryImageUrl,
-      customLibraryHeroImageUrl:
-        custom.heroes ?? game.customLibraryHeroImageUrl,
-      customLogoImageUrl: custom.logos ?? game.customLogoImageUrl,
-      customIconUrl: custom.icons ?? game.customIconUrl,
-    };
-  });
 };

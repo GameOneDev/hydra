@@ -1,4 +1,5 @@
 import { darkenColor, ensureArray } from "@renderer/helpers";
+import { logger } from "@renderer/logger";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import type { Badge, UserProfile, UserStats, UserGame } from "@types";
 import { average } from "color.js";
@@ -339,7 +340,11 @@ export function UserProfileContextProvider({
           );
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        /* This catch covers the whole chain above, not just the request, so
+           a bug in the handling reads to the user as a missing profile.
+           Record what actually failed. */
+        logger.error("Failed to load profile", userId, error);
         showErrorToast(t("user_not_found"));
         navigate(-1);
       });
