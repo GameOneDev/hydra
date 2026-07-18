@@ -68,6 +68,11 @@ export class HydraApi {
     /* Achievement-count fallback for profile stats the official API only
        computes for subscribers */
     "/profile/stats",
+    /* Recently unlocked achievements for a profile. Deliberately not under
+       "/profile/games/achievements": the sync mirrors that path to BOTH this
+       server and the official API, and routing the prefix would swallow the
+       official half. */
+    "/profile/achievements",
     /* Daily playtime buckets for the profile heatmap — only exists on the
        self-hosted server */
     "/profile/playtime",

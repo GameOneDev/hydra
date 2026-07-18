@@ -82,6 +82,7 @@ import {
   useProfileLibraryData,
   useRecentAchievements,
 } from "./use-profile-data";
+import { useHasSelfHostedArtwork } from "./self-hosted-profile";
 
 interface ProfileHeroUser {
   id: string;
@@ -208,7 +209,13 @@ function getProfileHeroUser(
       username: userDetails.username,
       displayName: userDetails.displayName,
       profileImageUrl: userDetails.profileImageUrl,
-      backgroundImageUrl: userDetails.backgroundImageUrl,
+      /* Own banner may only exist on the self-hosted server, where the
+         profile fetch picks it up but the official account data does not. */
+      backgroundImageUrl:
+        userDetails.backgroundImageUrl ??
+        (externalProfile?.id === userDetails.id
+          ? externalProfile.backgroundImageUrl
+          : null),
       badges:
         externalProfile?.id === userDetails.id
           ? (externalProfile.badges ?? [])
@@ -1820,6 +1827,11 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const targetHasActiveSubscription = isOwnProfileTarget
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
+  /* Custom images also come from a self-hosted cloud server, whose members
+     have no official subscription for the check above to find. */
+  const hasSelfHostedArtwork = useHasSelfHostedArtwork(targetUserId);
+  const preferCustomArtwork =
+    targetHasActiveSubscription || hasSelfHostedArtwork;
   const {
     userStats,
     remoteLibraryGames,
@@ -1898,7 +1910,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     useProfileGames(
       profileUser,
       isOwnProfileTarget,
-      targetHasActiveSubscription,
+      preferCustomArtwork,
       library,
       remoteLibraryGames,
       remoteFavoriteGame,
@@ -1907,8 +1919,12 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const totalLibraryGames = profileUser?.isOwnProfile
     ? library.length
     : (userStats?.libraryCount ?? remoteLibraryTotalCount);
+  /* Achievements synced to a self-hosted server produce groups for profiles
+     the official subscription check rejects, so having any is reason enough
+     to show the section. */
   const canViewRecentAchievements =
-    Boolean(profileUser) && targetHasActiveSubscription;
+    Boolean(profileUser) &&
+    (targetHasActiveSubscription || recentAchievementGroups.length > 0);
   const canFocusRecentAchievements =
     canViewRecentAchievements && Boolean(profileUser?.isOwnProfile);
   const {
@@ -1964,7 +1980,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
 
             <ProfileActivity
               games={recentActivityGames}
-              preferCustomArtwork={targetHasActiveSubscription}
+              preferCustomArtwork={preferCustomArtwork}
               firstFocusId={firstActivityFocusId}
               lastFocusId={lastActivityFocusId}
               heroActionsFocusId={heroActionsFocusId}
