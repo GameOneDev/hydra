@@ -54,7 +54,12 @@ import {
 } from "../../helpers";
 import { useHeroBackgroundLayers } from "../../components/pages/library/hero/use-hero-background-layers";
 import { useFocusAnimatedCover } from "../../components/pages/library/card-presentation";
-import { useFormat, useLibrary, useUserDetails } from "../../hooks";
+import {
+  useFormat,
+  useLibrary,
+  useUserDetails,
+  useUserPreferences,
+} from "../../hooks";
 import { BIG_PICTURE_SIDEBAR_PROFILE_ID } from "../../layout";
 import type { FocusOverrides } from "../../services";
 import { useNavigationIsFocused } from "../../stores";
@@ -1827,6 +1832,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const targetHasActiveSubscription = isOwnProfileTarget
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
+  const hasSelfHostedCloud = Boolean(useUserPreferences()?.selfHostedCloudUrl);
   /* Custom images also come from a self-hosted cloud server, whose members
      have no official subscription for the check above to find. */
   const hasSelfHostedArtwork = useHasSelfHostedArtwork(targetUserId);
@@ -1919,12 +1925,15 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const totalLibraryGames = profileUser?.isOwnProfile
     ? library.length
     : (userStats?.libraryCount ?? remoteLibraryTotalCount);
-  /* Achievements synced to a self-hosted server produce groups for profiles
-     the official subscription check rejects, so having any is reason enough
-     to show the section. */
+  /* On a self-hosted server achievements come from there rather than a
+     subscription, so the section stays open and resolves to its own "no
+     recent achievements" empty state. Telling these members to buy Hydra
+     Cloud would be wrong: the data is either on the server or nowhere. */
   const canViewRecentAchievements =
     Boolean(profileUser) &&
-    (targetHasActiveSubscription || recentAchievementGroups.length > 0);
+    (targetHasActiveSubscription ||
+      hasSelfHostedCloud ||
+      recentAchievementGroups.length > 0);
   const canFocusRecentAchievements =
     canViewRecentAchievements && Boolean(profileUser?.isOwnProfile);
   const {
