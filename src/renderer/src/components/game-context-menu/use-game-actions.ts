@@ -39,8 +39,12 @@ export function useGameActions(game: LibraryGame) {
 
   const isClassics = game.shop === "launchbox";
   const hasClassicsDiscs = (game.discs?.length ?? 0) > 0;
+  const launchesThroughSteam =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
   const canPlay =
-    Boolean(game.executablePath) || (isClassics && hasClassicsDiscs);
+    Boolean(game.executablePath) ||
+    launchesThroughSteam ||
+    (isClassics && hasClassicsDiscs);
   const isDeleting = isGameDeleting(game.id);
   const isGameDownloading =
     game.download?.status === "active" && lastPacket?.gameId === game.id;
@@ -145,6 +149,16 @@ export function useGameActions(game: LibraryGame) {
       }
 
       await launchClassicsAttempt(game.selectedDiscPath ?? undefined);
+      return;
+    }
+
+    if (launchesThroughSteam) {
+      try {
+        await window.electron.openSteamGame(game.shop, game.objectId);
+      } catch (error) {
+        showErrorToast(t("launch_failed_toast"));
+        logger.error("Failed to launch game through Steam", error);
+      }
       return;
     }
 

@@ -1,0 +1,16 @@
+# Windows arm64 build configuration.
+# Extends the base config with arch-suffixed artifact names so the assets
+# don't collide with the x64 ones in the same release, and publishes to a
+# dedicated update channel (latest-arm64.yml) because electron-updater has
+# no arch awareness on Windows and would otherwise serve x64 installers to
+# arm64 clients.
+extends: ./electron-builder.yml
+nsis:
+  artifactName: ${name}-${version}-setup-arm64.${ext}
+portable:
+  artifactName: ${name}-${version}-portable-arm64.${ext}
+publish:
+  provider: github
+  owner: GameOneDev
+  repo: hydra
+  channel: latest-arm64
