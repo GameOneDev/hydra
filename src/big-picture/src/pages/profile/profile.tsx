@@ -51,8 +51,6 @@ import {
   formatRelativeDate,
   getGameIdentityKey,
   resolveImageSource,
-  getGameLandscapeImageSource,
-  sortFriendsByOnlineStatus,
 } from "../../helpers";
 import { useHeroBackgroundLayers } from "../../components/pages/library/hero/use-hero-background-layers";
 import { useFocusAnimatedCover } from "../../components/pages/library/card-presentation";
