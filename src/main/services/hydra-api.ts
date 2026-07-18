@@ -55,6 +55,10 @@ export class HydraApi {
 
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
+    /* Custom game images (covers, icons, logos, banners). Uploads already
+       route here via needsSubscription; the read side has no such flag, and
+       these listing endpoints only exist on the self-hosted server. */
+    "/profile/games/artwork",
     "/profile/emulation-saves",
     "/profile/download-sources",
     /* Banner fallback lookup/removal — these endpoints only exist on the

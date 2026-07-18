@@ -8,6 +8,11 @@ import {
 } from "@main/level";
 import { reconcileRemoteArtworkSelection } from "./reconcile-remote-artwork-selection";
 import type { CustomArtworkUrls } from "./reconcile-remote-artwork-selection";
+import {
+  artworkKey,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "./self-hosted-artwork";
 
 type ProfileGame = {
   id: string;
@@ -39,17 +44,44 @@ const reconcileCustomAsset = (
   return remoteValue;
 };
 
-const getRemoteCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
+const getOfficialCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
   customIconUrl: game.customIconUrl,
   customLogoImageUrl: game.customLogoImageUrl,
   customHeroImageUrl: game.customLibraryHeroImageUrl,
   customCoverImageUrl: game.customLibraryImageUrl,
 });
 
+/**
+ * Which custom images this game should end up with.
+ *
+ * With a self-hosted server the images it holds win, since that is where
+ * this launcher uploads them. The official values stay as the fallback so a
+ * real Hydra Cloud subscriber keeps seeing images synced before the server
+ * was configured. When neither side has an image the field resolves to
+ * `null` rather than being left undefined — that is how removing an image on
+ * another device reaches this one.
+ */
+const getRemoteCustomAssets = (
+  game: ProfileGame,
+  selfHostedArtwork: SelfHostedArtworkMap | null
+): CustomArtworkUrls => {
+  const official = getOfficialCustomAssets(game);
+  if (!selfHostedArtwork) return official;
+
+  const artwork = selfHostedArtwork.get(artworkKey(game.shop, game.objectId));
+
+  return {
+    customIconUrl: artwork?.icons ?? official.customIconUrl ?? null,
+    customLogoImageUrl: artwork?.logos ?? official.customLogoImageUrl ?? null,
+    customHeroImageUrl: artwork?.heroes ?? official.customHeroImageUrl ?? null,
+    customCoverImageUrl: artwork?.grids ?? official.customCoverImageUrl ?? null,
+  };
+};
+
 const syncArtworkSelectionWithRemote = async (
   gameKey: string,
   localGame: Game | undefined,
-  remoteGame: ProfileGame
+  remoteCustomAssets: CustomArtworkUrls
 ) => {
   const selection = await gamesArtworkSelectionSublevel.get(gameKey);
   if (!selection) return;
@@ -57,7 +89,7 @@ const syncArtworkSelectionWithRemote = async (
   const { selected, changed } = reconcileRemoteArtworkSelection(
     selection.selected,
     localGame ?? {},
-    getRemoteCustomAssets(remoteGame)
+    remoteCustomAssets
   );
   if (!changed) return;
 
@@ -145,7 +177,8 @@ const mergeExistingGame = (
   localGame: Game,
   remoteGame: ProfileGame,
   collectionIds: string[],
-  remoteAddedToLibraryAt: Date | null
+  remoteAddedToLibraryAt: Date | null,
+  remoteCustomAssets: CustomArtworkUrls
 ): Game => ({
   ...localGame,
   remoteId: remoteGame.id,
@@ -163,26 +196,27 @@ const mergeExistingGame = (
   platform: remoteGame.platform ?? localGame.platform,
   customIconUrl: reconcileCustomAsset(
     localGame.customIconUrl,
-    remoteGame.customIconUrl
+    remoteCustomAssets.customIconUrl
   ),
   customLogoImageUrl: reconcileCustomAsset(
     localGame.customLogoImageUrl,
-    remoteGame.customLogoImageUrl
+    remoteCustomAssets.customLogoImageUrl
   ),
   customHeroImageUrl: reconcileCustomAsset(
     localGame.customHeroImageUrl,
-    remoteGame.customLibraryHeroImageUrl
+    remoteCustomAssets.customHeroImageUrl
   ),
   customCoverImageUrl: reconcileCustomAsset(
     localGame.customCoverImageUrl,
-    remoteGame.customLibraryImageUrl
+    remoteCustomAssets.customCoverImageUrl
   ),
 });
 
 const createLocalGame = (
   remoteGame: ProfileGame,
   collectionIds: string[],
-  addedToLibraryAt: Date | null
+  addedToLibraryAt: Date | null,
+  remoteCustomAssets: CustomArtworkUrls
 ): Game => ({
   objectId: remoteGame.objectId,
   title: remoteGame.title,
@@ -202,13 +236,16 @@ const createLocalGame = (
   achievementCount: remoteGame.achievementCount,
   unlockedAchievementCount: remoteGame.unlockedAchievementCount,
   platform: remoteGame.platform ?? null,
-  customIconUrl: remoteGame.customIconUrl ?? null,
-  customLogoImageUrl: remoteGame.customLogoImageUrl ?? null,
-  customHeroImageUrl: remoteGame.customLibraryHeroImageUrl ?? null,
-  customCoverImageUrl: remoteGame.customLibraryImageUrl ?? null,
+  customIconUrl: remoteCustomAssets.customIconUrl ?? null,
+  customLogoImageUrl: remoteCustomAssets.customLogoImageUrl ?? null,
+  customHeroImageUrl: remoteCustomAssets.customHeroImageUrl ?? null,
+  customCoverImageUrl: remoteCustomAssets.customCoverImageUrl ?? null,
 });
 
-const mergeRemoteGame = async (remoteGame: ProfileGame) => {
+const mergeRemoteGame = async (
+  remoteGame: ProfileGame,
+  selfHostedArtwork: SelfHostedArtworkMap | null
+) => {
   const gameKey = levelKeys.game(remoteGame.shop, remoteGame.objectId);
   const localGame = await gamesSublevel.get(gameKey);
   const hasRemoteCollectionField =
@@ -220,17 +257,27 @@ const mergeRemoteGame = async (remoteGame: ProfileGame) => {
   const remoteAddedToLibraryAt = remoteGame.createdAt
     ? new Date(remoteGame.createdAt)
     : null;
+  const remoteCustomAssets = getRemoteCustomAssets(
+    remoteGame,
+    selfHostedArtwork
+  );
   const mergedGame = localGame
     ? mergeExistingGame(
         localGame,
         remoteGame,
         collectionIds,
-        remoteAddedToLibraryAt
+        remoteAddedToLibraryAt,
+        remoteCustomAssets
       )
-    : createLocalGame(remoteGame, collectionIds, remoteAddedToLibraryAt);
+    : createLocalGame(
+        remoteGame,
+        collectionIds,
+        remoteAddedToLibraryAt,
+        remoteCustomAssets
+      );
 
   await gamesSublevel.put(gameKey, mergedGame);
-  await syncArtworkSelectionWithRemote(gameKey, localGame, remoteGame);
+  await syncArtworkSelectionWithRemote(gameKey, localGame, remoteCustomAssets);
 
   const localGameShopAsset = await gamesShopAssetsSublevel.get(gameKey);
   await gamesShopAssetsSublevel.put(gameKey, {
@@ -251,9 +298,13 @@ const mergeRemoteGame = async (remoteGame: ProfileGame) => {
 
 export const mergeWithRemoteGames = async () => {
   try {
-    const remoteGames = await fetchRemoteGames();
+    const [remoteGames, selfHostedArtwork] = await Promise.all([
+      fetchRemoteGames(),
+      fetchSelfHostedArtwork(),
+    ]);
+
     for (const game of remoteGames) {
-      await mergeRemoteGame(game);
+      await mergeRemoteGame(game, selfHostedArtwork);
     }
   } catch {
     // Keep local library available when remote sync fails.
