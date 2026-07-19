@@ -2,10 +2,10 @@
 
 [<img src="https://raw.githubusercontent.com/hydralauncher/hydra/refs/heads/main/resources/icon.png" width="144"/>](https://help.hydralauncher.gg)
 
-  <h1 align="center">Hydra Launcher — GameOne Fork</h1>
+  <h1 align="center">Hydra Launcher</h1>
 
   <p align="center">
-    <strong>An open-source gaming platform to manage your whole game library — with first-class support for a self-hosted backend so cloud features work against <em>your own</em> server instead of a paid subscription.</strong>
+    <strong>An open-source gaming platform to manage your whole game library</strong>
   </p>
 
 [![build](https://img.shields.io/github/actions/workflow/status/GameOneDev/hydra/build.yml)](https://github.com/GameOneDev/hydra/actions)
@@ -17,7 +17,7 @@
 
 ## About this fork
 
-This is a fork of [hydralauncher/hydra](https://github.com/hydralauncher/hydra) that adds a **self-hosted cloud backend**. In upstream Hydra, features like cloud saves, achievement sync and custom game artwork are gated behind a paid Hydra Cloud subscription. This fork lets you point the launcher at your own server — [**GameOneDev/hydra-server**](https://github.com/GameOneDev/hydra-server) — and get those same features for free, on infrastructure you control.
+This is a fork of [hydralauncher/hydra](https://github.com/hydralauncher/hydra) that adds a **self-hosted cloud backend**. In upstream Hydra, features like cloud saves, achievement sync and custom game artwork are gated behind a paid Hydra Cloud subscription. This fork lets you point the launcher at your own server — [**GameOneDev/hydra-server**](https://github.com/GameOneDev/hydra-server).
 
 You keep using your normal Hydra account. Login, friends, the catalogue and everything else still go through the official servers — only the cloud-storage features are redirected to your own server when you configure one. Leave the server field empty and the launcher behaves exactly like upstream (using the official Hydra Cloud subscription).
 
@@ -28,9 +28,6 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 - **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library.
 - **🖼️ Custom game images** — read and share your own covers, icons, logos and banners from your server, just like Hydra Cloud does for subscribers. Custom images are visible to anyone who views your profile.
 - **🔄 Download-source sync** — keep your download sources synced through your own server.
-- **👤 Self-hosted profile in Big Picture** — profile stats, played games and achievements from your self-hosted server now render in Big Picture (TV/controller) mode.
-- **🌐 Language-aware catalogue** — the catalogue request now sends your language, with logging for entries that get dropped.
-- **🧰 Build & release improvements** — the native Rust addon and Python RPC build automatically via `postinstall`/packaging scripts, and release assets exclude `builder-debug` files.
 
 ## Connecting to your self-hosted server
 
