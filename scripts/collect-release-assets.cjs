@@ -26,6 +26,10 @@ for (const artifact of fs.readdirSync(artifactsDir)) {
   if (!fs.statSync(artifactPath).isDirectory()) continue;
 
   for (const file of fs.readdirSync(artifactPath)) {
+    // Diagnostic dumps of the electron-builder config; kept as CI
+    // artifacts but not worth shipping on the release
+    if (file.startsWith("builder-debug")) continue;
+
     const src = path.join(artifactPath, file);
     if (fs.statSync(src).isDirectory()) continue;
 
