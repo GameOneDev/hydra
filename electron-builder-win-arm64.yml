@@ -6,9 +6,9 @@
 # arm64 clients.
 extends: ./electron-builder.yml
 nsis:
-  artifactName: ${name}-${version}-setup-arm64.${ext}
+  artifactName: ${name}-${version}-windows-arm64-setup.${ext}
 portable:
-  artifactName: ${name}-${version}-portable-arm64.${ext}
+  artifactName: ${name}-${version}-windows-arm64-portable.${ext}
 publish:
   provider: github
   owner: GameOneDev
