@@ -26,7 +26,7 @@ const { autoUpdater } = updater;
 
 autoUpdater.setFeedURL({
   provider: "github",
-  owner: "hydralauncher",
+  owner: "GameOneDev",
   repo: "hydra",
 });
 

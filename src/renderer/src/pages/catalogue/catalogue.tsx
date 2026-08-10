@@ -22,6 +22,7 @@ import { SelectField } from "@renderer/components/select-field/select-field";
 import { setFilters, setPage } from "@renderer/features";
 import { useCatalogue } from "@renderer/hooks/use-catalogue";
 import { useLaunchboxFilters } from "@renderer/hooks/use-launchbox-filters";
+import { logger } from "@renderer/logger";
 import { debounce } from "lodash-es";
 import { useTranslation } from "react-i18next";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
@@ -198,20 +199,31 @@ export default function Catalogue() {
               }
             : baseRequest;
 
-        const response = await window.electron.hydraApi.post<{
-          edges: CatalogueSearchResult[];
-          count: number;
-        }>("/catalogue/search", {
-          data: requestData,
-          needsAuth: false,
-        });
+        try {
+          const response = await window.electron.hydraApi.post<{
+            edges: CatalogueSearchResult[];
+            count: number;
+          }>("/catalogue/search", {
+            data: requestData,
+            needsAuth: false,
+          });
 
-        if (requestId !== requestSequenceRef.current) return;
+          if (requestId !== requestSequenceRef.current) return;
 
-        setResults(response.edges);
-        setResultsMode(mode);
-        setItemsCount(response.count);
-        setIsLoading(false);
+          setResults(response.edges);
+          setResultsMode(mode);
+          setItemsCount(response.count);
+          setIsLoading(false);
+        } catch (error) {
+          logger.error("Catalogue search failed:", error);
+
+          if (requestId === requestSequenceRef.current) {
+            setResults([]);
+            setResultsMode(mode);
+            setItemsCount(0);
+            setIsLoading(false);
+          }
+        }
       },
       500
     )

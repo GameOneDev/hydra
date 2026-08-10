@@ -857,6 +857,12 @@ declare global {
       executablePath: string;
       iconUrl: string | null;
     } | null>;
+    importSteamGames: () => Promise<{
+      importedGames: { title: string; objectId: string }[];
+      totalInstalled: number;
+    }>;
+    openSteamGame: (shop: GameShop, objectId: string) => Promise<void>;
+    syncSteamPlaytime: () => Promise<number>;
     onExtractionComplete: (
       cb: (shop: GameShop, objectId: string) => void
     ) => () => Electron.IpcRenderer;
