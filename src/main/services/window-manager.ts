@@ -2,8 +2,9 @@ import { is } from "@electron-toolkit/utils";
 import { isStaging } from "@main/constants";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import icon from "@resources/icon.png?asset";
+import trayIconDark from "@resources/tray-icon-dark.png?asset";
 import trayIcon from "@resources/tray-icon.png?asset";
-import { AuthPage, generateAchievementCustomNotificationTest } from "@shared";
+import { AuthPage } from "@shared";
 import type {
   AchievementCustomNotificationPosition,
   AchievementNotificationInfo,
@@ -19,6 +20,7 @@ import {
   WebContentsView,
   app,
   nativeImage,
+  nativeTheme,
   screen,
   shell,
 } from "electron";
@@ -44,8 +46,6 @@ interface CreateMainWindowOptions {
 
 export class WindowManager {
   private static mainWindowInstance: Electron.BrowserWindow | null = null;
-  private static notificationWindowInstance: Electron.BrowserWindow | null =
-    null;
   private static gameLauncherWindowInstance: Electron.BrowserWindow | null =
     null;
   private static bigPicture: Electron.BrowserWindow | null = null;
@@ -70,10 +70,6 @@ export class WindowManager {
     return this.mainWindowInstance;
   }
 
-  public static get notificationWindow(): Electron.BrowserWindow | null {
-    return this.notificationWindowInstance;
-  }
-
   public static get gameLauncherWindow(): Electron.BrowserWindow | null {
     return this.gameLauncherWindowInstance;
   }
@@ -82,12 +78,17 @@ export class WindowManager {
     this.mainWindowInstance = null;
   }
 
+  private static readonly DEFAULT_WINDOW_WIDTH = 1200;
+  private static readonly DEFAULT_WINDOW_HEIGHT = 860;
+  private static readonly MIN_WINDOW_WIDTH = 1024;
+  private static readonly MIN_WINDOW_HEIGHT = 600;
+
   private static initialConfigInitializationMainWindow: Electron.BrowserWindowConstructorOptions =
     {
-      width: 1200,
-      height: 860,
-      minWidth: 1024,
-      minHeight: 860,
+      width: WindowManager.DEFAULT_WINDOW_WIDTH,
+      height: WindowManager.DEFAULT_WINDOW_HEIGHT,
+      minWidth: WindowManager.MIN_WINDOW_WIDTH,
+      minHeight: WindowManager.MIN_WINDOW_HEIGHT,
       icon,
       trafficLightPosition: { x: 16, y: 16 },
       webPreferences: {
@@ -117,7 +118,7 @@ export class WindowManager {
     return version.replaceAll(".", "-");
   }
 
-  private static async loadWindowURL(window: BrowserWindow, hash: string = "") {
+  public static async loadWindowURL(window: BrowserWindow, hash: string = "") {
     // HMR for renderer base on electron-vite cli.
     // Load the remote URL for development or the local html file for production.
     if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
@@ -197,7 +198,55 @@ export class WindowManager {
         valueEncoding: "json",
       }
     );
-    return data ?? { isMaximized: false, height: 860, width: 1200 };
+    return (
+      data ?? {
+        isMaximized: false,
+        height: this.DEFAULT_WINDOW_HEIGHT,
+        width: this.DEFAULT_WINDOW_WIDTH,
+      }
+    );
+  }
+
+  private static fitToWorkArea<
+    T extends { x?: number; y?: number; width?: number; height?: number },
+  >(bounds: T) {
+    const savedWidth = bounds.width ?? this.DEFAULT_WINDOW_WIDTH;
+    const savedHeight = bounds.height ?? this.DEFAULT_WINDOW_HEIGHT;
+    const savedX = bounds.x;
+    const savedY = bounds.y;
+    const hasSavedPosition = savedX !== undefined && savedY !== undefined;
+
+    const { workArea } = hasSavedPosition
+      ? screen.getDisplayMatching({
+          x: savedX,
+          y: savedY,
+          width: savedWidth,
+          height: savedHeight,
+        })
+      : screen.getPrimaryDisplay();
+
+    const minWidth = Math.min(this.MIN_WINDOW_WIDTH, workArea.width);
+    const minHeight = Math.min(this.MIN_WINDOW_HEIGHT, workArea.height);
+
+    const width = Math.max(minWidth, Math.min(savedWidth, workArea.width));
+    const height = Math.max(minHeight, Math.min(savedHeight, workArea.height));
+
+    if (!hasSavedPosition) {
+      return { ...bounds, minWidth, minHeight, width, height };
+    }
+
+    const maxX = Math.max(workArea.x, workArea.x + workArea.width - width);
+    const maxY = Math.max(workArea.y, workArea.y + workArea.height - height);
+
+    return {
+      ...bounds,
+      minWidth,
+      minHeight,
+      width,
+      height,
+      x: Math.min(Math.max(savedX, workArea.x), maxX),
+      y: Math.min(Math.max(savedY, workArea.y), maxY),
+    };
   }
 
   private static updateInitialConfig(
@@ -221,7 +270,7 @@ export class WindowManager {
     const { isMaximized = false, ...configWithoutMaximized } =
       await this.loadScreenConfig();
 
-    this.updateInitialConfig(configWithoutMaximized);
+    this.updateInitialConfig(this.fitToWorkArea(configWithoutMaximized));
 
     const mainWindow = new BrowserWindow(
       this.initialConfigInitializationMainWindow
@@ -364,8 +413,12 @@ export class WindowManager {
         ? {
             x: undefined,
             y: undefined,
-            height: this.initialConfigInitializationMainWindow.height ?? 860,
-            width: this.initialConfigInitializationMainWindow.width ?? 1200,
+            height:
+              this.initialConfigInitializationMainWindow.height ??
+              this.DEFAULT_WINDOW_HEIGHT,
+            width:
+              this.initialConfigInitializationMainWindow.width ??
+              this.DEFAULT_WINDOW_WIDTH,
             isMaximized: true,
           }
         : { ...lastBounds, isMaximized };
@@ -709,68 +762,6 @@ export class WindowManager {
     }
   }
 
-  private static readonly NOTIFICATION_WINDOW_WIDTH = 360;
-  private static readonly NOTIFICATION_WINDOW_HEIGHT = 140;
-
-  private static async getNotificationWindowPosition(
-    position: AchievementCustomNotificationPosition | undefined
-  ) {
-    const display = screen.getPrimaryDisplay();
-    const {
-      x: displayX,
-      y: displayY,
-      width: displayWidth,
-      height: displayHeight,
-    } = display.bounds;
-
-    if (position === "bottom-left") {
-      return {
-        x: displayX,
-        y: displayY + displayHeight - this.NOTIFICATION_WINDOW_HEIGHT,
-      };
-    }
-
-    if (position === "bottom-center") {
-      return {
-        x: displayX + (displayWidth - this.NOTIFICATION_WINDOW_WIDTH) / 2,
-        y: displayY + displayHeight - this.NOTIFICATION_WINDOW_HEIGHT,
-      };
-    }
-
-    if (position === "bottom-right") {
-      return {
-        x: displayX + displayWidth - this.NOTIFICATION_WINDOW_WIDTH,
-        y: displayY + displayHeight - this.NOTIFICATION_WINDOW_HEIGHT,
-      };
-    }
-
-    if (position === "top-left") {
-      return {
-        x: displayX,
-        y: displayY,
-      };
-    }
-
-    if (position === "top-center") {
-      return {
-        x: displayX + (displayWidth - this.NOTIFICATION_WINDOW_WIDTH) / 2,
-        y: displayY,
-      };
-    }
-
-    if (position === "top-right") {
-      return {
-        x: displayX + displayWidth - this.NOTIFICATION_WINDOW_WIDTH,
-        y: displayY,
-      };
-    }
-
-    return {
-      x: displayX,
-      y: displayY,
-    };
-  }
-
   public static sendAchievementToFocusedWindow(
     position: AchievementCustomNotificationPosition,
     achievements: AchievementNotificationInfo[]
@@ -789,101 +780,6 @@ export class WindowManager {
     }
 
     return false;
-  }
-
-  public static async createNotificationWindow() {
-    if (this.notificationWindow) return;
-
-    if (process.platform === "darwin" || process.platform === "linux") {
-      return;
-    }
-
-    const userPreferences = await db.get<string, UserPreferences | undefined>(
-      levelKeys.userPreferences,
-      {
-        valueEncoding: "json",
-      }
-    );
-
-    if (
-      userPreferences?.achievementNotificationsEnabled === false ||
-      userPreferences?.achievementCustomNotificationsEnabled === false
-    ) {
-      return;
-    }
-
-    const { x, y } = await this.getNotificationWindowPosition(
-      userPreferences?.achievementCustomNotificationPosition
-    );
-
-    const notificationWindow = new BrowserWindow({
-      transparent: true,
-      maximizable: false,
-      autoHideMenuBar: true,
-      minimizable: false,
-      backgroundColor: "#00000000",
-      focusable: false,
-      skipTaskbar: true,
-      frame: false,
-      width: this.NOTIFICATION_WINDOW_WIDTH,
-      height: this.NOTIFICATION_WINDOW_HEIGHT,
-      x,
-      y,
-      webPreferences: {
-        preload: path.join(__dirname, "../preload/index.mjs"),
-        sandbox: false,
-      },
-    });
-    this.notificationWindowInstance = notificationWindow;
-    notificationWindow.setIgnoreMouseEvents(true);
-
-    notificationWindow.setAlwaysOnTop(true, "screen-saver", 1);
-    this.loadWindowURL(notificationWindow, "achievement-notification");
-
-    if (!app.isPackaged || isStaging) {
-      notificationWindow.webContents.openDevTools();
-    }
-  }
-
-  public static async showAchievementTestNotification() {
-    const userPreferences = await db.get<string, UserPreferences>(
-      levelKeys.userPreferences,
-      {
-        valueEncoding: "json",
-      }
-    );
-
-    const language = userPreferences.language ?? "en";
-    const position =
-      userPreferences.achievementCustomNotificationPosition ?? "top-left";
-    const testAchievements = [
-      generateAchievementCustomNotificationTest(t, language),
-      generateAchievementCustomNotificationTest(t, language, {
-        isRare: true,
-        isHidden: true,
-      }),
-      generateAchievementCustomNotificationTest(t, language, {
-        isPlatinum: true,
-      }),
-    ];
-
-    if (process.platform === "linux") {
-      this.sendAchievementToFocusedWindow(position, testAchievements);
-      return;
-    }
-
-    this.notificationWindow?.webContents.send(
-      "on-achievement-unlocked",
-      position,
-      testAchievements
-    );
-  }
-
-  public static async closeNotificationWindow() {
-    if (this.notificationWindow) {
-      this.notificationWindow.close();
-      this.notificationWindowInstance = null;
-    }
   }
 
   public static openEditorWindow(themeId: string) {
@@ -1054,6 +950,31 @@ export class WindowManager {
     this.mainWindow?.focus();
   }
 
+  public static redirectToMainWindow(hash: string) {
+    this.redirect(hash);
+
+    if (this.bigPicture && !this.bigPicture.isDestroyed()) {
+      this.bigPicture.close();
+      return;
+    }
+
+    this.openMainWindow();
+  }
+
+  public static redirectToGameWindow(hash: string) {
+    if (this.bigPicture && !this.bigPicture.isDestroyed()) {
+      this.bigPicture.webContents.send(
+        "on-navigate",
+        `/big-picture/${hash.replace(/^\/+/, "")}`
+      );
+      this.bigPicture.show();
+      this.bigPicture.focus();
+      return;
+    }
+
+    this.redirectToMainWindow(hash);
+  }
+
   public static async createSystemTray(language: string) {
     let tray: Tray;
 
@@ -1062,6 +983,17 @@ export class WindowManager {
         .createFromPath(trayIcon)
         .resize({ width: 24, height: 24 });
       tray = new Tray(macIcon);
+    } else if (process.platform === "win32") {
+      const getWindowsTrayIcon = () =>
+        nativeTheme.shouldUseDarkColorsForSystemIntegratedUI
+          ? trayIcon
+          : trayIconDark;
+
+      tray = new Tray(getWindowsTrayIcon());
+
+      nativeTheme.on("updated", () => {
+        tray.setImage(getWindowsTrayIcon());
+      });
     } else {
       tray = new Tray(trayIcon);
     }

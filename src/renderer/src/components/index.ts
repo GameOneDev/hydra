@@ -1,3 +1,4 @@
+export * from "./achievement-progress/achievement-progress";
 export * from "./avatar/avatar";
 export * from "./bottom-panel/bottom-panel";
 export * from "./button/button";
@@ -27,6 +28,7 @@ export * from "./create-collection-modal/create-collection-modal";
 export * from "./progress-bar/progress-bar";
 export * from "./classics-onboarding-modal/classics-onboarding-modal";
 export * from "./classics-scan-indicator/classics-scan-indicator";
+export * from "./retroarch-scan-indicator/retroarch-scan-indicator";
 export * from "./classics-spinner/classics-spinner";
 export * from "./error-boundary/error-fallback";
 export * from "./online-friends-bar/online-friends-bar";

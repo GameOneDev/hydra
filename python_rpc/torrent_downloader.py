@@ -122,9 +122,97 @@ class TorrentDownloader:
             max_download_speed if max_download_speed and max_download_speed > 0 else 0
         )
         try:
-            self.session.set_download_rate_limit(download_limit)
+            self.session.apply_settings({"download_rate_limit": download_limit})
+            return
         except Exception:
             pass
+
+        legacy_setter = getattr(self.session, "set_download_rate_limit", None)
+        if callable(legacy_setter):
+            try:
+                legacy_setter(download_limit)
+            except Exception:
+                pass
+
+    def _build_add_torrent_params(
+        self,
+        magnet: str,
+        save_path: str,
+        flags,
+        trackers: Optional[List[str]] = None,
+    ):
+        try:
+            params = lt.parse_magnet_uri(magnet)
+        except Exception as error:
+            raise ValueError("invalid_magnet") from error
+
+        params.save_path = save_path
+        params.flags = params.flags | flags
+
+        extra_trackers = trackers or []
+        magnet_trackers = list(params.trackers)
+        known_trackers = set(magnet_trackers)
+
+        tiers = list(params.tracker_tiers)[: len(magnet_trackers)]
+        tiers.extend([0] * (len(magnet_trackers) - len(tiers)))
+
+        for tracker in extra_trackers:
+            if tracker in known_trackers:
+                continue
+
+            magnet_trackers.append(tracker)
+            known_trackers.add(tracker)
+            tiers.append(0)
+
+        fallback_tier = max(tiers) + 1 if tiers else 0
+
+        for tracker in self.trackers:
+            if tracker in known_trackers:
+                continue
+
+            magnet_trackers.append(tracker)
+            known_trackers.add(tracker)
+            tiers.append(fallback_tier)
+
+        params.trackers = magnet_trackers
+        params.tracker_tiers = tiers
+
+        return params
+
+    def _apply_trackers(self, trackers: Optional[List[str]] = None):
+        if not self.torrent_handle or not self.torrent_handle.is_valid() or not trackers:
+            return
+
+        try:
+            existing_urls = {t.url for t in self.torrent_handle.trackers()}
+        except Exception:
+            existing_urls = set()
+
+        for tracker in trackers:
+            if tracker in existing_urls:
+                continue
+            try:
+                self.torrent_handle.add_tracker(lt.announce_entry(tracker))
+            except Exception:
+                self.logger.warning(
+                    "Failed to add tracker %s", tracker, exc_info=True
+                )
+
+    def _get_torrent_info(self):
+        if not self.torrent_handle or not self.torrent_handle.is_valid():
+            return None
+
+        getter = getattr(self.torrent_handle, "torrent_file", None) or getattr(
+            self.torrent_handle, "get_torrent_info", None
+        )
+
+        if not callable(getter):
+            return None
+
+        try:
+            return getter()
+        except RuntimeError:
+            return None
 
     def _wait_for_metadata(self, timeout_seconds: float = 30.0, poll_interval: float = 0.25):
         if not self.torrent_handle or not self.torrent_handle.is_valid():
@@ -199,6 +287,7 @@ class TorrentDownloader:
         save_path: str,
         file_indices: Optional[List[int]] = None,
         wait_timeout_seconds: float = 30.0,
+        trackers: Optional[List[str]] = None,
     ):
         selective_download = file_indices is not None
 
@@ -207,6 +296,7 @@ class TorrentDownloader:
                 if not selective_download:
                     self.torrent_handle.set_flags(lt.torrent_flags.auto_managed)
                     self.torrent_handle.resume()
+                    self._apply_trackers(trackers)
                     return
 
                 self.torrent_handle.pause()
@@ -221,15 +311,15 @@ class TorrentDownloader:
             else:
                 initial_flags |= lt.torrent_flags.auto_managed
 
-            params = {
-                "url": magnet,
-                "save_path": save_path,
-                "trackers": self.trackers,
-                "flags": initial_flags,
-            }
+            params = self._build_add_torrent_params(
+                magnet, save_path, initial_flags, trackers
+            )
 
             if self.torrent_handle is None or not self.torrent_handle.is_valid():
                 self.torrent_handle = self.session.add_torrent(params)
+
+            if trackers:
+                self._apply_trackers(trackers)
 
         self.selected_file_indices = None
         self.selected_size_bytes = None
@@ -242,11 +332,11 @@ class TorrentDownloader:
                 if not self._wait_for_metadata(timeout_seconds=wait_timeout_seconds):
                     raise TimeoutError("metadata_timeout")
 
-                try:
-                    info = self.torrent_handle.get_torrent_info()
-                    files_storage = info.files()
-                except RuntimeError as error:
-                    raise RuntimeError("metadata_incomplete") from error
+                info = self._get_torrent_info()
+                if info is None:
+                    raise RuntimeError("metadata_incomplete")
+
+                files_storage = info.files()
 
                 self.torrent_handle.pause()
                 self.torrent_handle.unset_flags(lt.torrent_flags.auto_managed)
@@ -267,10 +357,9 @@ class TorrentDownloader:
         if not self._wait_for_metadata(timeout_seconds=timeout_seconds):
             raise TimeoutError("metadata_timeout")
 
-        try:
-            info = self.torrent_handle.get_torrent_info()
-        except RuntimeError as error:
-            raise RuntimeError("metadata_incomplete") from error
+        info = self._get_torrent_info()
+        if info is None:
+            raise RuntimeError("metadata_incomplete")
 
         files_storage = info.files()
         file_count = files_storage.num_files()
@@ -311,7 +400,11 @@ class TorrentDownloader:
 
     def abort_session(self):
         self.cancel_download()
-        self.session.abort()
+
+        abort = getattr(self.session, "abort", None)
+        if callable(abort):
+            abort()
+
         self.torrent_handle = None
         self.selected_file_indices = None
         self.selected_size_bytes = None
@@ -332,10 +425,7 @@ class TorrentDownloader:
         if not status.has_metadata:
             return None
 
-        try:
-            return self.torrent_handle.get_torrent_info()
-        except RuntimeError:
-            return None
+        return self._get_torrent_info()
 
     def _get_file_size(self, status, info):
         total_wanted = getattr(status, "total_wanted", 0)

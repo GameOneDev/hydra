@@ -143,7 +143,6 @@ export default function Catalogue() {
   }, [filters, deferredTitleFilter]);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [isFetching, setIsFetching] = useState(false);
 
   const [results, setResults] = useState<CatalogueSearchResult[]>([]);
   const [resultsMode, setResultsMode] = useState(mode);
@@ -224,10 +223,6 @@ export default function Catalogue() {
             setItemsCount(0);
             setIsLoading(false);
           }
-        } finally {
-          if (requestId === requestSequenceRef.current) {
-            setIsFetching(false);
-          }
         }
       },
       500
@@ -246,7 +241,6 @@ export default function Catalogue() {
 
   useEffect(() => {
     const requestId = ++requestSequenceRef.current;
-    setIsFetching(true);
 
     if (!hasResultsRef.current) {
       setIsLoading(true);
@@ -761,10 +755,6 @@ export default function Catalogue() {
             ))
           ) : (
             results.map((game) => <GameItem key={game.id} game={game} />)
-          )}
-
-          {isFetching && !showSkeleton && (
-            <span className="catalogue__result-count">{t("loading")}</span>
           )}
 
           <div className="catalogue__pagination-container">

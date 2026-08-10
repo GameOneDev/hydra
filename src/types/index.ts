@@ -1,6 +1,11 @@
 import type { Cracker, DownloadSourceStatus, Downloader } from "@shared";
 import type { SteamAppDetails } from "./steam.types";
-import type { Download, Game, Subscription } from "./level.types";
+import type {
+  AchievementCustomNotificationPosition,
+  Download,
+  Game,
+  Subscription,
+} from "./level.types";
 import type { GameShop, UnlockedAchievement } from "./game.types";
 import type { ArtworkAssetType } from "./artwork.types";
 
@@ -11,7 +16,8 @@ export type HydraCloudFeature =
   | "achievements"
   | "backup"
   | "achievements-points"
-  | "customization";
+  | "customization"
+  | "vikingfile";
 
 export interface DiskUsage {
   free: number;
@@ -66,6 +72,7 @@ export type ShopDetails = SteamAppDetails & {
   platform?: string;
   skus?: string[];
   retroAchievementsGameId?: number | null;
+  descriptionLanguage?: string;
 };
 
 export type ShopDetailsWithAssets = ShopDetails & {
@@ -120,6 +127,7 @@ export interface GameRunning {
   id: string;
   title: string;
   iconUrl: string | null;
+  coverImageUrl?: string | null;
   objectId: string;
   shop: GameShop;
   sessionDurationInMillis: number;
@@ -379,6 +387,21 @@ export interface AchievementNotificationInfo {
   points?: number;
 }
 
+export type AchievementNotificationRequest = {
+  id: string;
+  position: AchievementCustomNotificationPosition;
+} & (
+  | {
+      type: "achievement";
+      achievement: AchievementNotificationInfo;
+    }
+  | {
+      type: "combined";
+      gameCount: number;
+      achievementCount: number;
+    }
+);
+
 export interface GameArtifact {
   id: string;
   artifactLengthInBytes: number;
@@ -415,6 +438,10 @@ export interface SharedGameArtifact extends GameArtifact {
     profileImageUrl: string | null;
   };
 }
+
+export type LegacySaveExportResult =
+  | { status: "saved"; filePath: string }
+  | { status: "cancelled" };
 
 export type NotificationType =
   | "FRIEND_REQUEST_RECEIVED"
@@ -600,4 +627,6 @@ export * from "./how-long-to-beat.types";
 export * from "./level.types";
 export * from "./theme.types";
 export * from "./emulator.types";
+export * from "./retroarch.types";
 export * from "./artwork.types";
+export * from "./cloud-save.types";

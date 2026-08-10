@@ -14,8 +14,11 @@ export const DOWNLOADER_NAME = {
   [Downloader.Rootz]: "Rootz",
   [Downloader.Premiumize]: "Premiumize",
   [Downloader.AllDebrid]: "AllDebrid",
+  [Downloader.ArchiveOrg]: "Archive.org",
 };
 
 export const MAX_MINUTES_TO_SHOW_IN_PLAYTIME = 120;
+
+export const MAX_DOWNLOAD_SPEED_HISTORY = 300;
 
 export const THEME_WEB_STORE_URL = "https://hydrathemes.shop";

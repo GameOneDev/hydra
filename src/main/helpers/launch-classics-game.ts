@@ -14,6 +14,7 @@ import type {
 import { isGamemodeAvailable } from "./is-gamemode-available";
 import { isMangohudAvailable } from "./is-mangohud-available";
 import { resolveLaunchCommand } from "./resolve-launch-command";
+import { spawnDetachedEmulator } from "./spawn-detached-emulator";
 
 export class EmulatorNotConfiguredError extends Error {
   code = "EMULATOR_NOT_CONFIGURED" as const;
@@ -53,6 +54,20 @@ export class PkgUnreadableError extends Error {
 
 const isPkgPath = (filePath: string): boolean =>
   filePath.toLowerCase().endsWith(".pkg");
+
+const isMdsPath = (filePath: string): boolean =>
+  filePath.toLowerCase().endsWith(".mds");
+
+const resolvePs2MdsBootTarget = async (mdsPath: string): Promise<string> => {
+  const mdf = await emulators.resolveSidecarWithExt(mdsPath, ".mdf");
+  if (!mdf) {
+    logger.warn("No .mdf sidecar next to .mds, booting the .mds as-is", {
+      mdsPath,
+    });
+    return mdsPath;
+  }
+  return mdf;
+};
 
 const spawnRpcs3PkgInstall = (
   executableTarget: string,
@@ -139,7 +154,7 @@ const assertBiosInstalled = async (
   }
 };
 
-const resolveEmulatorWrappers = (
+export const resolveEmulatorWrappers = (
   preferences: UserPreferences | null,
   game: Game | undefined
 ): string[] => {
@@ -166,6 +181,7 @@ export const launchClassicsGame = async (
   if (!config.executablePath || !existsSync(config.executablePath)) {
     throw new EmulatorNotConfiguredError(system);
   }
+  const configuredExecutablePath = config.executablePath;
 
   // DuckStation/PCSX2 silently crash on launch when no BIOS is present, and the
   // emulator is spawned detached with stdio "ignore" so its own error never
@@ -193,15 +209,22 @@ export const launchClassicsGame = async (
     throw new EmulatorNotConfiguredError(system);
   }
 
-  const bootTarget =
-    system === "ps3" && isPkgPath(discPath)
-      ? await resolvePs3PkgBootTarget({
-          executablePath: config.executablePath,
-          executableTarget,
-          pkgPath: discPath,
-          system,
-        })
-      : discPath;
+  const resolveBootTarget = async (): Promise<string> => {
+    if (system === "ps3" && isPkgPath(discPath)) {
+      return resolvePs3PkgBootTarget({
+        executablePath: configuredExecutablePath,
+        executableTarget,
+        pkgPath: discPath,
+        system,
+      });
+    }
+    if (config.binary === "pcsx2" && isMdsPath(discPath)) {
+      return resolvePs2MdsBootTarget(discPath);
+    }
+    return discPath;
+  };
+
+  const bootTarget = await resolveBootTarget();
 
   if (game) {
     await gamesSublevel.put(gameKey, {
@@ -223,33 +246,11 @@ export const launchClassicsGame = async (
   const workingDirectory = path.dirname(executableTarget);
 
   try {
-    const processRef = spawn(
-      resolvedLaunchCommand.command,
-      resolvedLaunchCommand.args,
-      {
-        shell: false,
-        detached: true,
-        stdio: "ignore",
-        cwd: workingDirectory,
-        env: {
-          ...process.env,
-          ...resolvedLaunchCommand.env,
-        },
-      }
+    const processRef = await spawnDetachedEmulator(
+      resolvedLaunchCommand,
+      workingDirectory,
+      () => new EmulatorNotConfiguredError(system)
     );
-
-    await new Promise<void>((resolve, reject) => {
-      const onSpawn = () => {
-        processRef.off("error", onError);
-        resolve();
-      };
-      const onError = () => {
-        processRef.off("spawn", onSpawn);
-        reject(new EmulatorNotConfiguredError(system));
-      };
-      processRef.once("spawn", onSpawn);
-      processRef.once("error", onError);
-    });
 
     if (game) {
       await emulators.startEmulatorSession({

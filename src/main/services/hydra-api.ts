@@ -5,13 +5,13 @@ import { uploadGamesBatch } from "./library-sync";
 import { clearGamesRemoteIds } from "./library-sync/clear-games-remote-id";
 import { networkLogger as logger } from "./logger";
 import { UserNotLoggedInError, SubscriptionRequiredError } from "@shared";
-import { omit } from "lodash-es";
 import { appVersion } from "@main/constants";
 import { getUserData } from "./user/get-user-data";
 import { db } from "@main/level";
 import { levelKeys } from "@main/level/sublevels";
 import type { Auth, User, UserPreferences } from "@types";
 import { SSEClient } from "./sse";
+import { sanitizeNetworkLogPayload } from "./network-log-payload";
 
 export interface HydraApiOptions {
   needsAuth?: boolean;
@@ -19,6 +19,7 @@ export interface HydraApiOptions {
   ifModifiedSince?: Date;
   ifNoneMatch?: string;
   validateStatus?: (status: number) => boolean;
+  signal?: AbortSignal;
 }
 
 interface HydraApiUserAuth {
@@ -52,6 +53,13 @@ export class HydraApi {
      API to identify the user). */
   private static cloudInstance: AxiosInstance | null = null;
   private static selfHostedCloudUrl: string | null = null;
+
+  /* Features the configured self-hosted server reports at /capabilities.
+     `null` means "not known yet or the server didn't answer" — treated as
+     supporting nothing, so a feature is only enabled once the server has
+     actually claimed it. */
+  private static selfHostedFeatures: Set<string> | null = null;
+  private static selfHostedVersion: string | null = null;
 
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
@@ -89,6 +97,12 @@ export class HydraApi {
     "/presigned-urls/background-image",
   ];
 
+  /* Subscriber-only services that are NOT storage and only the official API
+     can perform, even though they carry needsSubscription. Hoster unlocking
+     resolves a download link through Hydra's own credentials with that
+     file host — nothing a self-hosted server could stand in for. */
+  private static readonly OFFICIAL_ONLY_PREFIXES = ["/hosters/"];
+
   /* Expiration of the user's real official subscription, unaffected by the
      synthetic self-hosted one injected into user data. */
   private static realSubscriptionExpiresAt: Date | null = null;
@@ -121,8 +135,77 @@ export class HydraApi {
     return this.selfHostedCloudUrl;
   }
 
+  public static getSelfHostedVersion() {
+    return this.selfHostedVersion;
+  }
+
+  /**
+   * Whether the cloud server backing the subscription-gated features supports
+   * `feature`.
+   *
+   * Without a self-hosted server everything runs against official Hydra
+   * Cloud, which by definition implements whatever the launcher ships. With
+   * one configured we only enable a feature the server has actually
+   * advertised: the launcher routes these calls to it, and upstream keeps
+   * adding endpoints that a self-hosted deployment may not have yet. Failing
+   * closed turns "silently broken mid-sync" into "feature stays off".
+   */
+  public static supportsCloudFeature(feature: string) {
+    if (!this.isSelfHostedCloudEnabled()) return true;
+    return this.selfHostedFeatures?.has(feature) ?? false;
+  }
+
+  /**
+   * Reads /capabilities from the self-hosted server. Unauthenticated and
+   * cheap, so it runs on every setup and whenever the URL changes.
+   *
+   * Servers predating this endpoint 404, which lands in the catch and leaves
+   * the feature set empty — exactly the conservative answer we want.
+   */
+  private static async refreshSelfHostedCapabilities() {
+    this.selfHostedFeatures = null;
+    this.selfHostedVersion = null;
+
+    const baseUrl = this.selfHostedCloudUrl;
+    if (!baseUrl) return;
+
+    try {
+      const { data } = await axios.get<{
+        version?: string;
+        features?: string[];
+      }>(`${baseUrl}/capabilities`, {
+        timeout: 10_000,
+        headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+      });
+
+      this.selfHostedFeatures = new Set(
+        Array.isArray(data?.features) ? data.features : []
+      );
+      this.selfHostedVersion = data?.version ?? null;
+
+      logger.log(
+        "self-hosted cloud capabilities",
+        this.selfHostedVersion,
+        [...this.selfHostedFeatures].join(", ")
+      );
+    } catch (err) {
+      logger.error(
+        "failed to read self-hosted cloud capabilities — features gated on it stay disabled",
+        err
+      );
+    }
+  }
+
   private static resolveInstance(url: string, options?: HydraApiOptions) {
     if (!this.cloudInstance) return this.instance;
+
+    /* `needsSubscription` normally means "storage feature" and routes here,
+       but upstream also uses the flag for subscriber-only services the
+       official API alone provides. Those must never be re-routed: a
+       self-hosted storage server has no way to unlock a file host. */
+    if (this.OFFICIAL_ONLY_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+      return this.instance;
+    }
 
     const isCloudRoute =
       options?.needsSubscription === true ||
@@ -144,6 +227,14 @@ export class HydraApi {
 
     const expiresAt = new Date(this.userAuth.subscription?.expiresAt ?? 0);
     return expiresAt > new Date();
+  }
+
+  public static updateUserSubscription(
+    subscription?: { expiresAt: Date | string | null } | null
+  ) {
+    this.userAuth.subscription = subscription
+      ? { expiresAt: subscription.expiresAt }
+      : null;
   }
 
   static async handleExternalAuth(uri: string) {
@@ -168,6 +259,11 @@ export class HydraApi {
       subscription: null,
     };
 
+    const { AchievementWatcherManager } = await import(
+      "./achievements/achievement-watcher-manager"
+    );
+    AchievementWatcherManager.resetSessionState();
+
     logger.log(
       "Sign in received. Token expiration timestamp:",
       tokenExpirationTimestamp
@@ -186,11 +282,11 @@ export class HydraApi {
 
     await getUserData().then((userDetails) => {
       if (userDetails?.subscription) {
-        this.userAuth.subscription = {
+        this.updateUserSubscription({
           expiresAt: userDetails.subscription.expiresAt
             ? new Date(userDetails.subscription.expiresAt)
             : null,
-        };
+        });
       }
     });
 
@@ -214,13 +310,18 @@ export class HydraApi {
     await this.setupApi();
   }
 
-  static handleSignOut() {
+  static async handleSignOut() {
     this.userAuth = {
       authToken: "",
       refreshToken: "",
       expirationTimestamp: 0,
       subscription: null,
     };
+
+    const { AchievementWatcherManager } = await import(
+      "./achievements/achievement-watcher-manager"
+    );
+    AchievementWatcherManager.resetSessionState();
 
     this.sendSignOutEvent();
     this.post("/auth/logout", {}, { needsAuth: false }).catch(() => {});
@@ -249,14 +350,20 @@ export class HydraApi {
         })
       : null;
 
+    await this.refreshSelfHostedCapabilities();
+
     if (this.ADD_LOG_INTERCEPTOR) {
       this.instance.interceptors.request.use(
         (request) => {
           logger.log(" ---- REQUEST -----");
-          const data = Array.isArray(request.data)
-            ? request.data
-            : omit(request.data, ["refreshToken"]);
-          logger.log(request.method, request.url, request.params, data);
+          logger.log(
+            request.method,
+            request.url,
+            sanitizeNetworkLogPayload({
+              params: request.params ?? null,
+              data: request.data ?? null,
+            })
+          );
           return request;
         },
         (error) => {
@@ -267,51 +374,32 @@ export class HydraApi {
       this.instance.interceptors.response.use(
         (response) => {
           logger.log(" ---- RESPONSE -----");
-          const data = Array.isArray(response.data)
-            ? response.data
-            : omit(response.data, ["username", "accessToken", "refreshToken"]);
           logger.log(
             response.status,
             response.config.method,
             response.config.url,
-            data
+            sanitizeNetworkLogPayload(response.data)
           );
           return response;
         },
         (error) => {
           logger.error(" ---- RESPONSE ERROR -----");
-          /* Errors thrown before the request is dispatched (e.g. an invalid
-             or empty base URL) carry no config — logging must not throw and
-             swallow the original error. */
-          const { config } = error;
+          const config = error.config ?? {};
 
-          if (config) {
-            let data: unknown = null;
-            try {
-              data = JSON.parse(config.data ?? null);
-            } catch {
-              data = config.data;
-            }
-
-            logger.error(
-              config.method,
-              config.baseURL,
-              config.url,
-              omit(config.headers, [
-                "accessToken",
-                "refreshToken",
-                "Authorization",
-              ]),
-              Array.isArray(data) || typeof data !== "object"
-                ? data
-                : omit(data, ["accessToken", "refreshToken"])
-            );
-          }
+          logger.error(
+            config.method,
+            config.baseURL,
+            config.url,
+            sanitizeNetworkLogPayload({
+              headers: config.headers ?? null,
+              data: config.data ?? null,
+            })
+          );
           if (error.response) {
             logger.error(
               "Response error:",
               error.response.status,
-              error.response.data
+              sanitizeNetworkLogPayload(error.response.data)
             );
 
             return Promise.reject(error as Error);
@@ -351,11 +439,7 @@ export class HydraApi {
 
     const updatedUserData = await getUserData();
 
-    this.userAuth.subscription = updatedUserData?.subscription
-      ? {
-          expiresAt: updatedUserData.subscription.expiresAt,
-        }
-      : null;
+    this.updateUserSubscription(updatedUserData?.subscription);
   }
 
   private static sendSignOutEvent() {
@@ -404,7 +488,7 @@ export class HydraApi {
       try {
         await this.refreshToken();
       } catch (err) {
-        this.handleUnauthorizedError(err);
+        await this.handleUnauthorizedError(err);
       }
     }
   }
@@ -417,12 +501,14 @@ export class HydraApi {
     };
   }
 
-  private static readonly handleUnauthorizedError = (err) => {
+  private static readonly handleUnauthorizedError = async (err) => {
     if (err instanceof AxiosError && err.response?.status === 401) {
       logger.error(
         "401 - Current credentials:",
-        this.userAuth,
-        err.response?.data
+        sanitizeNetworkLogPayload({
+          credentials: this.userAuth,
+          response: err.response?.data,
+        })
       );
 
       this.userAuth = {
@@ -431,6 +517,11 @@ export class HydraApi {
         refreshToken: "",
         subscription: null,
       };
+
+      const { AchievementWatcherManager } = await import(
+        "./achievements/achievement-watcher-manager"
+      );
+      AchievementWatcherManager.resetSessionState();
 
       db.batch([
         {
@@ -460,7 +551,22 @@ export class HydraApi {
     }
 
     if (needsSubscription && !this.hasActiveSubscription()) {
-      throw new SubscriptionRequiredError();
+      await this.refreshUserSubscription();
+
+      if (!this.hasActiveSubscription()) {
+        throw new SubscriptionRequiredError();
+      }
+    }
+  }
+
+  private static async refreshUserSubscription() {
+    if (!this.isLoggedIn()) return;
+
+    try {
+      const userDetails = await getUserData();
+      if (userDetails) this.updateUserSubscription(userDetails.subscription);
+    } catch (err) {
+      logger.error("Failed to refresh subscription state", err);
     }
   }
 
@@ -483,6 +589,7 @@ export class HydraApi {
         ...this.getAxiosConfig(),
         headers,
         validateStatus: options?.validateStatus,
+        signal: options?.signal,
       })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);
@@ -507,6 +614,7 @@ export class HydraApi {
         ...this.getAxiosConfig(),
         headers,
         validateStatus: options?.validateStatus,
+        signal: options?.signal,
       })
       .then((response) => ({
         status: response.status,
@@ -524,7 +632,10 @@ export class HydraApi {
     await this.validateOptions(options);
 
     return this.resolveInstance(url, options)
-      .post<T>(url, data, this.getAxiosConfig())
+      .post<T>(url, data, {
+        ...this.getAxiosConfig(),
+        signal: options?.signal,
+      })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);
   }
@@ -537,7 +648,10 @@ export class HydraApi {
     await this.validateOptions(options);
 
     return this.resolveInstance(url, options)
-      .put<T>(url, data, this.getAxiosConfig())
+      .put<T>(url, data, {
+        ...this.getAxiosConfig(),
+        signal: options?.signal,
+      })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);
   }
@@ -550,7 +664,10 @@ export class HydraApi {
     await this.validateOptions(options);
 
     return this.resolveInstance(url, options)
-      .patch<T>(url, data, this.getAxiosConfig())
+      .patch<T>(url, data, {
+        ...this.getAxiosConfig(),
+        signal: options?.signal,
+      })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);
   }
@@ -559,7 +676,10 @@ export class HydraApi {
     await this.validateOptions(options);
 
     return this.resolveInstance(url, options)
-      .delete<T>(url, this.getAxiosConfig())
+      .delete<T>(url, {
+        ...this.getAxiosConfig(),
+        signal: options?.signal,
+      })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);
   }
