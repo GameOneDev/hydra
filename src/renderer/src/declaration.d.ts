@@ -129,6 +129,8 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<CloudSaveOverview>;
+    /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
+    getCloudSaveV2Supported: () => Promise<boolean>;
     getCloudSaveV2FileDetails: (
       objectId: string,
       shop: GameShop

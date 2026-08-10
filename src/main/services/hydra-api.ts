@@ -54,6 +54,13 @@ export class HydraApi {
   private static cloudInstance: AxiosInstance | null = null;
   private static selfHostedCloudUrl: string | null = null;
 
+  /* Features the configured self-hosted server reports at /capabilities.
+     `null` means "not known yet or the server didn't answer" — treated as
+     supporting nothing, so a feature is only enabled once the server has
+     actually claimed it. */
+  private static selfHostedFeatures: Set<string> | null = null;
+  private static selfHostedVersion: string | null = null;
+
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
     /* Custom game images (covers, icons, logos, banners). Uploads already
@@ -90,6 +97,12 @@ export class HydraApi {
     "/presigned-urls/background-image",
   ];
 
+  /* Subscriber-only services that are NOT storage and only the official API
+     can perform, even though they carry needsSubscription. Hoster unlocking
+     resolves a download link through Hydra's own credentials with that
+     file host — nothing a self-hosted server could stand in for. */
+  private static readonly OFFICIAL_ONLY_PREFIXES = ["/hosters/"];
+
   /* Expiration of the user's real official subscription, unaffected by the
      synthetic self-hosted one injected into user data. */
   private static realSubscriptionExpiresAt: Date | null = null;
@@ -122,8 +135,77 @@ export class HydraApi {
     return this.selfHostedCloudUrl;
   }
 
+  public static getSelfHostedVersion() {
+    return this.selfHostedVersion;
+  }
+
+  /**
+   * Whether the cloud server backing the subscription-gated features supports
+   * `feature`.
+   *
+   * Without a self-hosted server everything runs against official Hydra
+   * Cloud, which by definition implements whatever the launcher ships. With
+   * one configured we only enable a feature the server has actually
+   * advertised: the launcher routes these calls to it, and upstream keeps
+   * adding endpoints that a self-hosted deployment may not have yet. Failing
+   * closed turns "silently broken mid-sync" into "feature stays off".
+   */
+  public static supportsCloudFeature(feature: string) {
+    if (!this.isSelfHostedCloudEnabled()) return true;
+    return this.selfHostedFeatures?.has(feature) ?? false;
+  }
+
+  /**
+   * Reads /capabilities from the self-hosted server. Unauthenticated and
+   * cheap, so it runs on every setup and whenever the URL changes.
+   *
+   * Servers predating this endpoint 404, which lands in the catch and leaves
+   * the feature set empty — exactly the conservative answer we want.
+   */
+  private static async refreshSelfHostedCapabilities() {
+    this.selfHostedFeatures = null;
+    this.selfHostedVersion = null;
+
+    const baseUrl = this.selfHostedCloudUrl;
+    if (!baseUrl) return;
+
+    try {
+      const { data } = await axios.get<{
+        version?: string;
+        features?: string[];
+      }>(`${baseUrl}/capabilities`, {
+        timeout: 10_000,
+        headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+      });
+
+      this.selfHostedFeatures = new Set(
+        Array.isArray(data?.features) ? data.features : []
+      );
+      this.selfHostedVersion = data?.version ?? null;
+
+      logger.log(
+        "self-hosted cloud capabilities",
+        this.selfHostedVersion,
+        [...this.selfHostedFeatures].join(", ")
+      );
+    } catch (err) {
+      logger.error(
+        "failed to read self-hosted cloud capabilities — features gated on it stay disabled",
+        err
+      );
+    }
+  }
+
   private static resolveInstance(url: string, options?: HydraApiOptions) {
     if (!this.cloudInstance) return this.instance;
+
+    /* `needsSubscription` normally means "storage feature" and routes here,
+       but upstream also uses the flag for subscriber-only services the
+       official API alone provides. Those must never be re-routed: a
+       self-hosted storage server has no way to unlock a file host. */
+    if (this.OFFICIAL_ONLY_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+      return this.instance;
+    }
 
     const isCloudRoute =
       options?.needsSubscription === true ||
@@ -267,6 +349,8 @@ export class HydraApi {
           headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
         })
       : null;
+
+    await this.refreshSelfHostedCapabilities();
 
     if (this.ADD_LOG_INTERCEPTOR) {
       this.instance.interceptors.request.use(
