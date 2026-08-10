@@ -7,7 +7,12 @@ import type { LibraryGame } from "@types";
 import { removeDiacritics } from "@shared";
 
 import { ConfirmationModal, TextField } from "@renderer/components";
-import { useDownload, useLibrary, useToast } from "@renderer/hooks";
+import {
+  useAppSelector,
+  useDownload,
+  useLibrary,
+  useToast,
+} from "@renderer/hooks";
 import { routes } from "./routes";
 
 import "./sidebar.scss";
@@ -105,6 +110,9 @@ export function Sidebar() {
     );
   }, [library]);
 
+  const { gameRunning } = useAppSelector((state) => state.gameRunning);
+  const runningGameId = gameRunning?.id;
+
   const sortedLibrary = useMemo(() => {
     let games = filterLibraryGamesByCategory(library, sidebarCategory);
 
@@ -124,6 +132,20 @@ export function Sidebar() {
       ];
     }
 
+    /* A game that is currently running is pinned to the very top, whichever
+       sort and grouping the user picked. */
+    if (runningGameId) {
+      const runningIndex = games.findIndex((game) => game.id === runningGameId);
+
+      if (runningIndex > 0) {
+        games = [
+          games[runningIndex],
+          ...games.slice(0, runningIndex),
+          ...games.slice(runningIndex + 1),
+        ];
+      }
+    }
+
     return games;
   }, [
     library,
@@ -131,6 +153,7 @@ export function Sidebar() {
     sidebarSortBy,
     selectedPlatforms,
     showFavoritesFirst,
+    runningGameId,
   ]);
 
   const { lastPacket, progress } = useDownload();
@@ -281,6 +304,26 @@ export function Sidebar() {
   useEffect(() => {
     updateLibrary();
   }, [lastPacket?.gameId, updateLibrary]);
+
+  const runningGameIdsRef = useRef("");
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onGamesRunning((gamesRunning) => {
+      const runningIds = gamesRunning
+        .map((game) => game.id)
+        .sort((a, b) => a.localeCompare(b))
+        .join(",");
+
+      if (runningIds !== runningGameIdsRef.current) {
+        runningGameIdsRef.current = runningIds;
+        updateLibrary();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [updateLibrary]);
 
   useEffect(() => {
     const handlePinToggled = () => {

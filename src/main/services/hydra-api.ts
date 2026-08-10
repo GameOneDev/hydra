@@ -9,7 +9,7 @@ import { appVersion } from "@main/constants";
 import { getUserData } from "./user/get-user-data";
 import { db } from "@main/level";
 import { levelKeys } from "@main/level/sublevels";
-import type { Auth, User } from "@types";
+import type { Auth, User, UserPreferences } from "@types";
 import { SSEClient } from "./sse";
 import { sanitizeNetworkLogPayload } from "./network-log-payload";
 
@@ -46,11 +46,103 @@ export class HydraApi {
     subscription: null,
   };
 
+  /* Self-hosted cloud storage server. Accounts, friends, catalogue and every
+     other route keep using the official API — only the subscription-gated
+     features below are re-routed, authenticated with the same official
+     access token (the self-hosted server validates it against the official
+     API to identify the user). */
+  private static cloudInstance: AxiosInstance | null = null;
+  private static selfHostedCloudUrl: string | null = null;
+
+  private static readonly CLOUD_ROUTED_PREFIXES = [
+    "/profile/games/artifacts",
+    /* Custom game images (covers, icons, logos, banners). Uploads already
+       route here via needsSubscription; the read side has no such flag, and
+       these listing endpoints only exist on the self-hosted server. */
+    "/profile/games/artwork",
+    "/profile/emulation-saves",
+    "/profile/download-sources",
+    /* Banner fallback lookup/removal — these endpoints only exist on the
+       self-hosted server ("/profile/banner" also matches
+       "/profile/banners/{userId}"). */
+    "/profile/banner",
+    /* Achievement-count fallback for profile stats the official API only
+       computes for subscribers */
+    "/profile/stats",
+    /* Recently unlocked achievements for a profile. Deliberately not under
+       "/profile/games/achievements": the sync mirrors that path to BOTH this
+       server and the official API, and routing the prefix would swallow the
+       official half. */
+    "/profile/achievements",
+    /* Daily playtime buckets for the profile heatmap — only exists on the
+       self-hosted server */
+    "/profile/playtime",
+    /* Same-server membership lookup for the profile badge — only exists on
+       the self-hosted server */
+    "/profile/members",
+  ];
+
+  /* Banner uploads are subscription-gated on the official API. With a REAL
+     subscription they keep going to the official CDN; without one the
+     self-hosted server stores and serves the image, and the resulting URL
+     is still saved to the official profile. */
+  private static readonly CLOUD_FALLBACK_PREFIXES = [
+    "/presigned-urls/background-image",
+  ];
+
+  /* Expiration of the user's real official subscription, unaffected by the
+     synthetic self-hosted one injected into user data. */
+  private static realSubscriptionExpiresAt: Date | null = null;
+
+  public static syncRealSubscription(
+    subscription: { expiresAt: Date | string | null } | null
+  ) {
+    this.realSubscriptionExpiresAt = subscription?.expiresAt
+      ? new Date(subscription.expiresAt)
+      : null;
+  }
+
+  private static hasRealActiveSubscription() {
+    return (
+      this.realSubscriptionExpiresAt !== null &&
+      this.realSubscriptionExpiresAt > new Date()
+    );
+  }
+
+  private static normalizeUrl(url?: string | null) {
+    const trimmed = url?.trim().replace(/\/+$/, "");
+    return trimmed ? trimmed : null;
+  }
+
+  public static isSelfHostedCloudEnabled() {
+    return this.selfHostedCloudUrl !== null;
+  }
+
+  public static getSelfHostedCloudUrl() {
+    return this.selfHostedCloudUrl;
+  }
+
+  private static resolveInstance(url: string, options?: HydraApiOptions) {
+    if (!this.cloudInstance) return this.instance;
+
+    const isCloudRoute =
+      options?.needsSubscription === true ||
+      this.CLOUD_ROUTED_PREFIXES.some((prefix) => url.startsWith(prefix)) ||
+      (!this.hasRealActiveSubscription() &&
+        this.CLOUD_FALLBACK_PREFIXES.some((prefix) => url.startsWith(prefix)));
+
+    return isCloudRoute ? this.cloudInstance : this.instance;
+  }
+
   public static isLoggedIn() {
     return this.userAuth.authToken !== "";
   }
 
   public static hasActiveSubscription() {
+    /* The self-hosted server provides the subscription-gated features, so
+       having one configured counts as an active subscription. */
+    if (this.isSelfHostedCloudEnabled()) return true;
+
     const expiresAt = new Date(this.userAuth.subscription?.expiresAt ?? 0);
     return expiresAt > new Date();
   }
@@ -129,6 +221,13 @@ export class HydraApi {
     }
   }
 
+  /* The official session is untouched when the self-hosted cloud URL
+     changes — only the cloud axios instance needs rebuilding, and the user
+     data refresh re-applies (or removes) the synthetic subscription. */
+  static async handleCloudServerChange() {
+    await this.setupApi();
+  }
+
   static async handleSignOut() {
     this.userAuth = {
       authToken: "",
@@ -147,10 +246,27 @@ export class HydraApi {
   }
 
   static async setupApi() {
+    const userPreferences = await db
+      .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+        valueEncoding: "json",
+      })
+      .catch(() => null);
+
+    this.selfHostedCloudUrl = this.normalizeUrl(
+      userPreferences?.selfHostedCloudUrl
+    );
+
     this.instance = axios.create({
       baseURL: import.meta.env.MAIN_VITE_API_URL,
       headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
     });
+
+    this.cloudInstance = this.selfHostedCloudUrl
+      ? axios.create({
+          baseURL: this.selfHostedCloudUrl,
+          headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+        })
+      : null;
 
     if (this.ADD_LOG_INTERCEPTOR) {
       this.instance.interceptors.request.use(
@@ -383,7 +499,7 @@ export class HydraApi {
       "If-None-Match": options?.ifNoneMatch,
     };
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .get<T>(url, {
         params,
         ...this.getAxiosConfig(),
@@ -408,7 +524,7 @@ export class HydraApi {
       "If-None-Match": options?.ifNoneMatch,
     };
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .get<T>(url, {
         params,
         ...this.getAxiosConfig(),
@@ -431,7 +547,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .post<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -447,7 +563,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .put<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -463,7 +579,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .patch<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -475,7 +591,7 @@ export class HydraApi {
   static async delete<T = any>(url: string, options?: HydraApiOptions) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .delete<T>(url, {
         ...this.getAxiosConfig(),
         signal: options?.signal,

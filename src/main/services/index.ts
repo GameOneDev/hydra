@@ -1,6 +1,15 @@
 export * from "./logger";
 export * from "./steam";
 export * from "./steam-250";
+/* `getSteamLibraryFolders` is deliberately not re-exported here: "./steam"
+   exports a different function under the same name. Import the
+   location-taking variant straight from "./steam-library". */
+export {
+  getInstalledSteamGames,
+  getSteamPlaytimeMinutes,
+  syncSteamPlaytimeForLibrary,
+} from "./steam-library";
+export type { InstalledSteamGame } from "./steam-library";
 export * from "./window-manager";
 export * from "./download";
 export * from "./download-layout-state";
