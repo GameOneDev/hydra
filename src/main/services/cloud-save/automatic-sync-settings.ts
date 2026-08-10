@@ -10,9 +10,11 @@ import type {
   GameShop,
 } from "@types";
 
+import { HydraApi } from "../hydra-api";
 import { WindowManager } from "../window-manager";
 import { assertCloudSaveSubscription } from "./cloud-save-access";
 import {
+  CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
   getNextCloudSaveAutomaticSyncMode,
   resolveStoredCloudSaveAutomaticSyncModeForShop,
@@ -51,7 +53,8 @@ const readCloudSaveAutomaticSyncMode = async (
   const mode = resolveStoredCloudSaveAutomaticSyncModeForShop(
     shop,
     legacyEnabled,
-    storedV2Enabled
+    storedV2Enabled,
+    HydraApi.supportsCloudFeature(CLOUD_SAVE_V2_FEATURE)
   );
 
   return { game, key, mode };
