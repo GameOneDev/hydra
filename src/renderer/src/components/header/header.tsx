@@ -10,11 +10,13 @@ import {
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   ArrowLeftIcon,
+  PlusIcon,
   SearchIcon,
   SyncIcon,
   XIcon,
 } from "@primer/octicons-react";
 import { Tooltip } from "react-tooltip";
+import { SidebarAddingCustomGameModal } from "@renderer/components/sidebar/sidebar-adding-custom-game-modal";
 
 import {
   useAppDispatch,
@@ -28,7 +30,7 @@ import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 
 import "./header.scss";
 import { AutoUpdateSubHeader } from "./auto-update-sub-header";
-import { ScanGamesModal } from "./scan-games-modal";
+import { ScanGamesModal, type ScanResult } from "./scan-games-modal";
 import { setFilters, setLibrarySearchQuery } from "@renderer/features";
 import cn from "classnames";
 import { SearchDropdown } from "@renderer/components";
@@ -49,6 +51,8 @@ export function Header() {
   const inputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const scanButtonTooltipId = useId();
+  const addCustomGameTooltipId = useId();
+  const [showAddGameModal, setShowAddGameModal] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -108,10 +112,8 @@ export function Header() {
   const [showScanModal, setShowScanModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isImportingSteamGames, setIsImportingSteamGames] = useState(false);
-  const [scanResult, setScanResult] = useState<{
-    foundGames: { title: string; executablePath: string }[];
-    total: number;
-  } | null>(null);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [scanRequestId, setScanRequestId] = useState<string | null>(null);
 
   const { t } = useTranslation("header");
 
@@ -324,22 +326,33 @@ export function Header() {
 
   const handleStartScan = async (
     additionalDirectories: string[] = [],
-    includeDefaultDirectories = true
+    includeDefaultDirectories = true,
+    addGamesToLibrary = true
   ) => {
     if (isScanning) return;
 
+    const requestId = crypto.randomUUID();
+
     setIsScanning(true);
+    setScanRequestId(requestId);
     setScanResult(null);
 
     try {
       const result = await window.electron.scanInstalledGames(
         additionalDirectories,
-        includeDefaultDirectories
+        includeDefaultDirectories,
+        addGamesToLibrary,
+        requestId
       );
       setScanResult(result);
     } finally {
       setIsScanning(false);
+      setScanRequestId(null);
     }
+  };
+
+  const handleCancelScan = () => {
+    if (scanRequestId) window.electron.cancelScanInstalledGames(scanRequestId);
   };
 
   const handleClearScanResult = () => {
@@ -426,6 +439,21 @@ export function Header() {
           {isOnLibraryPage && (
             <button
               type="button"
+              className="header__action-button header__action-button--outlined"
+              onClick={() => setShowAddGameModal(true)}
+              data-tooltip-id={addCustomGameTooltipId}
+              data-tooltip-content={t("add_custom_game_tooltip", {
+                ns: "sidebar",
+              })}
+              data-tooltip-place="bottom"
+            >
+              <PlusIcon size={16} />
+            </button>
+          )}
+
+          {isOnLibraryPage && (
+            <button
+              type="button"
               className={cn("header__action-button", {
                 "header__action-button--scanning": isImportingSteamGames,
               })}
@@ -446,9 +474,13 @@ export function Header() {
           {isOnLibraryPage && isLibraryScanSupported && (
             <button
               type="button"
-              className={cn("header__action-button", {
-                "header__action-button--scanning": isScanning,
-              })}
+              className={cn(
+                "header__action-button",
+                "header__action-button--outlined",
+                {
+                  "header__action-button--scanning": isScanning,
+                }
+              )}
               onClick={() => setShowScanModal(true)}
               data-tooltip-id={scanButtonTooltipId}
               data-tooltip-content={t("scan_games_tooltip")}
@@ -500,6 +532,12 @@ export function Header() {
       </header>
 
       {isOnLibraryPage && (
+        <Tooltip id={addCustomGameTooltipId} style={{ zIndex: 1 }} />
+      )}
+
+      {/* Not gated on isLibraryScanSupported: the Steam import button shares
+          this tooltip id and renders on every platform. */}
+      {isOnLibraryPage && (
         <Tooltip id={scanButtonTooltipId} style={{ zIndex: 1 }} />
       )}
 
@@ -536,7 +574,13 @@ export function Header() {
         isScanning={isScanning}
         scanResult={scanResult}
         onStartScan={handleStartScan}
+        onCancelScan={handleCancelScan}
         onClearResult={handleClearScanResult}
+      />
+
+      <SidebarAddingCustomGameModal
+        visible={showAddGameModal}
+        onClose={() => setShowAddGameModal(false)}
       />
     </>
   );

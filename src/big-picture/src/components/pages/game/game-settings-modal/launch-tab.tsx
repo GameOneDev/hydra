@@ -6,7 +6,7 @@ import {
 } from "@renderer/helpers";
 import type { LibraryGame, ShortcutLocation } from "@types";
 import { DiscIcon } from "@phosphor-icons/react";
-import { FolderOpen, HardDrive, Monitor, Trash } from "lucide-react";
+import { FolderOpen, Monitor, Trash } from "lucide-react";
 import { useCallback, type ReactNode, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
@@ -17,7 +17,6 @@ import {
   FocusItem,
   HorizontalFocusGroup,
   Input,
-  Tooltip,
   Typography,
   type FileFilter,
   VerticalFocusGroup,
@@ -47,7 +46,6 @@ const GAME_LAUNCH_SETTINGS_EXEC_PATH_SELECT_ID =
   "game-launch-settings-exec-path-select";
 const GAME_LAUNCH_SETTINGS_EXEC_PATH_CLEAR_ID =
   "game-launch-settings-exec-path-clear";
-const GAME_LAUNCH_SETTINGS_SAVE_FOLDER_ID = "game-launch-settings-save-folder";
 
 const REGION_LABELS: Record<SkuRegion, string> = {
   US: "United States",
@@ -57,27 +55,9 @@ const REGION_LABELS: Record<SkuRegion, string> = {
   ASIA: "Asia",
 };
 
-function getSaveFolderTooltipContent(
-  loadingSaveFolder: boolean,
-  saveFolderPath: string | null,
-  t: ReturnType<typeof useTranslation>["t"]
-) {
-  if (loadingSaveFolder) {
-    return t("searching_save_folder");
-  }
-
-  if (saveFolderPath) {
-    return t("open_save_folder");
-  }
-
-  return t("no_save_folder_found");
-}
-
 export interface GameLaunchSettingsProps {
   game: LibraryGame;
   launchOptions: string;
-  loadingSaveFolder: boolean;
-  saveFolderPath: string | null;
   creatingSteamShortcut: boolean;
   steamShortcutExists: boolean;
   shouldShowCreateStartMenuShortcut: boolean;
@@ -86,7 +66,6 @@ export interface GameLaunchSettingsProps {
   discPickerFilters: FileFilter[];
   onProcessExecPath: (path: string) => Promise<void>;
   onClearExecutablePath: () => Promise<void>;
-  onOpenSaveFolder: () => Promise<void>;
   onChangeLaunchOptions: (value: string) => void;
   onBlurLaunchOptions: () => void;
   onClearLaunchOptions: () => void;
@@ -226,24 +205,14 @@ function LaunchboxDiscsSection({
 
 interface ExecutableSectionProps {
   executablePath: LibraryGame["executablePath"];
-  showSaveFolderButton: boolean;
-  saveFolderTooltipContent: string;
-  loadingSaveFolder: boolean;
-  saveFolderPath: string | null;
   onOpenExecPicker: () => void;
   onClearExecutablePath: () => Promise<void>;
-  onOpenSaveFolder: () => Promise<void>;
 }
 
 function ExecutableSection({
   executablePath,
-  showSaveFolderButton,
-  saveFolderTooltipContent,
-  loadingSaveFolder,
-  saveFolderPath,
   onOpenExecPicker,
   onClearExecutablePath,
-  onOpenSaveFolder,
 }: Readonly<ExecutableSectionProps>) {
   const { t } = useTranslation(["game_details", "big_picture"]);
 
@@ -308,30 +277,6 @@ function ExecutableSection({
                 {t("select_executable_path", { ns: "big_picture" })}
               </Button>
             )}
-
-            {showSaveFolderButton ? (
-              <Tooltip content={saveFolderTooltipContent}>
-                <Button
-                  focusId={GAME_LAUNCH_SETTINGS_SAVE_FOLDER_ID}
-                  variant="secondary"
-                  size="icon"
-                  aria-label={t("open_save_folder")}
-                  disabled={loadingSaveFolder || !saveFolderPath}
-                  icon={<HardDrive size={16} />}
-                  onClick={() => {
-                    void onOpenSaveFolder();
-                  }}
-                  focusNavigationOverrides={{
-                    left: {
-                      type: "item",
-                      itemId: GAME_LAUNCH_SETTINGS_PRIMARY_CONTROL_ID,
-                    },
-                  }}
-                >
-                  {null}
-                </Button>
-              </Tooltip>
-            ) : null}
           </div>
         </HorizontalFocusGroup>
       </div>
@@ -340,6 +285,7 @@ function ExecutableSection({
 }
 
 interface ShortcutSectionProps {
+  canCreateShortcuts: boolean;
   isCustomGame: boolean;
   shouldShowCreateStartMenuShortcut: boolean;
   creatingSteamShortcut: boolean;
@@ -350,6 +296,7 @@ interface ShortcutSectionProps {
 }
 
 function ShortcutSection({
+  canCreateShortcuts,
   isCustomGame,
   shouldShowCreateStartMenuShortcut,
   creatingSteamShortcut,
@@ -363,43 +310,51 @@ function ShortcutSection({
   let steamShortcutButton: ReactNode = null;
 
   if (!isCustomGame) {
-    steamShortcutButton = steamShortcutExists ? (
-      <Button
-        focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_STEAM_ID}
-        variant="danger"
-        loading={creatingSteamShortcut}
-        icon={<SteamLogo />}
-        onClick={() => {
-          onDeleteSteamShortcut().catch(() => {});
-        }}
-        focusNavigationOverrides={{
-          left: {
-            type: "item",
-            itemId: GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID,
-          },
-        }}
-      >
-        {t("delete_steam_shortcut")}
-      </Button>
-    ) : (
-      <Button
-        focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_STEAM_ID}
-        variant="secondary"
-        loading={creatingSteamShortcut}
-        icon={<SteamLogo />}
-        onClick={() => {
-          onCreateSteamShortcut().catch(() => {});
-        }}
-        focusNavigationOverrides={{
-          left: {
-            type: "item",
-            itemId: GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID,
-          },
-        }}
-      >
-        {t("create_steam_shortcut")}
-      </Button>
-    );
+    if (steamShortcutExists) {
+      steamShortcutButton = (
+        <Button
+          focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_STEAM_ID}
+          variant="danger"
+          loading={creatingSteamShortcut}
+          icon={<SteamLogo />}
+          onClick={() => {
+            onDeleteSteamShortcut().catch(() => {});
+          }}
+          focusNavigationOverrides={
+            canCreateShortcuts
+              ? {
+                  left: {
+                    type: "item",
+                    itemId: GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID,
+                  },
+                }
+              : undefined
+          }
+        >
+          {t("delete_steam_shortcut")}
+        </Button>
+      );
+    } else if (canCreateShortcuts) {
+      steamShortcutButton = (
+        <Button
+          focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_STEAM_ID}
+          variant="secondary"
+          loading={creatingSteamShortcut}
+          icon={<SteamLogo />}
+          onClick={() => {
+            onCreateSteamShortcut().catch(() => {});
+          }}
+          focusNavigationOverrides={{
+            left: {
+              type: "item",
+              itemId: GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID,
+            },
+          }}
+        >
+          {t("create_steam_shortcut")}
+        </Button>
+      );
+    }
   }
 
   return (
@@ -410,20 +365,22 @@ function ShortcutSection({
     >
       <div className="game-launch-settings-tab__section-content">
         <HorizontalFocusGroup className="game-launch-settings-tab__shortcuts-row">
-          <Button
-            focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID}
-            variant="secondary"
-            icon={<Monitor size={16} />}
-            onClick={() => {
-              void onCreateShortcut("desktop");
-            }}
-          >
-            {t("create_shortcut")}
-          </Button>
+          {canCreateShortcuts ? (
+            <Button
+              focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_DESKTOP_ID}
+              variant="secondary"
+              icon={<Monitor size={16} />}
+              onClick={() => {
+                void onCreateShortcut("desktop");
+              }}
+            >
+              {t("create_shortcut")}
+            </Button>
+          ) : null}
 
           {steamShortcutButton}
 
-          {shouldShowCreateStartMenuShortcut ? (
+          {canCreateShortcuts && shouldShowCreateStartMenuShortcut ? (
             <Button
               focusId={GAME_LAUNCH_SETTINGS_SHORTCUT_START_MENU_ID}
               variant="secondary"
@@ -524,8 +481,6 @@ function LaunchOptionsSection({
 export function GameLaunchSettingsTab({
   game,
   launchOptions,
-  loadingSaveFolder,
-  saveFolderPath,
   creatingSteamShortcut,
   steamShortcutExists,
   shouldShowCreateStartMenuShortcut,
@@ -534,7 +489,6 @@ export function GameLaunchSettingsTab({
   discPickerFilters,
   onProcessExecPath,
   onClearExecutablePath,
-  onOpenSaveFolder,
   onChangeLaunchOptions,
   onBlurLaunchOptions,
   onClearLaunchOptions,
@@ -556,14 +510,6 @@ export function GameLaunchSettingsTab({
     discs.find((disc) => disc.path === game.selectedDiscPath) ??
     discs[0] ??
     null;
-  const showSaveFolderButton =
-    !isCustomGame && globalThis.window.electron.platform === "win32";
-  const saveFolderTooltipContent = getSaveFolderTooltipContent(
-    loadingSaveFolder,
-    saveFolderPath,
-    t
-  );
-
   const handleExecPicked = useCallback(
     (path: string) => {
       setExecPickerOpen(false);
@@ -613,25 +559,27 @@ export function GameLaunchSettingsTab({
         ) : (
           <ExecutableSection
             executablePath={game.executablePath}
-            showSaveFolderButton={showSaveFolderButton}
-            saveFolderTooltipContent={saveFolderTooltipContent}
-            loadingSaveFolder={loadingSaveFolder}
-            saveFolderPath={saveFolderPath}
             onOpenExecPicker={handleOpenExecPicker}
             onClearExecutablePath={onClearExecutablePath}
-            onOpenSaveFolder={onOpenSaveFolder}
           />
         )}
 
-        <ShortcutSection
-          isCustomGame={isCustomGame}
-          shouldShowCreateStartMenuShortcut={shouldShowCreateStartMenuShortcut}
-          creatingSteamShortcut={creatingSteamShortcut}
-          steamShortcutExists={steamShortcutExists}
-          onCreateShortcut={onCreateShortcut}
-          onCreateSteamShortcut={onCreateSteamShortcut}
-          onDeleteSteamShortcut={onDeleteSteamShortcut}
-        />
+        {(game.shop !== "launchbox" ||
+          discs.length > 0 ||
+          steamShortcutExists) && (
+          <ShortcutSection
+            canCreateShortcuts={game.shop !== "launchbox" || discs.length > 0}
+            isCustomGame={isCustomGame}
+            shouldShowCreateStartMenuShortcut={
+              shouldShowCreateStartMenuShortcut
+            }
+            creatingSteamShortcut={creatingSteamShortcut}
+            steamShortcutExists={steamShortcutExists}
+            onCreateShortcut={onCreateShortcut}
+            onCreateSteamShortcut={onCreateSteamShortcut}
+            onDeleteSteamShortcut={onDeleteSteamShortcut}
+          />
+        )}
 
         <LaunchOptionsSection
           launchOptions={launchOptions}

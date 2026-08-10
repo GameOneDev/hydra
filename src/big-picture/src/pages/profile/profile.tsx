@@ -434,7 +434,8 @@ function getLibraryCarouselPlaytimeInMilliseconds(
 
 function toProfileLibraryCarouselGame(
   game: LibraryGame | UserGame,
-  preferCustomArtwork = false
+  preferCustomArtwork = false,
+  showAchievementProgress = false
 ): ProfileLibraryCarouselGame {
   const classicsAssetFields = game as ProfileClassicsAssetFields;
   const customCover = preferCustomArtwork
@@ -460,8 +461,12 @@ function toProfileLibraryCarouselGame(
     customHeroImageUrl: classicsAssetFields.customHeroImageUrl ?? null,
     customLogoImageUrl: classicsAssetFields.customLogoImageUrl ?? null,
     playTimeInMilliseconds: getLibraryCarouselPlaytimeInMilliseconds(game),
-    achievementCount: game.achievementCount ?? null,
-    unlockedAchievementCount: game.unlockedAchievementCount ?? null,
+    achievementCount: showAchievementProgress
+      ? (game.achievementCount ?? null)
+      : null,
+    unlockedAchievementCount: showAchievementProgress
+      ? (game.unlockedAchievementCount ?? null)
+      : null,
   };
 }
 
@@ -1611,7 +1616,7 @@ interface ProfileGames {
 function useProfileGames(
   profileUser: ProfileHeroUser | null,
   isOwnProfile: boolean,
-  preferCustomArtwork: boolean,
+  hasActiveSubscription: boolean,
   library: LibraryGame[],
   remoteLibraryGames: UserGame[],
   remoteFavoriteGame: UserGame | null,
@@ -1644,11 +1649,15 @@ function useProfileGames(
       ? library
       : remoteLibraryGames;
     return sourceGames.map((game) =>
-      toProfileLibraryCarouselGame(game, preferCustomArtwork)
+      toProfileLibraryCarouselGame(
+        game,
+        hasActiveSubscription,
+        hasActiveSubscription
+      )
     );
   }, [
+    hasActiveSubscription,
     library,
-    preferCustomArtwork,
     profileUser?.isOwnProfile,
     remoteLibraryGames,
   ]);

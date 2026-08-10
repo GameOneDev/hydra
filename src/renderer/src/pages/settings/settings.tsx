@@ -12,6 +12,7 @@ import {
   CloudIcon,
   DownloadIcon,
   GearIcon,
+  LinkIcon,
   PlayIcon,
   VideoIcon,
   ShieldCheckIcon,
@@ -19,6 +20,7 @@ import {
 import { CloudUpload, Gamepad2, Wrench } from "lucide-react";
 import { SettingsContextGeneral } from "./settings-context-general";
 import { SettingsContextDownloads } from "./settings-context-downloads";
+import { SettingsContextDownloadSources } from "./settings-context-download-sources";
 import { SettingsContextNotifications } from "./settings-context-notifications";
 import { SettingsContextContentGameplay } from "./settings-context-content-gameplay";
 import { SettingsContextIntegrations } from "./settings-context-integrations";
@@ -43,6 +45,11 @@ export default function Settings() {
         id: "downloads" as const,
         label: t("downloads"),
         icon: <DownloadIcon size={16} />,
+      },
+      {
+        id: "download_sources" as const,
+        label: t("download_sources"),
+        icon: <LinkIcon size={16} />,
       },
       {
         id: "notifications" as const,
@@ -109,6 +116,10 @@ export default function Settings() {
 
             if (selectedCategoryId === "downloads") {
               return <SettingsContextDownloads />;
+            }
+
+            if (selectedCategoryId === "download_sources") {
+              return <SettingsContextDownloadSources />;
             }
 
             if (selectedCategoryId === "notifications") {

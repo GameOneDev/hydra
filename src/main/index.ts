@@ -17,7 +17,9 @@ import resources from "@locales";
 import { PythonRPC } from "./services/python-rpc";
 import { db, gamesSublevel, levelKeys } from "./level";
 import { GameShop, UserPreferences } from "@types";
-import { launchGame } from "./helpers";
+import { launchGame, openClassicsGame } from "./helpers";
+import { refreshPortableShortcutLauncher } from "./helpers/shortcut-launch";
+import { lookupCachedPlatform } from "./events/library/get-library";
 import { loadState } from "./main";
 
 const { autoUpdater } = updater;
@@ -75,6 +77,7 @@ if (process.defaultApp) {
 }
 
 const initializeApp = async () => {
+  refreshPortableShortcutLauncher();
   electronApp.setAppUserModelId("gg.hydralauncher.hydra");
 
   protocol.handle("local", (request) => {
@@ -147,7 +150,11 @@ const initializeApp = async () => {
     });
   });
 
-  await loadState();
+  try {
+    await loadState();
+  } catch (error) {
+    logger.error("Failed to load app state during startup", error);
+  }
 
   // Suspend can outlive the 60s stall watchdog; reconnect right away instead
   powerMonitor.on("resume", () => {
@@ -177,7 +184,6 @@ const initializeApp = async () => {
     WindowManager.createMainWindow({ forceBigPicture });
   }
 
-  WindowManager.createNotificationWindow();
   WindowManager.createSystemTray(language || "en");
 
   if (deepLinkArg) {
@@ -193,8 +199,8 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
   const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey);
 
-  if (!game?.executablePath) {
-    logger.error("Game not found or no executable path", { shop, objectId });
+  if (!game) {
+    logger.error("Game not found", { shop, objectId });
     return;
   }
 
@@ -206,6 +212,23 @@ const handleRunGame = async (shop: GameShop, objectId: string) => {
   // Only open main window if setting is disabled
   if (!userPreferences?.hideToTrayOnGameStart) {
     WindowManager.createMainWindow();
+  }
+
+  if (shop === "launchbox") {
+    if (!game.platform) {
+      const cachedPlatform = await lookupCachedPlatform(gameKey);
+      if (cachedPlatform) {
+        game.platform = cachedPlatform;
+        await gamesSublevel.put(gameKey, game).catch(() => {});
+      }
+    }
+    await openClassicsGame(shop, objectId);
+    return;
+  }
+
+  if (!game.executablePath) {
+    logger.error("Game has no executable path", { shop, objectId });
+    return;
   }
 
   await launchGame({
@@ -227,7 +250,10 @@ const handleDeepLinkPath = (uri?: string) => {
       const objectId = url.searchParams.get("objectId");
 
       if (shop && objectId) {
-        handleRunGame(shop, objectId);
+        void handleRunGame(shop, objectId).catch((error) => {
+          logger.error("Failed to launch game from deep link", error);
+          WindowManager.createMainWindow();
+        });
       }
 
       return;

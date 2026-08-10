@@ -86,6 +86,14 @@
     padding-bottom: calc(globals.$spacing-unit * 2);
   }
 
+  &__game-list-empty {
+    margin: 0;
+    padding: calc(globals.$spacing-unit * 2);
+    font-size: 12px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.5);
+  }
+
   &__handle {
     width: 5px;
     height: 100%;
@@ -174,8 +182,19 @@
   }
 
   &__menu-item-button-label {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
     text-overflow: ellipsis;
     overflow: hidden;
+  }
+
+  &__game-adornments {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   &__friends-icon {
@@ -218,7 +237,6 @@
 
   &__game-favorite-icon {
     flex-shrink: 0;
-    margin-left: auto;
     color: #ffffff;
     opacity: 0.85;
   }
@@ -231,7 +249,7 @@
     padding: 4px 6px;
     border-radius: 6px;
     display: flex;
-    margin-left: auto;
+    flex-shrink: 0;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     border: 1px solid rgba(34, 197, 94, 0.5);
   }
@@ -258,35 +276,14 @@
     flex-shrink: 0;
   }
 
-  &__section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  &__section-toggle {
-    background: none;
-    border: none;
-    color: globals.$muted-color;
+  &__search-row {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 0;
-    cursor: pointer;
-  }
+    gap: calc(globals.$spacing-unit);
 
-  &__section-toggle-chevron {
-    transition: transform 0.15s ease;
-    transform: rotate(0deg);
-
-    &--expanded {
-      transform: rotate(90deg);
+    .text-field-container {
+      flex: 1;
     }
-  }
-
-  &__section-title {
-    text-transform: uppercase;
-    font-weight: bold;
   }
 
   &__menu-empty {
@@ -315,39 +312,20 @@
     padding-bottom: globals.$spacing-unit;
   }
 
-  &__bottom-buttons {
-    display: flex;
-    flex-direction: column;
-  }
-
-  &__help-button {
+  &__add-button {
+    background: none;
+    border: none;
     color: globals.$muted-color;
-    padding: globals.$spacing-unit calc(globals.$spacing-unit * 2);
-    gap: 9px;
-    display: flex;
-    align-items: center;
     cursor: pointer;
-    border-top: solid 1px globals.$border-color;
-    transition: background-color ease 0.1s;
+    padding: 0;
 
     &:hover {
-      background-color: rgba(255, 255, 255, 0.15);
+      color: rgba(255, 255, 255, 0.6);
     }
-  }
 
-  &__help-button-icon {
-    background: linear-gradient(
-      0deg,
-      globals.$brand-teal 50%,
-      globals.$brand-blue 100%
-    );
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    border-radius: 50%;
+    svg {
+      display: block;
+    }
   }
 
   &__play-button {
@@ -356,13 +334,18 @@
     color: globals.$muted-color;
     cursor: pointer;
     padding: 0;
+    transition: color 0.15s ease;
 
-    &:active {
-      color: rgba(255, 255, 255, 0.5);
+    &:hover {
+      color: rgba(255, 255, 255, 0.8);
     }
 
     &--active {
       color: globals.$brand-teal;
+
+      &:hover {
+        color: rgba(globals.$brand-teal, 0.6);
+      }
     }
 
     svg {
@@ -383,26 +366,6 @@
 
     &--active {
       color: globals.$brand-teal;
-    }
-
-    svg {
-      display: block;
-    }
-  }
-
-  &__add-button {
-    background: none;
-    border: none;
-    color: globals.$muted-color;
-    cursor: pointer;
-    padding: 0;
-
-    &:hover {
-      color: rgba(255, 255, 255, 0.8);
-    }
-
-    &:active {
-      color: rgba(255, 255, 255, 0.5);
     }
 
     svg {

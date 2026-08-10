@@ -12,7 +12,6 @@ export const levelKeys = {
   gameShopCache: "gameShopCache",
   gameShopCacheItem: (shop: GameShop, objectId: string, language: string) =>
     `${shop}:${objectId}:${language}`,
-  gameAchievements: "gameAchievements",
   downloads: "downloads",
   downloadLayoutState: "downloadLayoutState",
   userPreferences: "userPreferences",
@@ -25,10 +24,19 @@ export const levelKeys = {
   localNotifications: "localNotifications",
   commonRedistPassed: "commonRedistPassed", // Whether common redistributables preflight has passed
   emulators: "emulators",
+  retroarch: "retroarch",
+  globalTrackersUrlCache: "globalTrackersUrlCache",
   ps2MemoryCardSaves: "ps2MemoryCardSaves",
   ps2MemoryCardSave: (cardFilePath: string, folderName: string) =>
     `${cardFilePath}::${folderName}`,
   ps1MemoryCardSaves: "ps1MemoryCardSaves",
   ps1MemoryCardSave: (cardFilePath: string, identifier: string) =>
     `${cardFilePath}::${identifier}`,
+  cloudSaveLocalHashCache: "cloud-save-local-hash-cache",
+  cloudSavePrefixGenerations: "cloud-save-prefix-generations",
+  cloudSaveSyncAnchors: "cloud-save-sync-anchors",
+  cloudSaveAutomaticSyncSettings: "cloud-save-automatic-sync-settings",
+  cloudSaveV2DefaultMigration: "cloud-save-v2-default-migration",
+  cloudSaveCustomPaths: "cloud-save-custom-paths",
+  cloudSavePendingDeletions: "cloud-save-pending-deletions",
 };

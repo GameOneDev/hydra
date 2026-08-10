@@ -2,8 +2,10 @@ import {
   downloadsSublevel,
   gamesShopAssetsSublevel,
   gamesSublevel,
+  levelKeys,
 } from "@main/level";
-import type { GameShop } from "@types";
+import { DownloadOrchestrator } from "@main/services/download-orchestrator";
+import { canDiscardDownload, type GameShop } from "../../types";
 import { getAutomaticCloudSyncDefault } from "./cloud-saves-default";
 
 interface PrepareGameEntryParams {
@@ -12,6 +14,21 @@ interface PrepareGameEntryParams {
   objectId: string;
   shop: GameShop;
 }
+
+export const clearFinishedDownload = async (
+  shop: GameShop,
+  objectId: string
+): Promise<void> => {
+  const gameKey = levelKeys.game(shop, objectId);
+  const download = await downloadsSublevel.get(gameKey);
+
+  if (!download || !canDiscardDownload(download)) return;
+
+  await downloadsSublevel.del(gameKey).catch(() => {});
+  await DownloadOrchestrator.syncAfterDownloadRemoved({ shop, objectId }).catch(
+    () => {}
+  );
+};
 
 export const prepareGameEntry = async ({
   gameKey,

@@ -96,7 +96,11 @@ export const getThemeSoundPath = (
 export * from "./reg-parser";
 export * from "./launch-game";
 export * from "./launch-classics-game";
+export * from "./open-classics-game";
 export * from "./download-error-handler";
 export * from "./download-game-helper";
 export * from "./platform-to-system";
+export * from "./platform-to-retroarch-platform";
+export * from "./launch-retroarch-game";
+export * from "./global-trackers";
 export * from "./cloud-saves-default";

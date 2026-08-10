@@ -35,6 +35,7 @@ import type {
   ShopDetailsWithAssets,
   AchievementCustomNotificationPosition,
   AchievementNotificationInfo,
+  AchievementNotificationRequest,
   Game,
   DiskUsage,
   NetworkInterface,
@@ -53,6 +54,15 @@ import type {
   EmulatorInstallResult,
   ResolvedInstallOption,
   DetectedRom,
+  RetroArchConfig,
+  RetroArchCoreName,
+  RetroArchPlatform,
+  RetroArchCoreInstallProgress,
+  RetroArchCoreInstallResult,
+  RetroArchExecutablePreview,
+  RetroArchInstallOption,
+  RetroArchInstallProgress,
+  RetroArchInstallResult,
   EmulationCloudSave,
   EmulationSavePlatform,
   MemcardFormatState,
@@ -62,6 +72,21 @@ import type {
   ArtworkKind,
   ArtworkPage,
   GameArtworkSelection,
+  CloudSaveAutomaticSyncModeChangedEvent,
+  CloudSaveAutomaticSyncEvent,
+  CloudSaveConflictResolution,
+  CloudSaveOverview,
+  CloudSaveV2FileDetails,
+  CloudSaveSyncProgressPayload,
+  SyncCloudSaveOnGamePageResult,
+  SyncGameCloudSaveResult,
+  SelectCloudSaveCustomPathResult,
+  CloudSaveCustomPathApproval,
+  CloudSaveModalSyncResult,
+  SelectCloudSaveCustomPathApprovalResult,
+  ConfirmCloudSaveCustomPathApprovalResult,
+  ConfirmCloudSaveCustomPathRebindApprovalResult,
+  LegacySaveExportResult,
 } from "@types";
 import type { AxiosProgressEvent } from "axios";
 
@@ -94,6 +119,89 @@ declare global {
   };
 
   interface Electron {
+    onCloudSaveAutomaticSyncModeChanged: (
+      callback: (event: CloudSaveAutomaticSyncModeChangedEvent) => void
+    ) => () => void;
+    onCloudSaveAutomaticSync: (
+      callback: (event: CloudSaveAutomaticSyncEvent) => void
+    ) => () => void;
+    getCloudSaveOverview: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<CloudSaveOverview>;
+    /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
+    getCloudSaveV2Supported: () => Promise<boolean>;
+    getCloudSaveV2FileDetails: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<CloudSaveV2FileDetails>;
+    deleteGameCloudSaveData: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<void>;
+    selectCloudSaveCustomPath: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<SelectCloudSaveCustomPathResult>;
+    createCloudSaveCustomPathRebindApproval: (
+      objectId: string,
+      shop: GameShop,
+      rawPath: string
+    ) => Promise<CloudSaveCustomPathApproval>;
+    confirmCloudSaveCustomPathRebindApproval: (
+      approvalId: string,
+      objectId: string,
+      shop: GameShop
+    ) => Promise<ConfirmCloudSaveCustomPathRebindApprovalResult>;
+    getPendingCloudSaveCustomPathApproval: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<CloudSaveCustomPathApproval | null>;
+    selectCloudSaveCustomPathApproval: (
+      approvalId: string,
+      selectedPath?: string
+    ) => Promise<SelectCloudSaveCustomPathApprovalResult>;
+    confirmCloudSaveCustomPathApproval: (
+      approvalId: string
+    ) => Promise<ConfirmCloudSaveCustomPathApprovalResult>;
+    dismissCloudSaveCustomPathApproval: (approvalId: string) => Promise<void>;
+    removeCloudSaveCustomPath: (
+      objectId: string,
+      shop: GameShop,
+      rawPath: string
+    ) => Promise<void>;
+    setCloudSaveAutomaticSyncEnabled: (
+      objectId: string,
+      shop: GameShop,
+      enabled: boolean
+    ) => Promise<boolean>;
+    syncCloudSaveOnGamePage: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<SyncCloudSaveOnGamePageResult>;
+    syncGameCloudSave: (
+      objectId: string,
+      shop: GameShop,
+      onProgress?: (progress: CloudSaveSyncProgressPayload) => void
+    ) => Promise<SyncGameCloudSaveResult>;
+    syncGameCloudSaveFromModal: (
+      objectId: string,
+      shop: GameShop,
+      approvalId: string | null,
+      onProgress?: (progress: CloudSaveSyncProgressPayload) => void
+    ) => Promise<CloudSaveModalSyncResult>;
+    syncCloudSaveAfterCustomPathRebind: (
+      objectId: string,
+      shop: GameShop,
+      rawPath: string,
+      onProgress?: (progress: CloudSaveSyncProgressPayload) => void
+    ) => Promise<SyncGameCloudSaveResult>;
+    resolveCloudSaveConflict: (
+      objectId: string,
+      shop: GameShop,
+      resolution: CloudSaveConflictResolution,
+      onProgress?: (progress: CloudSaveSyncProgressPayload) => void
+    ) => Promise<SyncGameCloudSaveResult>;
     /* Torrenting */
     startGameDownload: (
       payload: StartGameDownloadPayload
@@ -110,6 +218,12 @@ declare global {
     ) => Promise<void>;
     pauseGameSeed: (shop: GameShop, objectId: string) => Promise<void>;
     resumeGameSeed: (shop: GameShop, objectId: string) => Promise<void>;
+    saveGlobalTrackers: (
+      manual: string[],
+      url: string | null,
+      appendManual: boolean,
+      appendUrl: boolean
+    ) => Promise<void>;
     updateDownloadQueuePosition: (
       shop: GameShop,
       objectId: string,
@@ -203,9 +317,11 @@ declare global {
       iconUrl?: string;
       logoImageUrl?: string;
       libraryHeroImageUrl?: string;
+      customCoverImageUrl?: string | null;
       originalIconPath?: string;
       originalLogoPath?: string;
       originalHeroPath?: string;
+      customOriginalCoverPath?: string;
     }) => Promise<Game>;
     copyCustomGameAsset: (
       sourcePath: string,
@@ -429,6 +545,7 @@ declare global {
       objectId: string,
       playtimeInSeconds: number
     ) => Promise<void>;
+    resetGamePlayTime: (shop: GameShop, objectId: string) => Promise<void>;
     /* User preferences */
     authenticateRealDebrid: (apiToken: string) => Promise<RealDebridUser>;
     authenticatePremiumize: (apiToken: string) => Promise<PremiumizeUser>;
@@ -495,6 +612,101 @@ declare global {
     onEmulatorInstallProgress: (
       cb: (payload: EmulatorInstallProgress) => void
     ) => () => void;
+    /* RetroArch */
+    getRetroArchConfig: () => Promise<RetroArchConfig>;
+    detectRetroArch: () => Promise<RetroArchConfig>;
+    previewRetroArchExecutable: (
+      executablePath?: string | null
+    ) => Promise<RetroArchExecutablePreview | null>;
+    setRetroArchExecutablePath: (
+      executablePath: string | null
+    ) => Promise<RetroArchConfig | null>;
+    setRetroArchCoresDir: (coresDir: string | null) => Promise<RetroArchConfig>;
+    getRetroArchInstallOptions: () => Promise<RetroArchInstallOption[]>;
+    installRetroArch: (optionId: string) => Promise<RetroArchInstallResult>;
+    installRetroArchCore: (
+      core: RetroArchCoreName
+    ) => Promise<RetroArchCoreInstallResult>;
+    installAllRetroArchCores: () => Promise<RetroArchCoreInstallResult[]>;
+    onRetroArchCoreInstallProgress: (
+      cb: (payload: RetroArchCoreInstallProgress) => void
+    ) => () => void;
+    onRetroArchInstallProgress: (
+      cb: (payload: RetroArchInstallProgress) => void
+    ) => () => void;
+    importRetroArchRoms: (
+      folders: { path: string; scanSubfolders: boolean }[],
+      language: string
+    ) => Promise<{ requestId: string }>;
+    cancelRetroArchImport: (requestId: string) => Promise<void>;
+    rescanRetroArch: (language?: string) => Promise<RetroArchConfig>;
+    listRetroArchRoms: () => Promise<
+      (DetectedRom & { platform: RetroArchPlatform })[]
+    >;
+    getActiveRetroArchImport: () => Promise<{
+      requestId: string;
+      phase: "scanning" | "matching" | "done";
+      processed: number;
+      total: number;
+      percent: number;
+      currentFile: string | null;
+      status: "matched" | "unmatched" | null;
+      discovered: number;
+      matched: number;
+      sizeBytes: number;
+    } | null>;
+    onRetroArchImportProgress: (
+      cb: (
+        payload:
+          | {
+              type: "progress";
+              requestId: string;
+              phase: "scanning" | "matching";
+              processed: number;
+              total: number;
+              percent: number;
+              currentFile: string | null;
+              status: "matched" | "unmatched" | null;
+              discovered: number;
+              matched: number;
+              sizeBytes: number;
+            }
+          | {
+              type: "done" | "cancelled";
+              requestId: string;
+              fileCount: number;
+              sizeBytes: number;
+              matched: number;
+              unmatched: number;
+              unmatchedFiles: { name: string; reason: "unmatched" }[];
+            }
+          | {
+              type: "error";
+              requestId: string;
+              message: string;
+            }
+      ) => void
+    ) => () => void;
+    onRetroArchImportStatus: (cb: (importing: boolean) => void) => () => void;
+    previewRetroArchRomFolder: (
+      folderPath: string,
+      scanSubfolders: boolean
+    ) => Promise<{ fileCount: number }>;
+    checkRetroArchExecutable: () => Promise<{ exists: boolean }>;
+    removeRetroArch: () => Promise<RetroArchConfig>;
+    addRetroArchRomFolder: (
+      folderPath: string,
+      scanSubfolders: boolean
+    ) => Promise<RetroArchConfig>;
+    changeRetroArchRomFolder: (
+      folderId: string,
+      newPath: string
+    ) => Promise<RetroArchConfig>;
+    removeRetroArchRomFolder: (folderId: string) => Promise<RetroArchConfig>;
+    toggleRetroArchSubfolders: (
+      folderId: string,
+      scanSubfolders: boolean
+    ) => Promise<RetroArchConfig>;
     startRomScan: (
       system: EmulatorSystem,
       folderPath: string,
@@ -618,11 +830,35 @@ declare global {
     extractGameDownload: (shop: GameShop, objectId: string) => Promise<boolean>;
     scanInstalledGames: (
       additionalDirectories?: string[],
-      includeDefaultDirectories?: boolean
+      includeDefaultDirectories?: boolean,
+      addGamesToLibrary?: boolean,
+      requestId?: string
     ) => Promise<{
-      foundGames: { title: string; executablePath: string }[];
+      linkedGames: {
+        title: string;
+        executablePath: string;
+        iconUrl: string | null;
+      }[];
+      addedGames: {
+        title: string;
+        executablePath: string;
+        iconUrl: string | null;
+      }[];
+      ambiguousMatches: {
+        executablePath: string;
+        choices: { objectId: string; title: string; iconUrl: string | null }[];
+      }[];
       total: number;
     }>;
+    cancelScanInstalledGames: (requestId: string) => Promise<void>;
+    addScannedGame: (
+      objectId: string,
+      executablePath: string
+    ) => Promise<{
+      title: string;
+      executablePath: string;
+      iconUrl: string | null;
+    } | null>;
     importSteamGames: () => Promise<{
       importedGames: { title: string; objectId: string }[];
       totalInstalled: number;
@@ -637,6 +873,9 @@ declare global {
     ) => () => Electron.IpcRenderer;
     onExtractionFailed: (
       cb: (shop: GameShop, objectId: string) => void
+    ) => () => Electron.IpcRenderer;
+    onDownloadHalted: (
+      cb: (gameTitle: string) => void
     ) => () => Electron.IpcRenderer;
     onArchiveDeletionPrompt: (
       cb: (archivePaths: string[]) => void
@@ -678,6 +917,10 @@ declare global {
       shop: GameShop,
       gameArtifactId: string
     ) => Promise<void>;
+    exportGameArtifact: (
+      gameArtifactId: string,
+      suggestedName: string
+    ) => Promise<LegacySaveExportResult>;
     getGameArtifacts: (
       objectId: string,
       shop: GameShop
@@ -895,13 +1138,19 @@ declare global {
         achievements: AchievementNotificationInfo[]
       ) => void
     ) => () => Electron.IpcRenderer;
-    onCombinedAchievementsUnlocked: (
-      cb: (
-        gameCount: number,
-        achievementCount: number,
-        position: AchievementCustomNotificationPosition
-      ) => void
+    onPrepareAchievementNotification: (
+      cb: (request: AchievementNotificationRequest) => void
     ) => () => Electron.IpcRenderer;
+    onStartAchievementNotification: (
+      cb: (requestId: string) => void
+    ) => () => Electron.IpcRenderer;
+    achievementNotificationHostReady: () => Promise<void>;
+    achievementNotificationContentReady: (requestId: string) => Promise<void>;
+    achievementNotificationFinished: (requestId: string) => Promise<void>;
+    achievementNotificationFailed: (
+      requestId?: string,
+      reason?: string
+    ) => Promise<void>;
     updateAchievementCustomNotificationWindow: () => Promise<void>;
     showAchievementTestNotification: () => Promise<void>;
 

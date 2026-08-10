@@ -56,6 +56,46 @@ export const getSteamLocation = async () => {
   });
 };
 
+const LIBRARY_FOLDER_MANIFESTS = [
+  ["steamapps", "libraryfolders.vdf"],
+  ["config", "libraryfolders.vdf"],
+];
+
+const parseLibraryFolderPaths = (content: string) => {
+  const values = [
+    ...content.matchAll(/"path"\s*"([^"]+)"/g),
+    ...content.matchAll(/"\d+"\s*"([^"]+)"/g),
+  ].map((match) => match[1].replaceAll("\\\\", "\\"));
+
+  return values.filter((value) => path.isAbsolute(value));
+};
+
+export const getSteamLibraryFolders = async (): Promise<string[]> => {
+  const steamLocation = await getSteamLocation().catch(() => null);
+
+  if (!steamLocation) return [];
+
+  for (const manifest of LIBRARY_FOLDER_MANIFESTS) {
+    const content = await fs.promises
+      .readFile(path.join(steamLocation, ...manifest), "utf8")
+      .catch(() => null);
+
+    if (!content) continue;
+
+    const libraryFolders = parseLibraryFolderPaths(content);
+
+    if (libraryFolders.length > 0) {
+      return [...new Set([steamLocation, ...libraryFolders])];
+    }
+
+    logger.info(
+      `[getSteamLibraryFolders] No library folders found in ${manifest.join("/")}`
+    );
+  }
+
+  return [steamLocation];
+};
+
 const steamLanguageByLocale: Record<string, string> = {
   ar: "arabic",
   bg: "bulgarian",
@@ -183,20 +223,29 @@ export interface CreateSteamShortcutOptions {
   openVr?: boolean;
 }
 
+interface SteamShortcutLaunchConfig {
+  appIdSeed?: string;
+  launchOptions?: string;
+}
+
 export const composeSteamShortcut = (
   title: string,
   executablePath: string,
   iconPath: string | null,
-  options?: CreateSteamShortcutOptions
+  options?: CreateSteamShortcutOptions,
+  launchConfig: SteamShortcutLaunchConfig = {}
 ): SteamShortcut => {
   return {
-    appid: generateSteamShortcutAppId(executablePath, title),
+    appid: generateSteamShortcutAppId(
+      executablePath,
+      launchConfig.appIdSeed ?? title
+    ),
     appname: title,
     Exe: `"${executablePath}"`,
     StartDir: `"${path.dirname(executablePath)}"`,
     icon: iconPath ?? "",
     ShortcutPath: "",
-    LaunchOptions: "",
+    LaunchOptions: launchConfig.launchOptions ?? "",
     IsHidden: false,
     AllowDesktopConfig: true,
     AllowOverlay: true,

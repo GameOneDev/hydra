@@ -15,38 +15,92 @@ import { db, levelKeys, themesSublevel } from "@main/level";
 import { restartAndInstallUpdate } from "@main/events/autoupdater/restart-and-install-update";
 import { SystemPath } from "../system-path";
 import { getThemeSoundPath } from "@main/helpers";
-import { processProfileImage } from "@main/events/profile/process-profile-image";
 import { LocalNotificationManager } from "./local-notifications";
+import {
+  buildDownloadFileName,
+  transcodeNotificationIcon,
+} from "./notification-icon";
 
-const getStaticImage = async (path: string) => {
-  return processProfileImage(path, "jpg")
-    .then((response) => response.imagePath)
-    .catch(() => path);
+/**
+ * Icons live in a directory of our own so it can be emptied wholesale. It is
+ * cleared once per run rather than per notification because Electron reads the
+ * icon off disk lazily, and the app holds a single-instance lock, so no other
+ * run can be relying on what is already there.
+ */
+let notificationIconDirectory: Promise<string> | null = null;
+
+const getNotificationIconDirectory = () => {
+  notificationIconDirectory ??= (async () => {
+    const directory = path.join(
+      SystemPath.getPath("temp"),
+      "hydra-notifications"
+    );
+
+    await fs.promises.rm(directory, { recursive: true, force: true });
+    await fs.promises.mkdir(directory, { recursive: true });
+
+    return directory;
+  })();
+
+  return notificationIconDirectory;
 };
 
-async function downloadImage(url: string | null) {
+const getStaticImage = async (imagePath: string) => {
+  try {
+    return await transcodeNotificationIcon(
+      imagePath,
+      await getNotificationIconDirectory()
+    );
+  } catch (error) {
+    logger.error("Failed to transcode notification icon", imagePath, error);
+    return undefined;
+  } finally {
+    // The download is only ever an input to the transcode.
+    await fs.promises.unlink(imagePath).catch(() => undefined);
+  }
+};
+
+async function downloadImage(url: string | null, signal?: AbortSignal) {
+  if (signal?.aborted) return undefined;
   if (!url) return undefined;
   if (!url.startsWith("http")) return undefined;
 
-  const fileName = url.split("/").pop()!;
-  const outputPath = path.join(SystemPath.getPath("temp"), fileName);
+  const fileName = buildDownloadFileName(url);
+  const outputPath = path.join(await getNotificationIconDirectory(), fileName);
   const writer = fs.createWriteStream(outputPath);
 
   const response = await axios.get(url, {
     responseType: "stream",
+    signal,
   });
 
-  response.data.pipe(writer);
-
   return new Promise<string | undefined>((resolve) => {
+    let settled = false;
+    const finish = (value: string | undefined) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    };
+    const discardDownload = () =>
+      fs.promises.unlink(outputPath).catch(() => undefined);
+    const onAbort = () => {
+      writer.destroy();
+      void discardDownload();
+      finish(undefined);
+    };
+
+    signal?.addEventListener("abort", onAbort, { once: true });
     writer.on("finish", async () => {
       const staticImagePath = await getStaticImage(outputPath);
-      resolve(staticImagePath);
+      finish(signal?.aborted ? undefined : staticImagePath);
     });
     writer.on("error", () => {
-      logger.error("Failed to download image", { url });
-      resolve(undefined);
+      if (!signal?.aborted) logger.error("Failed to download image", { url });
+      void discardDownload();
+      finish(undefined);
     });
+    response.data.pipe(writer);
   });
 }
 
@@ -105,6 +159,26 @@ export const publishDownloadCompleteNotification = async (game: Game) => {
   );
 };
 
+export const publishDownloadHaltedNotification = async (game: Game) => {
+  const userPreferences = await db.get<string, UserPreferences>(
+    levelKeys.userPreferences,
+    {
+      valueEncoding: "json",
+    }
+  );
+
+  if (!userPreferences?.downloadNotificationsEnabled) return;
+
+  new Notification({
+    title: t("download_halted", { ns: "notifications" }),
+    body: t("download_halted_no_disk_space", {
+      ns: "notifications",
+      title: game.title,
+    }),
+    icon: await downloadImage(game.iconUrl),
+  }).show();
+};
+
 export const publishNotificationUpdateReadyToInstall = async (
   version: string
 ) => {
@@ -135,8 +209,10 @@ export const publishNotificationUpdateReadyToInstall = async (
 };
 
 export const publishNewFriendRequestNotification = async (
-  user: UserProfile
+  user: UserProfile,
+  signal?: AbortSignal
 ) => {
+  if (signal?.aborted) return;
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,
     {
@@ -144,7 +220,14 @@ export const publishNewFriendRequestNotification = async (
     }
   );
 
+  if (signal?.aborted) return;
   if (!userPreferences?.friendRequestNotificationsEnabled) return;
+
+  const notificationIcon =
+    (user?.profileImageUrl
+      ? await downloadImage(user.profileImageUrl, signal)
+      : undefined) ?? trayIcon;
+  if (signal?.aborted) return;
 
   new Notification({
     title: t("new_friend_request_title", {
@@ -154,24 +237,28 @@ export const publishNewFriendRequestNotification = async (
       ns: "notifications",
       displayName: user.displayName,
     }),
-    icon: user?.profileImageUrl
-      ? await downloadImage(user.profileImageUrl)
-      : trayIcon,
+    icon: notificationIcon,
   }).show();
 };
 
 export const publishFriendStartedPlayingGameNotification = async (
-  friend: UserProfile
+  friend: UserProfile,
+  signal?: AbortSignal
 ) => {
+  if (signal?.aborted) return;
+  const notificationIcon =
+    (friend?.profileImageUrl
+      ? await downloadImage(friend.profileImageUrl, signal)
+      : undefined) ?? trayIcon;
+  if (signal?.aborted) return;
+
   new Notification({
     title: t("friend_started_playing_game", {
       ns: "notifications",
       displayName: friend.displayName,
     }),
     body: friend?.currentGame?.title,
-    icon: friend?.profileImageUrl
-      ? await downloadImage(friend.profileImageUrl)
-      : trayIcon,
+    icon: notificationIcon,
   }).show();
 };
 

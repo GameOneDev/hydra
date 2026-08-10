@@ -1,9 +1,5 @@
 import type { Downloader } from "@shared";
-import type {
-  GameShop,
-  SteamAchievement,
-  UnlockedAchievement,
-} from "./game.types";
+import type { GameShop } from "./game.types";
 import type { DownloadStatus } from "./download.types";
 import type { ClassicsDisc } from "./emulator.types";
 
@@ -108,20 +104,13 @@ export interface Download {
   automaticallyDeleteArchiveFiles: boolean;
   fileIndices?: number[];
   selectedFilesSize?: number | null;
+  customTrackers?: string[];
 }
 
 export interface DownloadLayoutState {
   version: 1;
   queueOrder: string[];
   pausedOrder: string[];
-}
-
-export interface GameAchievement {
-  achievements: SteamAchievement[];
-  unlockedAchievements: UnlockedAchievement[];
-  updatedAt: number | undefined;
-  language: string | undefined;
-  catalogueValidator?: string;
 }
 
 export type AchievementCustomNotificationPosition =
@@ -191,6 +180,10 @@ export interface UserPreferences {
   bigPictureDiagnosticsPosition?: BigPictureDiagnosticsPosition;
   maxDownloadSpeedBytesPerSecond?: number | null;
   torrentNetworkInterface?: string | null;
+  globalTrackers?: string[];
+  appendGlobalTrackers?: boolean;
+  globalTrackersUrl?: string;
+  appendGlobalTrackersUrl?: boolean;
   defaultProtonPath?: string | null;
   autoRunMangohud?: boolean;
   autoRunGamemode?: boolean;
