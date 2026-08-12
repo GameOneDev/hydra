@@ -27,6 +27,7 @@ import {
   WindowManager,
   logger,
   migrateCloudSaveAutomaticSyncDefaults,
+  syncSteamPlaytimeForLibrary,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
@@ -196,6 +197,16 @@ export const loadState = async () => {
   WindowManager.sendDownloadsUpdated();
 
   startMainLoop();
+
+  syncSteamPlaytimeForLibrary()
+    .then((updatedCount) => {
+      if (updatedCount > 0) {
+        WindowManager.sendToAppWindows("on-library-batch-complete");
+      }
+    })
+    .catch((err) => {
+      logger.warn("Failed to sync Steam playtime on startup", err);
+    });
 
   if (process.platform === "win32") {
     CommonRedistManager.downloadCommonRedist();

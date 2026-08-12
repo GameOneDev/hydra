@@ -1,0 +1,88 @@
+@use "../../scss/globals.scss";
+
+.online-friends-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(globals.$spacing-unit / 2);
+  margin: 0 calc(globals.$spacing-unit * 2) 0 auto;
+  padding: 0;
+  max-width: 50vw;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-app-region: no-drag;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &__item {
+    flex-shrink: 0;
+    display: flex;
+  }
+
+  &__friend {
+    display: flex;
+    align-items: center;
+    gap: calc(globals.$spacing-unit / 2);
+    padding: 3px globals.$spacing-unit;
+    border-radius: 4px;
+    color: globals.$muted-color;
+    opacity: 0.8;
+    font-size: globals.$small-font-size;
+    cursor: pointer;
+    transition:
+      opacity ease 0.1s,
+      background-color ease 0.1s;
+
+    &:hover {
+      opacity: 1;
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  &__avatar {
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+  }
+
+  &__status-dot {
+    position: absolute;
+    right: -2px;
+    bottom: -2px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: solid 2px globals.$dark-background-color;
+    background-color: globals.$success-color;
+    box-sizing: border-box;
+  }
+
+  &__name {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+  }
+
+  &__game {
+    display: flex;
+    align-items: center;
+    gap: calc(globals.$spacing-unit / 2);
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #4ade80;
+    font-size: 11px;
+  }
+
+  &__game-icon {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+  }
+}
