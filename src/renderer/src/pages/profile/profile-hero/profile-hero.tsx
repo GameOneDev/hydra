@@ -1,4 +1,4 @@
-import { useCallback, useContext, useMemo, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { userProfileContext } from "@renderer/context";
 import {
   BlockedIcon,
@@ -6,6 +6,7 @@ import {
   CopyIcon,
   PencilIcon,
   PersonAddIcon,
+  ServerIcon,
   SignOutIcon,
   XCircleFillIcon,
 } from "@primer/octicons-react";
@@ -44,6 +45,7 @@ export function ProfileHero() {
   const [isPerformingAction, setIsPerformingAction] = useState(false);
   const [isCopyButtonHovered, setIsCopyButtonHovered] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [isOnSameServer, setIsOnSameServer] = useState(false);
 
   const { isMe, getUserProfile, userProfile, heroBackground, backgroundImage } =
     useContext(userProfileContext);
@@ -64,6 +66,20 @@ export function ProfileHero() {
   const { showSuccessToast, showErrorToast } = useToast();
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setIsOnSameServer(false);
+    if (!userProfile?.id) return;
+
+    /* Only the self-hosted cloud server implements this endpoint; without
+       one configured the request fails and no badge shows. */
+    window.electron.hydraApi
+      .get<{ isMember: boolean }>(
+        `/profile/members/${encodeURIComponent(userProfile.id)}`
+      )
+      .then((response) => setIsOnSameServer(Boolean(response?.isMember)))
+      .catch(() => setIsOnSameServer(false));
+  }, [userProfile?.id]);
 
   const handleSignOut = useCallback(async () => {
     setIsPerformingAction(true);
@@ -379,6 +395,16 @@ export function ProfileHero() {
                     </motion.span>
                     <CopyIcon size={16} />
                   </motion.button>
+
+                  {isOnSameServer && (
+                    <div
+                      className="profile-hero__custom-server-badge"
+                      title={t("custom_server_badge_tooltip")}
+                    >
+                      <ServerIcon size={12} />
+                      <span>{t("custom_server_badge")}</span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <Skeleton width={150} height={28} />

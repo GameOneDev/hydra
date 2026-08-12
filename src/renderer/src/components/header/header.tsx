@@ -21,9 +21,12 @@ import { SidebarAddingCustomGameModal } from "@renderer/components/sidebar/sideb
 import {
   useAppDispatch,
   useAppSelector,
+  useLibrary,
   useSearchHistory,
   useSearchSuggestions,
+  useToast,
 } from "@renderer/hooks";
+import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 
 import "./header.scss";
 import { AutoUpdateSubHeader } from "./auto-update-sub-header";
@@ -108,10 +111,14 @@ export function Header() {
   });
   const [showScanModal, setShowScanModal] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isImportingSteamGames, setIsImportingSteamGames] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [scanRequestId, setScanRequestId] = useState<string | null>(null);
 
   const { t } = useTranslation("header");
+
+  const { updateLibrary } = useLibrary();
+  const { showSuccessToast, showWarningToast, showErrorToast } = useToast();
 
   const [suggestionShop, setSuggestionShop] = useState<SuggestionShop>("steam");
 
@@ -352,6 +359,34 @@ export function Header() {
     setScanResult(null);
   };
 
+  const handleImportSteamGames = async () => {
+    if (isImportingSteamGames) return;
+
+    setIsImportingSteamGames(true);
+
+    try {
+      const result = await window.electron.importSteamGames();
+
+      updateLibrary();
+
+      if (result.importedGames.length > 0) {
+        showSuccessToast(
+          t("import_steam_games_success", {
+            count: result.importedGames.length,
+          })
+        );
+      } else if (result.totalInstalled > 0) {
+        showSuccessToast(t("import_steam_games_up_to_date"));
+      } else {
+        showWarningToast(t("import_steam_games_none_found"));
+      }
+    } catch {
+      showErrorToast(t("import_steam_games_error"));
+    } finally {
+      setIsImportingSteamGames(false);
+    }
+  };
+
   useEffect(() => {
     if (!isDropdownVisible) return;
 
@@ -413,6 +448,26 @@ export function Header() {
               data-tooltip-place="bottom"
             >
               <PlusIcon size={16} />
+            </button>
+          )}
+
+          {isOnLibraryPage && (
+            <button
+              type="button"
+              className={cn("header__action-button", {
+                "header__action-button--scanning": isImportingSteamGames,
+              })}
+              onClick={handleImportSteamGames}
+              disabled={isImportingSteamGames}
+              data-tooltip-id={scanButtonTooltipId}
+              data-tooltip-content={t("import_steam_games_tooltip")}
+              data-tooltip-place="bottom"
+            >
+              {isImportingSteamGames ? (
+                <SyncIcon size={16} />
+              ) : (
+                <SteamLogo width={16} height={16} />
+              )}
             </button>
           )}
 
@@ -480,7 +535,9 @@ export function Header() {
         <Tooltip id={addCustomGameTooltipId} style={{ zIndex: 1 }} />
       )}
 
-      {isOnLibraryPage && isLibraryScanSupported && (
+      {/* Not gated on isLibraryScanSupported: the Steam import button shares
+          this tooltip id and renders on every platform. */}
+      {isOnLibraryPage && (
         <Tooltip id={scanButtonTooltipId} style={{ zIndex: 1 }} />
       )}
 
