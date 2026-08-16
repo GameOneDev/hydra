@@ -11,7 +11,10 @@ import { db } from "@main/level";
 import { levelKeys } from "@main/level/sublevels";
 import type { Auth, User, UserPreferences } from "@types";
 import { SSEClient } from "./sse";
-import { sanitizeNetworkLogPayload } from "./network-log-payload";
+import {
+  sanitizeAxiosError,
+  sanitizeNetworkLogPayload,
+} from "./network-log-payload";
 
 export interface HydraApiOptions {
   needsAuth?: boolean;
@@ -502,6 +505,8 @@ export class HydraApi {
   }
 
   private static readonly handleUnauthorizedError = async (err) => {
+    sanitizeAxiosError(err);
+
     if (err instanceof AxiosError && err.response?.status === 401) {
       logger.error(
         "401 - Current credentials:",

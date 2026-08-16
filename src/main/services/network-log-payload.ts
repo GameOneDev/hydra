@@ -1,3 +1,5 @@
+import { AxiosError } from "axios";
+
 const REDACTED_VALUE = "[REDACTED]";
 const CIRCULAR_VALUE = "[Circular]";
 
@@ -104,3 +106,58 @@ const sanitizePayload = (value: unknown, seen: WeakSet<object>): unknown => {
 
 export const sanitizeNetworkLogPayload = (value: unknown) =>
   sanitizePayload(value, new WeakSet());
+
+/* Request headers carrying credentials. Matched case-insensitively:
+   AxiosHeaders keeps whatever casing the caller used, so a literal
+   `headers.Authorization` lookup silently misses a lowercase header. */
+const sensitiveRequestHeaders = new Set([
+  "authorization",
+  "cookie",
+  "proxy-authorization",
+]);
+
+const scrubRequestConfig = (config: AxiosError["config"]) => {
+  if (!config) return;
+
+  if (config.headers) {
+    for (const key of Object.keys(config.headers)) {
+      if (sensitiveRequestHeaders.has(normalizedKey(key))) {
+        config.headers[key] = REDACTED_VALUE;
+      }
+    }
+  }
+
+  /* `/auth/refresh` posts the refresh token, so the serialized body is every
+     bit as sensitive as the headers. */
+  if (config.data) config.data = sanitizeNetworkLogPayload(config.data);
+  if (config.params) config.params = sanitizeNetworkLogPayload(config.params);
+};
+
+/**
+ * Strips credentials from an AxiosError before it can reach a log or an IPC
+ * handler.
+ *
+ * `ipcMain.handle` console.errors whatever a handler rejects with, and
+ * util.inspect walks the entire error: `request` is the Node ClientRequest
+ * whose `_header` holds the raw HTTP request line — bearer token included —
+ * while `config.headers` and `config.data` carry the access and refresh
+ * tokens. Nothing downstream reads those; callers only use `message`,
+ * `code`, `status` and `response.data`.
+ *
+ * The error is mutated in place so callers keep their `instanceof` checks and
+ * `response.status` reads. Nothing retries from `err.config` today; anything
+ * that starts to must rebuild the config instead of replaying a redacted one.
+ */
+export const sanitizeAxiosError = (err: unknown) => {
+  if (!(err instanceof AxiosError)) return err;
+
+  scrubRequestConfig(err.config);
+  /* Normally the very same object as `err.config`, but scrubbing twice is
+     harmless and this does not depend on axios keeping them identical. */
+  scrubRequestConfig(err.response?.config);
+
+  delete err.request;
+  delete err.response?.request;
+
+  return err;
+};
