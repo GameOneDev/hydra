@@ -367,6 +367,11 @@ export class HydraApi {
           return request;
         },
         (error) => {
+          if (error.config?.headers?.Authorization) {
+            error.config.headers.Authorization = "Bearer <REDACTED>";
+          }
+          if (error.request) delete error.request;
+          if (error.response?.request) delete error.response.request;
           logger.error("request error", error);
           return Promise.reject(error);
         }
@@ -386,6 +391,13 @@ export class HydraApi {
           logger.error(" ---- RESPONSE ERROR -----");
           const config = error.config ?? {};
 
+          if (config.headers?.Authorization) {
+            config.headers.Authorization = "Bearer <REDACTED>";
+          }
+          if (error.response?.config?.headers?.Authorization) {
+            error.response.config.headers.Authorization = "Bearer <REDACTED>";
+          }
+
           logger.error(
             config.method,
             config.baseURL,
@@ -402,6 +414,8 @@ export class HydraApi {
               sanitizeNetworkLogPayload(error.response.data)
             );
 
+            if (error.request) delete error.request;
+            if (error.response?.request) delete error.response.request;
             return Promise.reject(error as Error);
           }
 
@@ -416,6 +430,8 @@ export class HydraApi {
           }
 
           logger.error("Error", error.message);
+          if (error.request) delete error.request;
+          if (error.response?.request) delete error.response.request;
           return Promise.reject(error as Error);
         }
       );
@@ -502,6 +518,17 @@ export class HydraApi {
   }
 
   private static readonly handleUnauthorizedError = async (err) => {
+    if (err instanceof AxiosError) {
+      if (err.config?.headers?.Authorization) {
+        err.config.headers.Authorization = "Bearer <REDACTED>";
+      }
+      if (err.response?.config?.headers?.Authorization) {
+        err.response.config.headers.Authorization = "Bearer <REDACTED>";
+      }
+      if (err.request) delete err.request;
+      if (err.response?.request) delete err.response.request;
+    }
+
     if (err instanceof AxiosError && err.response?.status === 401) {
       logger.error(
         "401 - Current credentials:",
