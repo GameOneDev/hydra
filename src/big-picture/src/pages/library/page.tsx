@@ -128,15 +128,20 @@ export default function LibraryPage() {
     getInitialLibrarySecondaryFilter
   );
   const [search, setSearch] = useState("");
-  
+
   const [showHidden, setShowHidden] = useState(() => {
-    return globalThis.window?.localStorage.getItem("library-show-hidden") === "true";
+    return (
+      globalThis.window?.localStorage.getItem("library-show-hidden") === "true"
+    );
   });
   const [hiddenLibrary, setHiddenLibrary] = useState<LibraryGame[]>([]);
 
   useEffect(() => {
     if (showHidden) {
-      window.electron.getHiddenLibrary().then(setHiddenLibrary).catch(() => {});
+      window.electron
+        .getHiddenLibrary()
+        .then(setHiddenLibrary)
+        .catch(() => {});
     } else {
       setHiddenLibrary([]);
     }
@@ -161,7 +166,13 @@ export default function LibraryPage() {
     firstGridItemId,
     firstListItemId,
     lastPlayedGames,
-  } = useLibraryPageData(combinedLibrary, selectedFilterTab, search, sortBy, filterBy);
+  } = useLibraryPageData(
+    combinedLibrary,
+    selectedFilterTab,
+    search,
+    sortBy,
+    filterBy
+  );
 
   /** Must change when sorting, secondary filter or search updates so grid/list fades. */
   const deferredSearchTransition = useDeferredValue(search);
@@ -419,7 +430,10 @@ export default function LibraryPage() {
             showHidden={showHidden}
             onShowHiddenChange={(v) => {
               setShowHidden(v);
-              globalThis.window?.localStorage.setItem("library-show-hidden", String(v));
+              globalThis.window?.localStorage.setItem(
+                "library-show-hidden",
+                String(v)
+              );
             }}
             counts={filterCounts}
             library={combinedLibrary}

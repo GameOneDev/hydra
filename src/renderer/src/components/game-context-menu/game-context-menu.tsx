@@ -333,7 +333,7 @@ export function GameContextMenu({
           onClick: onPinToggle ?? handleTogglePin,
           disabled: isDeleting,
         },
-        ...(selfHostedCloudUrl
+        ...(userDetails && selfHostedCloudUrl
           ? [
               {
                 id: "hide-game",

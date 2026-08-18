@@ -22,6 +22,7 @@ import {
 } from "../../../../helpers";
 import { SettingsSection } from "../../../../pages/settings/settings-section";
 import { GameArtworkPicker } from "./artwork-picker";
+import { useUserDetails, useUserPreferences } from "../../../../hooks";
 
 import "./customization-tab.scss";
 
@@ -241,6 +242,10 @@ export function GameCustomizationSettingsTab({
   onToggleHide,
 }: Readonly<GameCustomizationSettingsProps>) {
   const { t } = useTranslation("big_picture");
+  const { userDetails } = useUserDetails();
+  const userPreferences = useUserPreferences();
+  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
+  
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
   const [hasAssetTabsInteracted, setHasAssetTabsInteracted] = useState(false);
   const [composedAssets, setComposedAssets] = useState<ShopAssets | null>(null);
@@ -471,21 +476,23 @@ export function GameCustomizationSettingsTab({
           </div>
         </SettingsSection>
 
-        <SettingsSection
-          className="game-customization-settings-tab__section"
-          title={t("visibility", "Visibility")}
-          description={t("hide_game_description", "Hide this game from your library.")}
-        >
-          <div className="game-customization-settings-tab__section-content">
-            <Checkbox
-              block
-              focusId="game-customization-settings-hide-game"
-              label={t("hide_game", "Hide Game")}
-              checked={game.isHidden === true}
-              onChange={() => onToggleHide(game)}
-            />
-          </div>
-        </SettingsSection>
+        {userDetails && selfHostedCloudUrl && (
+          <SettingsSection
+            className="game-customization-settings-tab__section"
+            title={t("visibility", "Visibility")}
+            description={t("hide_game_description", "Hide this game from your library.")}
+          >
+            <div className="game-customization-settings-tab__section-content">
+              <Checkbox
+                block
+                focusId="game-customization-settings-hide-game"
+                label={t("hide_game", "Hide Game")}
+                checked={game.isHidden === true}
+                onChange={() => onToggleHide(game)}
+              />
+            </div>
+          </SettingsSection>
+        )}
 
         <SettingsSection
           className="game-customization-settings-tab__section game-customization-settings-tab__section--assets"

@@ -89,6 +89,7 @@ export default function Library() {
   }, [library, hiddenLibrary]);
 
   const { userDetails } = useUserDetails();
+  const selfHostedCloudUrl = useAppSelector((state) => state.userPreferences.value?.selfHostedCloudUrl);
   const {
     collections,
     loadCollections,
@@ -509,26 +510,28 @@ export default function Library() {
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
               />
-              <button
-                type="button"
-                className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}
-                onClick={() => {
-                  const next = !showHidden;
-                  setShowHidden(next);
-                  localStorage.setItem("library-show-hidden", next.toString());
-                }}
-                title={
-                  showHidden
-                    ? t("hide_hidden_games", "Hide hidden games")
-                    : t("show_hidden_games", "Show hidden games")
-                }
-              >
-                {showHidden ? (
-                  <EyeIcon size={16} />
-                ) : (
-                  <EyeClosedIcon size={16} />
-                )}
-              </button>
+              {userDetails && selfHostedCloudUrl && (
+                <button
+                  type="button"
+                  className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}
+                  onClick={() => {
+                    const next = !showHidden;
+                    setShowHidden(next);
+                    localStorage.setItem("library-show-hidden", next.toString());
+                  }}
+                  title={
+                    showHidden
+                      ? t("hide_hidden_games", "Hide hidden games")
+                      : t("show_hidden_games", "Show hidden games")
+                  }
+                >
+                  {showHidden ? (
+                    <EyeIcon size={16} />
+                  ) : (
+                    <EyeClosedIcon size={16} />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
