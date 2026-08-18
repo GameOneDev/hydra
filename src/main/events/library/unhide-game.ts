@@ -1,6 +1,6 @@
 import { registerEvent } from "../register-event";
 import { gamesSublevel } from "@main/level";
-import { HydraApi } from "@main/services";
+import { HydraApi, logger } from "@main/services";
 import type { GameShop } from "@types";
 
 const unhideGame = async (
@@ -16,7 +16,9 @@ const unhideGame = async (
   await HydraApi.delete(
     `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`,
     { needsAuth: true }
-  ).catch(() => {});
+  ).catch((err) => {
+    logger.warn(`Failed to sync unhideGame to server for ${gameKey}`, err);
+  });
 
   let newRemoteId = null;
   if (HydraApi.isLoggedIn()) {
@@ -33,7 +35,6 @@ const unhideGame = async (
       );
       if (result?.id) newRemoteId = result.id;
     } catch (err) {
-      const logger = require("@main/services/logger").logger;
       logger.error("FAILED TO RE-ADD GAME", err);
     }
 
@@ -48,7 +49,9 @@ const unhideGame = async (
           (g) => g.shop === shop && g.objectId === objectId
         );
         if (existing) newRemoteId = existing.id;
-      } catch (err) {}
+      } catch (err) {
+        logger.warn(`Failed to fetch remote profile games for ${gameKey}`, err);
+      }
     }
   }
 

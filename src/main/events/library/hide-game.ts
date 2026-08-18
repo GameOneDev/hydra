@@ -1,6 +1,6 @@
 import { registerEvent } from "../register-event";
 import { gamesSublevel } from "@main/level";
-import { HydraApi } from "@main/services";
+import { HydraApi, logger } from "@main/services";
 import type { GameShop } from "@types";
 
 const hideGame = async (
@@ -17,7 +17,9 @@ const hideGame = async (
     "/profile/hidden-games",
     { shop, objectId },
     { needsAuth: true }
-  ).catch(() => {});
+  ).catch((err) => {
+    logger.warn(`Failed to sync hideGame to server for ${gameKey}`, err);
+  });
 
   let remoteIdToDelete = game.remoteId;
 
@@ -30,13 +32,17 @@ const hideGame = async (
         (g) => g.shop === shop && g.objectId === objectId
       );
       if (existing) remoteIdToDelete = existing.id;
-    } catch (err) {}
+    } catch (err) {
+      logger.warn(`Failed to fetch remote profile games for ${gameKey}`, err);
+    }
   }
 
   if (remoteIdToDelete) {
     await HydraApi.delete(`/profile/games/${remoteIdToDelete}`, {
       needsAuth: true,
-    }).catch(() => {});
+    }).catch((err) => {
+      logger.warn(`Failed to delete game from profile games for ${remoteIdToDelete}`, err);
+    });
   }
 
   await gamesSublevel.put(gameKey, {
