@@ -245,7 +245,7 @@ export function GameCustomizationSettingsTab({
   const { userDetails } = useUserDetails();
   const userPreferences = useUserPreferences();
   const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
-  
+
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
   const [hasAssetTabsInteracted, setHasAssetTabsInteracted] = useState(false);
   const [composedAssets, setComposedAssets] = useState<ShopAssets | null>(null);
@@ -480,7 +480,10 @@ export function GameCustomizationSettingsTab({
           <SettingsSection
             className="game-customization-settings-tab__section"
             title={t("visibility", "Visibility")}
-            description={t("hide_game_description", "Hide this game from your library.")}
+            description={t(
+              "hide_game_description",
+              "Hide this game from your library."
+            )}
           >
             <div className="game-customization-settings-tab__section-content">
               <Checkbox

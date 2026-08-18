@@ -89,7 +89,9 @@ export default function Library() {
   }, [library, hiddenLibrary]);
 
   const { userDetails } = useUserDetails();
-  const selfHostedCloudUrl = useAppSelector((state) => state.userPreferences.value?.selfHostedCloudUrl);
+  const selfHostedCloudUrl = useAppSelector(
+    (state) => state.userPreferences.value?.selfHostedCloudUrl
+  );
   const {
     collections,
     loadCollections,
@@ -517,7 +519,10 @@ export default function Library() {
                   onClick={() => {
                     const next = !showHidden;
                     setShowHidden(next);
-                    localStorage.setItem("library-show-hidden", next.toString());
+                    localStorage.setItem(
+                      "library-show-hidden",
+                      next.toString()
+                    );
                   }}
                   title={
                     showHidden
