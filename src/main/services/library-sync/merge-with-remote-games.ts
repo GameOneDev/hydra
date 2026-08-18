@@ -13,6 +13,7 @@ import {
   fetchSelfHostedArtwork,
   type SelfHostedArtworkMap,
 } from "./self-hosted-artwork";
+import { syncHiddenGames } from "./sync-hidden-games";
 
 type ProfileGame = {
   id: string;
@@ -330,6 +331,8 @@ export const mergeWithRemoteGames = async () => {
         canReconcileOfficialArtwork
       );
     }
+
+    await syncHiddenGames().catch(() => {});
   } catch {
     // Keep local library available when remote sync fails.
   }

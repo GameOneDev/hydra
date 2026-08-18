@@ -7,49 +7,28 @@ import {
   downloadsSublevel,
   gamesArtworkSelectionSublevel,
   gamesShopAssetsSublevel,
-  gamesShopCacheSublevel,
   gamesSublevel,
 } from "@main/level";
 import { composeAssetsWithArtwork } from "@shared";
 import { AchievementMemoryStore } from "@main/services/achievements/achievement-memory-store";
+import { lookupCachedPlatform } from "./get-library";
 
-export const lookupCachedPlatform = async (
-  gameKey: string
-): Promise<string | null> => {
-  const prefix = `${gameKey}:`;
-  try {
-    const entries = await gamesShopCacheSublevel.iterator().all();
-    for (const [key, value] of entries) {
-      if (
-        typeof key === "string" &&
-        key.startsWith(prefix) &&
-        value?.platform
-      ) {
-        return value.platform;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
-};
-
-const getLibrary = async (): Promise<LibraryGame[]> => {
+const getHiddenLibrary = async (): Promise<LibraryGame[]> => {
   return gamesSublevel
     .iterator()
     .all()
     .then((results) => {
       return Promise.all(
         results
-          .filter(([_key, game]) => game.isDeleted === false && !game.isHidden)
+          .filter(([_key, game]) => game.isDeleted === false && game.isHidden === true)
           .map(async ([key, game]) => {
-            const download = await downloadsSublevel.get(key);
-            const gameAssets = await gamesShopAssetsSublevel.get(key);
-            const artworkSelection =
-              await gamesArtworkSelectionSublevel.get(key);
+            const download = await downloadsSublevel.get(key).catch(() => null);
+            const gameAssets = await gamesShopAssetsSublevel.get(key).catch(() => null);
+            const artworkSelection = await gamesArtworkSelectionSublevel.get(key).catch(() => null);
+
             const composedAssets = composeAssetsWithArtwork(
               gameAssets ?? null,
-              artworkSelection
+              artworkSelection ?? null
             );
             const achievements = AchievementMemoryStore.get(
               game.shop,
@@ -120,7 +99,6 @@ const getLibrary = async (): Promise<LibraryGame[]> => {
               download: download ?? null,
               unlockedAchievementCount,
               achievementCount: game.achievementCount ?? 0,
-              isHidden: game.isHidden ?? false,
               // Spread composed assets last to ensure all image URLs are properly set
               ...composedAssets,
               title: composedAssets?.title || game.title,
@@ -136,4 +114,4 @@ const getLibrary = async (): Promise<LibraryGame[]> => {
     });
 };
 
-registerEvent("getLibrary", getLibrary);
+registerEvent("getHiddenLibrary", getHiddenLibrary);

@@ -1017,6 +1017,11 @@ contextBridge.exposeInMainWorld("electron", {
   verifyExecutablePathInUse: (executablePath: string) =>
     ipcRenderer.invoke("verifyExecutablePathInUse", executablePath),
   getLibrary: () => ipcRenderer.invoke("getLibrary"),
+  getHiddenLibrary: () => ipcRenderer.invoke("getHiddenLibrary"),
+  hideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("hideGame", shop, objectId),
+  unhideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("unhideGame", shop, objectId),
   refreshLibraryAssets: () => ipcRenderer.invoke("refreshLibraryAssets"),
   getClassicsImportStatus: (): Promise<boolean> =>
     ipcRenderer.invoke("getClassicsImportStatus"),

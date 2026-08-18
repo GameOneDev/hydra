@@ -21,6 +21,8 @@ import {
   FileDirectoryIcon,
   SearchIcon,
   SyncIcon,
+  EyeIcon,
+  EyeClosedIcon,
 } from "@primer/octicons-react";
 import { useTranslation } from "react-i18next";
 import { AuthPage, removeDiacritics } from "@shared";
@@ -69,6 +71,23 @@ const SORT_OPTIONS: SortOption[] = [
 
 export default function Library() {
   const { library, updateLibrary } = useLibrary();
+  const [showHidden, setShowHidden] = useState(() => {
+    return localStorage.getItem("library-show-hidden") === "true";
+  });
+  const [hiddenLibrary, setHiddenLibrary] = useState<LibraryGame[]>([]);
+
+  useEffect(() => {
+    if (showHidden) {
+      window.electron.getHiddenLibrary().then(setHiddenLibrary);
+    } else {
+      setHiddenLibrary([]);
+    }
+  }, [showHidden, library]);
+
+  const combinedLibrary = useMemo(() => {
+    return [...library, ...hiddenLibrary];
+  }, [library, hiddenLibrary]);
+
   const { userDetails } = useUserDetails();
   const {
     collections,
@@ -298,8 +317,8 @@ export default function Library() {
   ]);
 
   const sortedLibrary = useMemo(
-    () => sortLibraryGames(library, sortBy),
-    [library, sortBy]
+    () => sortLibraryGames(combinedLibrary, sortBy),
+    [combinedLibrary, sortBy]
   );
 
   const filteredLibrary = useMemo(() => {
@@ -361,7 +380,7 @@ export default function Library() {
 
   const uniquePlatforms = useMemo(() => {
     const set = new Set<string>();
-    for (const game of library) {
+    for (const game of combinedLibrary) {
       if (game.shop === "launchbox" && game.platform) {
         set.add(game.platform);
       }
@@ -369,11 +388,11 @@ export default function Library() {
     return Array.from(set).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-  }, [library]);
+  }, [combinedLibrary]);
 
   const favoritesCount = useMemo(() => {
-    return library.filter((game) => game.favorite).length;
-  }, [library]);
+    return combinedLibrary.filter((game) => game.favorite).length;
+  }, [combinedLibrary]);
 
   const libraryCollections = useMemo<GameCollection[]>(() => {
     return [
@@ -430,7 +449,7 @@ export default function Library() {
     setHeaderHidden,
   ]);
 
-  const hasGames = library.length > 0;
+  const hasGames = combinedLibrary.length > 0;
   const hasNoFilteredGames = filteredLibrary.length === 0;
   const isFavoritesCollectionSelected =
     selectedCollectionId === FAVORITES_COLLECTION_ID;
@@ -490,6 +509,26 @@ export default function Library() {
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
               />
+              <button
+                type="button"
+                className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}
+                onClick={() => {
+                  const next = !showHidden;
+                  setShowHidden(next);
+                  localStorage.setItem("library-show-hidden", next.toString());
+                }}
+                title={
+                  showHidden
+                    ? t("hide_hidden_games", "Hide hidden games")
+                    : t("show_hidden_games", "Show hidden games")
+                }
+              >
+                {showHidden ? (
+                  <EyeIcon size={16} />
+                ) : (
+                  <EyeClosedIcon size={16} />
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -578,21 +617,42 @@ export default function Library() {
                     gap: `${GAP}px`,
                   }}
                 >
-                  {rows[virtualRow.index].map((game) =>
-                    viewMode === "large" ? (
-                      <LibraryGameCardLarge
-                        key={`${game.shop}-${game.objectId}`}
-                        game={game}
-                        onContextMenu={handleOpenContextMenu}
-                      />
-                    ) : (
-                      <LibraryGameCard
-                        key={`${game.shop}-${game.objectId}`}
-                        game={game}
-                        onContextMenu={handleOpenContextMenu}
-                      />
-                    )
-                  )}
+                  {rows[virtualRow.index].map((game) => (
+                    <div
+                      key={`${game.shop}-${game.objectId}`}
+                      style={{
+                        opacity: game.isHidden ? 0.4 : 1,
+                        position: "relative",
+                      }}
+                    >
+                      {game.isHidden && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            zIndex: 10,
+                            background: "rgba(0,0,0,0.7)",
+                            borderRadius: "50%",
+                            padding: 4,
+                          }}
+                        >
+                          <EyeClosedIcon size={16} />
+                        </div>
+                      )}
+                      {viewMode === "large" ? (
+                        <LibraryGameCardLarge
+                          game={game}
+                          onContextMenu={handleOpenContextMenu}
+                        />
+                      ) : (
+                        <LibraryGameCard
+                          game={game}
+                          onContextMenu={handleOpenContextMenu}
+                        />
+                      )}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

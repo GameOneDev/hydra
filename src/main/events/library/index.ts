@@ -63,3 +63,6 @@ import "./check-steam-shortcut";
 
 import "./transfer-game-files";
 import "./get-available-drives";
+import "./hide-game";
+import "./unhide-game";
+import "./get-hidden-library";

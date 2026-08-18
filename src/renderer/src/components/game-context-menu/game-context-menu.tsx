@@ -17,6 +17,8 @@ import {
   XIcon,
   PinIcon,
   PinSlashIcon,
+  EyeIcon,
+  EyeClosedIcon,
 } from "@primer/octicons-react";
 import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 import {
@@ -27,7 +29,12 @@ import {
   CreateCollectionModal,
   useGameActions,
 } from "..";
-import { useGameCollections, useToast, useUserDetails } from "@renderer/hooks";
+import {
+  useGameCollections,
+  useToast,
+  useUserDetails,
+  useAppSelector,
+} from "@renderer/hooks";
 import { useCollectionContextMenu } from "@renderer/context";
 import { getGameCollectionIds } from "@renderer/helpers";
 import type { GameCollection } from "@types";
@@ -57,6 +64,9 @@ export function GameContextMenu({
   const { t } = useTranslation("game_details");
   const { showSuccessToast, showErrorToast } = useToast();
   const { userDetails } = useUserDetails();
+  const selfHostedCloudUrl = useAppSelector(
+    (state) => state.userPreferences.value?.selfHostedCloudUrl
+  );
   const [searchParams] = useSearchParams();
   const [showConfirmRemoveLibrary, setShowConfirmRemoveLibrary] =
     useState(false);
@@ -323,6 +333,33 @@ export function GameContextMenu({
           onClick: onPinToggle ?? handleTogglePin,
           disabled: isDeleting,
         },
+        ...(selfHostedCloudUrl
+          ? [
+              {
+                id: "hide-game",
+                label: (game.isHidden ?? false)
+                  ? t("unhide_game", "Unhide Game")
+                  : t("hide_game", "Hide Game"),
+                icon: (game.isHidden ?? false) ? (
+                  <EyeIcon size={16} />
+                ) : (
+                  <EyeClosedIcon size={16} />
+                ),
+                onClick: async () => {
+                  if (game.isHidden) {
+                    await window.electron.unhideGame(game.shop, game.objectId);
+                  } else {
+                    await window.electron.hideGame(game.shop, game.objectId);
+                  }
+                  window.dispatchEvent(
+                    new CustomEvent("hydra:game-pin-toggled")
+                  );
+                  onClose();
+                },
+                disabled: isDeleting,
+              },
+            ]
+          : []),
         ...(game.executablePath
           ? [
               {

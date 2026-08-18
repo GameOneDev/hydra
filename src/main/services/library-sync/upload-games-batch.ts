@@ -5,14 +5,18 @@ import { WindowManager } from "../window-manager";
 import { AchievementWatcherManager } from "../achievements/achievement-watcher-manager";
 import { gamesSublevel } from "@main/level";
 
+import { syncHiddenGames } from "./sync-hidden-games";
+
 export const uploadGamesBatch = async () => {
+  await syncHiddenGames().catch(() => {});
+
   const games = await gamesSublevel
     .values()
     .all()
     .then((results) => {
       return results.filter(
         (game) =>
-          !game.isDeleted && game.remoteId === null && game.shop !== "custom"
+          !game.isDeleted && game.remoteId === null && game.shop !== "custom" && !game.isHidden
       );
     });
 
