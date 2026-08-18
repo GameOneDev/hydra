@@ -41,7 +41,10 @@ const hideGame = async (
     await HydraApi.delete(`/profile/games/${remoteIdToDelete}`, {
       needsAuth: true,
     }).catch((err) => {
-      logger.warn(`Failed to delete game from profile games for ${remoteIdToDelete}`, err);
+      logger.warn(
+        `Failed to delete game from profile games for ${remoteIdToDelete}`,
+        err
+      );
     });
   }
 
