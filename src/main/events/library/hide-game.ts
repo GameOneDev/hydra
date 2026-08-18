@@ -20,11 +20,15 @@ const hideGame = async (
   ).catch(() => {});
 
   let remoteIdToDelete = game.remoteId;
-  
+
   if (!remoteIdToDelete && HydraApi.isLoggedIn()) {
     try {
-      const remoteGames = await HydraApi.get<any[]>("/profile/games", { take: 1000 }).catch(() => []);
-      const existing = remoteGames.find(g => g.shop === shop && g.objectId === objectId);
+      const remoteGames = await HydraApi.get<any[]>("/profile/games", {
+        take: 1000,
+      }).catch(() => []);
+      const existing = remoteGames.find(
+        (g) => g.shop === shop && g.objectId === objectId
+      );
       if (existing) remoteIdToDelete = existing.id;
     } catch (err) {}
   }

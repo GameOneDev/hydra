@@ -20,11 +20,17 @@ const getHiddenLibrary = async (): Promise<LibraryGame[]> => {
     .then((results) => {
       return Promise.all(
         results
-          .filter(([_key, game]) => game.isDeleted === false && game.isHidden === true)
+          .filter(
+            ([_key, game]) => game.isDeleted === false && game.isHidden === true
+          )
           .map(async ([key, game]) => {
             const download = await downloadsSublevel.get(key).catch(() => null);
-            const gameAssets = await gamesShopAssetsSublevel.get(key).catch(() => null);
-            const artworkSelection = await gamesArtworkSelectionSublevel.get(key).catch(() => null);
+            const gameAssets = await gamesShopAssetsSublevel
+              .get(key)
+              .catch(() => null);
+            const artworkSelection = await gamesArtworkSelectionSublevel
+              .get(key)
+              .catch(() => null);
 
             const composedAssets = composeAssetsWithArtwork(
               gameAssets ?? null,

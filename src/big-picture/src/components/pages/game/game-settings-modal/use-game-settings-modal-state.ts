@@ -774,6 +774,16 @@ export function useGameSettingsModalState({
       onProcessAssetPath: handleProcessAssetPath,
       onClearAsset: handleClearCustomizationAsset,
       onArtworkChanged: refreshGameDetails,
+      onToggleHide: async () => {
+        if (!game) return;
+        if (game.isHidden) {
+          await window.electron.unhideGame(game.shop, game.objectId);
+        } else {
+          await window.electron.hideGame(game.shop, game.objectId);
+        }
+        await updateGame();
+        window.dispatchEvent(new Event("library-update"));
+      },
     } satisfies GameCustomizationSettingsProps;
   }, [
     game,
@@ -785,6 +795,7 @@ export function useGameSettingsModalState({
     handleProcessAssetPath,
     refreshGameDetails,
     updatingGameTitle,
+    updateGame,
   ]);
 
   const cloudSettings = useMemo(() => {

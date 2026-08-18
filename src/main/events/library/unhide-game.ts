@@ -36,13 +36,17 @@ const unhideGame = async (
       const logger = require("@main/services/logger").logger;
       logger.error("FAILED TO RE-ADD GAME", err);
     }
-    
+
     if (!newRemoteId) {
       // It might have failed due to a 409 Conflict (already on profile).
       // Let's fetch the remote ID from the official profile.
       try {
-        const remoteGames = await HydraApi.get<any[]>("/profile/games", { take: 1000 }).catch(() => []);
-        const existing = remoteGames.find(g => g.shop === shop && g.objectId === objectId);
+        const remoteGames = await HydraApi.get<any[]>("/profile/games", {
+          take: 1000,
+        }).catch(() => []);
+        const existing = remoteGames.find(
+          (g) => g.shop === shop && g.objectId === objectId
+        );
         if (existing) newRemoteId = existing.id;
       } catch (err) {}
     }

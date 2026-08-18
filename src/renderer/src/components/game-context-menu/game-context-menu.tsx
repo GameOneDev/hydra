@@ -337,14 +337,16 @@ export function GameContextMenu({
           ? [
               {
                 id: "hide-game",
-                label: (game.isHidden ?? false)
-                  ? t("unhide_game", "Unhide Game")
-                  : t("hide_game", "Hide Game"),
-                icon: (game.isHidden ?? false) ? (
-                  <EyeIcon size={16} />
-                ) : (
-                  <EyeClosedIcon size={16} />
-                ),
+                label:
+                  (game.isHidden ?? false)
+                    ? t("unhide_game", "Unhide Game")
+                    : t("hide_game", "Hide Game"),
+                icon:
+                  (game.isHidden ?? false) ? (
+                    <EyeIcon size={16} />
+                  ) : (
+                    <EyeClosedIcon size={16} />
+                  ),
                 onClick: async () => {
                   if (game.isHidden) {
                     await window.electron.unhideGame(game.shop, game.objectId);

@@ -5,11 +5,10 @@ import { HydraApi } from "../hydra-api";
 export const syncHiddenGames = async () => {
   if (!HydraApi.isLoggedIn() || !HydraApi.isSelfHostedCloudEnabled()) return;
 
-  console.log("FETCHING HIDDEN GAMES");  const hiddenOnServer = await HydraApi.get<Array<{ shop: string; objectId: string }>>(
-    "/profile/hidden-games",
-    undefined,
-    { needsAuth: true }
-  ).catch((e) => {
+  console.log("FETCHING HIDDEN GAMES");
+  const hiddenOnServer = await HydraApi.get<
+    Array<{ shop: string; objectId: string }>
+  >("/profile/hidden-games", undefined, { needsAuth: true }).catch((e) => {
     console.error("FAILED TO FETCH HIDDEN GAMES", e);
     return null;
   });
@@ -23,23 +22,29 @@ export const syncHiddenGames = async () => {
     serverHiddenSet.add(key);
 
     const localGame = await gamesSublevel.get(key).catch(() => null);
-    
+
     if (localGame) {
       if (localGame.remoteId) {
         HydraApi.delete(`/profile/games/${localGame.remoteId}`, {
           needsAuth: true,
         }).catch(() => {});
       }
-      
+
       if (!localGame.isHidden || localGame.remoteId) {
-        await gamesSublevel.put(key, { ...localGame, isHidden: true, remoteId: null });
+        await gamesSublevel.put(key, {
+          ...localGame,
+          isHidden: true,
+          remoteId: null,
+        });
       }
     } else {
       let title = "Hidden Game";
       let coverImageUrl: string | null = null;
       let iconUrl: string | null = null;
 
-      const existingAsset = await gamesShopAssetsSublevel.get(key).catch(() => null);
+      const existingAsset = await gamesShopAssetsSublevel
+        .get(key)
+        .catch(() => null);
       if (existingAsset && existingAsset.title !== "Hidden Game") {
         title = existingAsset.title;
         coverImageUrl = existingAsset.coverImageUrl || null;
@@ -51,9 +56,12 @@ export const syncHiddenGames = async () => {
             const details = await getSteamAppDetails(objectId, "english");
             if (details?.name) title = details.name;
           } else if (shop === "launchbox") {
-            const basic = await HydraApi.get<{ title: string; coverImageUrl: string | null }>(
-              `/games/launchbox/${objectId}`, null, { needsAuth: false }
-            ).catch(() => null);
+            const basic = await HydraApi.get<{
+              title: string;
+              coverImageUrl: string | null;
+            }>(`/games/launchbox/${objectId}`, null, {
+              needsAuth: false,
+            }).catch(() => null);
             if (basic) {
               title = basic.title;
               coverImageUrl = basic.coverImageUrl;

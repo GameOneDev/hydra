@@ -21,6 +21,8 @@ import {
   MagnifyingGlassIcon,
   SortAscendingIcon,
   SquaresFourIcon,
+  Eye,
+  EyeSlash,
 } from "@phosphor-icons/react";
 import type { FocusOverrides } from "../../../../services";
 import { BIG_PICTURE_SIDEBAR_ITEM_IDS } from "../../../../layout";
@@ -87,6 +89,8 @@ export interface LibraryFiltersProps {
   library: LibraryGame[];
   collections: GameCollection[];
   firstContentItemId?: string | null;
+  showHidden: boolean;
+  onShowHiddenChange: (showHidden: boolean) => void;
 }
 
 export function LibraryFilters({
@@ -104,6 +108,8 @@ export function LibraryFilters({
   library,
   collections,
   firstContentItemId = null,
+  showHidden,
+  onShowHiddenChange,
 }: Readonly<LibraryFiltersProps>) {
   const { t } = useTranslation("big_picture");
   const tabDownOverride = useMemo(
@@ -250,19 +256,7 @@ export function LibraryFilters({
     },
     right: {
       type: "item",
-      itemId: LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
-    },
-    up: toolbarUpOverride,
-    down: toolbarDownOverride,
-  };
-  const listViewNavigationOverrides: FocusOverrides = {
-    left: {
-      type: "item",
-      itemId: LIBRARY_FILTERS_FILTER_SELECT_ID,
-    },
-    right: {
-      type: "item",
-      itemId: LIBRARY_FILTERS_GRID_VIEW_BUTTON_ID,
+      itemId: "library-filters-show-hidden-button",
     },
     up: toolbarUpOverride,
     down: toolbarDownOverride,
@@ -333,8 +327,47 @@ export function LibraryFilters({
 
         <div className="library-filters__view-actions">
           <Button
+            focusId="library-filters-show-hidden-button"
+            focusNavigationOverrides={{
+              left: {
+                type: "item",
+                itemId: LIBRARY_FILTERS_FILTER_SELECT_ID,
+              },
+              right: {
+                type: "item",
+                itemId: LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
+              },
+              up: toolbarUpOverride,
+              down: toolbarDownOverride,
+            }}
+            className="library-filters__view-button"
+            variant={showHidden ? "primary" : "secondary"}
+            size="icon"
+            aria-label="Toggle hidden games"
+            aria-pressed={showHidden}
+            onClick={() => onShowHiddenChange(!showHidden)}
+          >
+            {showHidden ? (
+              <Eye size={24} className="library-filters__view-icon" />
+            ) : (
+              <EyeSlash size={24} className="library-filters__view-icon" />
+            )}
+          </Button>
+
+          <Button
             focusId={LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID}
-            focusNavigationOverrides={listViewNavigationOverrides}
+            focusNavigationOverrides={{
+              left: {
+                type: "item",
+                itemId: "library-filters-show-hidden-button",
+              },
+              right: {
+                type: "item",
+                itemId: LIBRARY_FILTERS_GRID_VIEW_BUTTON_ID,
+              },
+              up: toolbarUpOverride,
+              down: toolbarDownOverride,
+            }}
             className="library-filters__view-button library-filters__view-button--list"
             variant={viewMode === "list" ? "primary" : "secondary"}
             size="icon"

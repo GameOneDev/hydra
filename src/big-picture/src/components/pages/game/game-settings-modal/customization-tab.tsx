@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { isVideoArtworkUrl } from "@renderer/hooks";
 import {
   BumperBadge,
+  Checkbox,
   FileExplorerModal,
   FocusItem,
   Input,
@@ -126,6 +127,7 @@ export interface GameCustomizationSettingsProps {
     clearArtworkSelection: boolean
   ) => Promise<boolean>;
   onArtworkChanged: () => Promise<void> | void;
+  onToggleHide: (game: LibraryGame) => void;
 }
 
 function getAssetPreviewState(
@@ -236,6 +238,7 @@ export function GameCustomizationSettingsTab({
   onProcessAssetPath,
   onClearAsset,
   onArtworkChanged,
+  onToggleHide,
 }: Readonly<GameCustomizationSettingsProps>) {
   const { t } = useTranslation("big_picture");
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
@@ -464,6 +467,22 @@ export function GameCustomizationSettingsTab({
               onBlur={() => {
                 void onBlurGameTitle();
               }}
+            />
+          </div>
+        </SettingsSection>
+
+        <SettingsSection
+          className="game-customization-settings-tab__section"
+          title={t("visibility", "Visibility")}
+          description={t("hide_game_description", "Hide this game from your library.")}
+        >
+          <div className="game-customization-settings-tab__section-content">
+            <Checkbox
+              block
+              focusId="game-customization-settings-hide-game"
+              label={t("hide_game", "Hide Game")}
+              checked={game.isHidden === true}
+              onChange={() => onToggleHide(game)}
             />
           </div>
         </SettingsSection>
