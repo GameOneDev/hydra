@@ -23,6 +23,7 @@ import {
 import { SettingsSection } from "../../../../pages/settings/settings-section";
 import { GameArtworkPicker } from "./artwork-picker";
 import { useUserDetails, useUserPreferences } from "../../../../hooks";
+import { useSupportsCloudFeature } from "@renderer/hooks";
 
 import "./customization-tab.scss";
 
@@ -245,6 +246,7 @@ export function GameCustomizationSettingsTab({
   const { userDetails } = useUserDetails();
   const userPreferences = useUserPreferences();
   const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
+  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
 
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
   const [hasAssetTabsInteracted, setHasAssetTabsInteracted] = useState(false);
@@ -476,7 +478,7 @@ export function GameCustomizationSettingsTab({
           </div>
         </SettingsSection>
 
-        {userDetails && selfHostedCloudUrl && (
+        {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
           <SettingsSection
             className="game-customization-settings-tab__section"
             title={t("visibility", "Visibility")}

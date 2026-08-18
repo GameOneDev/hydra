@@ -1,6 +1,7 @@
 import { gamesSublevel, gamesShopAssetsSublevel } from "@main/level";
 import { getSteamAppDetails } from "../steam";
 import { HydraApi } from "../hydra-api";
+import type { GameShop } from "@types";
 
 export const syncHiddenGames = async () => {
   if (!HydraApi.isLoggedIn() || !HydraApi.isSelfHostedCloudEnabled()) return;
@@ -73,7 +74,7 @@ export const syncHiddenGames = async () => {
       }
 
       await gamesSublevel.put(key, {
-        shop: shop as any,
+        shop: shop as GameShop,
         objectId,
         title,
         iconUrl,
@@ -88,7 +89,7 @@ export const syncHiddenGames = async () => {
 
       await gamesShopAssetsSublevel.put(key, {
         updatedAt: Date.now(),
-        shop: shop as any,
+        shop: shop as GameShop,
         objectId,
         title,
         coverImageUrl,

@@ -13,6 +13,7 @@ import {
   useAppSelector,
   useGameCollections,
   useUserDetails,
+  useSupportsCloudFeature,
 } from "@renderer/hooks";
 import { setHeaderTitle } from "@renderer/features";
 import {
@@ -92,6 +93,7 @@ export default function Library() {
   const selfHostedCloudUrl = useAppSelector(
     (state) => state.userPreferences.value?.selfHostedCloudUrl
   );
+  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
   const {
     collections,
     loadCollections,
@@ -512,7 +514,7 @@ export default function Library() {
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
               />
-              {userDetails && selfHostedCloudUrl && (
+              {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
                 <button
                   type="button"
                   className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}

@@ -34,6 +34,7 @@ import {
   useToast,
   useUserDetails,
   useAppSelector,
+  useSupportsCloudFeature,
 } from "@renderer/hooks";
 import { useCollectionContextMenu } from "@renderer/context";
 import { getGameCollectionIds } from "@renderer/helpers";
@@ -67,6 +68,7 @@ export function GameContextMenu({
   const selfHostedCloudUrl = useAppSelector(
     (state) => state.userPreferences.value?.selfHostedCloudUrl
   );
+  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
   const [searchParams] = useSearchParams();
   const [showConfirmRemoveLibrary, setShowConfirmRemoveLibrary] =
     useState(false);
@@ -333,7 +335,7 @@ export function GameContextMenu({
           onClick: onPinToggle ?? handleTogglePin,
           disabled: isDeleting,
         },
-        ...(userDetails && selfHostedCloudUrl
+        ...(userDetails && selfHostedCloudUrl && isHiddenGamesSupported
           ? [
               {
                 id: "hide-game",

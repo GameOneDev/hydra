@@ -426,6 +426,7 @@ declare global {
     getHiddenLibrary: () => Promise<LibraryGame[]>;
     hideGame: (shop: GameShop, objectId: string) => Promise<void>;
     unhideGame: (shop: GameShop, objectId: string) => Promise<void>;
+    getHiddenGamesSupported: () => Promise<boolean>;
     refreshLibraryAssets: () => Promise<void>;
     openGameInstaller: (shop: GameShop, objectId: string) => Promise<boolean>;
     getGameInstallerActionType: (

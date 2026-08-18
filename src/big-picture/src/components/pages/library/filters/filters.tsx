@@ -27,6 +27,7 @@ import {
 import type { FocusOverrides } from "../../../../services";
 import { BIG_PICTURE_SIDEBAR_ITEM_IDS } from "../../../../layout";
 import { useUserDetails, useUserPreferences } from "../../../../hooks";
+import { useSupportsCloudFeature } from "@renderer/hooks";
 import {
   getLibraryFiltersTabFocusId,
   LIBRARY_FILTERS_FILTER_SELECT_ID,
@@ -116,6 +117,7 @@ export function LibraryFilters({
   const { userDetails } = useUserDetails();
   const userPreferences = useUserPreferences();
   const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
+  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
 
   const tabDownOverride = useMemo(
     () =>
@@ -331,7 +333,7 @@ export function LibraryFilters({
         </div>
 
         <div className="library-filters__view-actions">
-          {userDetails && selfHostedCloudUrl && (
+          {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
             <Button
               focusId="library-filters-show-hidden-button"
               focusNavigationOverrides={{

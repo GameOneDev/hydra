@@ -808,6 +808,7 @@ contextBridge.exposeInMainWorld("electron", {
   },
 
   /* User preferences */
+  getHiddenGamesSupported: () => ipcRenderer.invoke("getHiddenGamesSupported"),
   getUserPreferences: () => ipcRenderer.invoke("getUserPreferences"),
   updateUserPreferences: (preferences: Partial<UserPreferences>) =>
     ipcRenderer.invoke("updateUserPreferences", preferences),
