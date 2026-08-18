@@ -877,8 +877,17 @@ contextBridge.exposeInMainWorld("electron", {
     shop: GameShop,
     objectId: string,
     title: string,
-    platform?: string | null
-  ) => ipcRenderer.invoke("addGameToLibrary", shop, objectId, title, platform),
+    platform?: string | null,
+    isHidden?: boolean
+  ) =>
+    ipcRenderer.invoke(
+      "addGameToLibrary",
+      shop,
+      objectId,
+      title,
+      platform,
+      isHidden
+    ),
   addCustomGameToLibrary: (
     title: string,
     executablePath: string,

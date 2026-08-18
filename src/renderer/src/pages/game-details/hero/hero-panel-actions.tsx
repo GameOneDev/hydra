@@ -7,6 +7,7 @@ import {
   PinSlashIcon,
   PlayIcon,
   PlusCircleIcon,
+  EyeClosedIcon,
 } from "@primer/octicons-react";
 import { Button, ConfirmationModal } from "@renderer/components";
 import { XCircle } from "lucide-react";
@@ -15,6 +16,8 @@ import {
   useLibrary,
   useToast,
   useUserDetails,
+  useSupportsCloudFeature,
+  useAppSelector,
 } from "@renderer/hooks";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -49,6 +52,11 @@ export function HeroPanelActions() {
     isTransferring,
     transferProgress,
   } = useContext(gameDetailsContext);
+
+  const selfHostedCloudUrl = useAppSelector(
+    (state) => state.userPreferences.value?.selfHostedCloudUrl
+  );
+  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
 
   const { lastPacket } = useDownload();
 
@@ -134,7 +142,7 @@ export function HeroPanelActions() {
     };
   }, [updateLibrary, updateGame]);
 
-  const addGameToLibrary = async () => {
+  const addGameToLibrary = async (isHidden = false) => {
     setToggleLibraryGameDisabled(true);
 
     try {
@@ -142,7 +150,8 @@ export function HeroPanelActions() {
         shop,
         objectId!,
         gameTitle,
-        shopDetails?.platform ?? null
+        shopDetails?.platform ?? null,
+        isHidden
       );
 
       updateLibrary();
@@ -303,15 +312,29 @@ export function HeroPanelActions() {
   const deleting = game ? isGameDeleting(game?.id) : false;
 
   const addGameToLibraryButton = (
-    <Button
-      theme="outline"
-      disabled={toggleLibraryGameDisabled}
-      onClick={addGameToLibrary}
-      className="hero-panel-actions__action"
-    >
-      <PlusCircleIcon />
-      {t("add_to_library")}
-    </Button>
+    <div style={{ display: "flex", gap: "8px" }}>
+      {!game && userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
+        <Button
+          theme="outline"
+          disabled={toggleLibraryGameDisabled}
+          onClick={() => addGameToLibrary(true)}
+          className="hero-panel-actions__action"
+          title={t("add_to_library_hidden", "Add to library (hidden)")}
+        >
+          <EyeClosedIcon />
+          {t("add_to_library_hidden", "Add to library (hidden)")}
+        </Button>
+      )}
+      <Button
+        theme="outline"
+        disabled={toggleLibraryGameDisabled}
+        onClick={() => addGameToLibrary(false)}
+        className="hero-panel-actions__action"
+      >
+        <PlusCircleIcon />
+        {t("add_to_library")}
+      </Button>
+    </div>
   );
 
   const showDownloadOptionsButton = (

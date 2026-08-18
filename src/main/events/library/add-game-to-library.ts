@@ -38,7 +38,8 @@ const addGameToLibrary = async (
   shop: GameShop,
   objectId: string,
   title: string,
-  platform?: string | null
+  platform?: string | null,
+  isHidden?: boolean
 ) => {
   const gameKey = levelKeys.game(shop, objectId);
   let game = await gamesSublevel.get(gameKey);
@@ -59,6 +60,7 @@ const addGameToLibrary = async (
     game.addedToLibraryAt ??= new Date();
     if (resolvedPlatform && !game.platform) game.platform = resolvedPlatform;
     game.automaticCloudSync ??= automaticCloudSyncDefault;
+    if (isHidden !== undefined) game.isHidden = isHidden;
 
     await gamesSublevel.put(gameKey, game);
   } else {
@@ -71,6 +73,7 @@ const addGameToLibrary = async (
       shop,
       remoteId: null,
       isDeleted: false,
+      isHidden: isHidden ?? false,
       playTimeInMilliseconds: 0,
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
