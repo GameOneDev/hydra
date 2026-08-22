@@ -135,6 +135,8 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<CloudSaveOverview>;
+    /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
+    getCloudSaveV2Supported: () => Promise<boolean>;
     getCloudSaveV2FileDetails: (
       objectId: string,
       shop: GameShop
@@ -863,6 +865,12 @@ declare global {
       executablePath: string;
       iconUrl: string | null;
     } | null>;
+    importSteamGames: () => Promise<{
+      importedGames: { title: string; objectId: string }[];
+      totalInstalled: number;
+    }>;
+    openSteamGame: (shop: GameShop, objectId: string) => Promise<void>;
+    syncSteamPlaytime: () => Promise<number>;
     onExtractionComplete: (
       cb: (shop: GameShop, objectId: string) => void
     ) => () => Electron.IpcRenderer;

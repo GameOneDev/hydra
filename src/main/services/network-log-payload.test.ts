@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import util from "node:util";
 
-import { sanitizeNetworkLogPayload } from "./network-log-payload.js";
+import { AxiosError, AxiosHeaders } from "axios";
+import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
+
+import {
+  sanitizeAxiosError,
+  sanitizeNetworkLogPayload,
+} from "./network-log-payload.js";
 
 describe("network log payload", () => {
   it("keeps nested response arrays inspectable", () => {
@@ -94,5 +101,75 @@ describe("network log payload", () => {
       status: 200,
       self: "[Circular]",
     });
+  });
+});
+
+describe("axios error sanitization", () => {
+  /* Mirrors what axios builds for a failed POST: `request` is the Node
+     ClientRequest whose `_header` is the raw request line. */
+  const buildAxiosError = (authHeader = "Authorization") => {
+    const config = {
+      method: "post",
+      url: "/auth/refresh",
+      headers: new AxiosHeaders({
+        [authHeader]: "Bearer access-token",
+        "User-Agent": "Hydra Launcher",
+      }),
+      data: JSON.stringify({ refreshToken: "refresh-token" }),
+    } as InternalAxiosRequestConfig;
+
+    const request = {
+      _header: `POST /auth/refresh HTTP/1.1\r\n${authHeader}: Bearer access-token\r\n`,
+    };
+
+    const response = {
+      status: 502,
+      statusText: "Bad Gateway",
+      data: { message: "Bad Gateway" },
+      headers: {},
+      config,
+      request,
+    } as AxiosResponse;
+
+    return new AxiosError(
+      "Request failed with status code 502",
+      "ERR_BAD_RESPONSE",
+      config,
+      request,
+      response
+    );
+  };
+
+  it("keeps credentials out of an inspected error", () => {
+    const err = sanitizeAxiosError(buildAxiosError()) as AxiosError;
+    const inspected = util.inspect(err, { depth: null });
+
+    assert.equal(err.request, undefined);
+    assert.equal(err.response?.request, undefined);
+    assert.equal(err.config?.headers.Authorization, "[REDACTED]");
+    assert.deepEqual(err.config?.data, { refreshToken: "[REDACTED]" });
+    assert.ok(!inspected.includes("access-token"));
+    assert.ok(!inspected.includes("refresh-token"));
+  });
+
+  it("redacts an authorization header whatever its casing", () => {
+    const err = sanitizeAxiosError(buildAxiosError("authorization"));
+
+    assert.ok(!util.inspect(err, { depth: null }).includes("access-token"));
+  });
+
+  it("leaves the error usable by its callers", () => {
+    const err = sanitizeAxiosError(buildAxiosError()) as AxiosError;
+
+    assert.ok(err instanceof AxiosError);
+    assert.equal(err.response?.status, 502);
+    assert.equal(err.message, "Request failed with status code 502");
+    assert.deepEqual(err.response?.data, { message: "Bad Gateway" });
+  });
+
+  it("passes non-axios errors through untouched", () => {
+    const err = new Error("boom");
+
+    assert.equal(sanitizeAxiosError(err), err);
   });
 });

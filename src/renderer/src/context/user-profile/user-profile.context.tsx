@@ -1,4 +1,5 @@
 import { darkenColor, ensureArray } from "@renderer/helpers";
+import { logger } from "@renderer/logger";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import type {
   Badge,
@@ -20,6 +21,11 @@ import { average } from "color.js";
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import {
+  applySelfHostedArtwork,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "@renderer/services/self-hosted-artwork.service";
 
 export interface UserProfileContext {
   userProfile: UserProfile | null;
@@ -102,6 +108,10 @@ export function UserProfileContextProvider({
   userId,
 }: Readonly<UserProfileContextProviderProps>) {
   const { userDetails } = useAppSelector((state) => state.userDetails);
+  const userPreferences = useAppSelector(
+    (state) => state.userPreferences.value
+  );
+  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
   const authUserId = userDetails?.id;
 
   const [userStats, setUserStats] = useState<UserStats | null>(null);
@@ -124,6 +134,25 @@ export function UserProfileContextProvider({
   const [isLoadingSouvenirs, setIsLoadingSouvenirs] = useState(false);
   const souvenirRequestIdRef = useRef(0);
   const previousUserIdRef = useRef(userId);
+
+  /* Custom game images this profile's owner keeps on the self-hosted server.
+     Fetched once per profile and shared by every library request below, so
+     paging through a library doesn't re-request the whole set. */
+  const artworkRef = useRef<{
+    userId: string;
+    promise: Promise<SelfHostedArtworkMap | null>;
+  } | null>(null);
+
+  const getSelfHostedArtwork = useCallback(() => {
+    if (artworkRef.current?.userId !== userId) {
+      artworkRef.current = {
+        userId,
+        promise: fetchSelfHostedArtwork(userId, selfHostedCloudUrl),
+      };
+    }
+
+    return artworkRef.current.promise;
+  }, [userId, selfHostedCloudUrl]);
 
   const isMe = userDetails?.id === userProfile?.id;
 
@@ -155,11 +184,36 @@ export function UserProfileContextProvider({
         .get<UserStats>(`/users/${userId}/stats?${params.toString()}`, {
           needsAuth: false,
         })
-        .then((stats) => {
-          setUserStats(stats);
+        .then(async (stats) => {
+          let merged = stats;
+
+          /* The official API only computes achievement totals for
+             subscribers; the self-hosted server knows them from achievement
+             sync, so fill the gap from there. */
+          if (
+            merged.unlockedAchievementSum === undefined &&
+            selfHostedCloudUrl
+          ) {
+            try {
+              const fallback = await window.electron.hydraApi.get<{
+                unlockedAchievementSum: number | null;
+              }>(`/profile/stats/${userId}`);
+
+              if (typeof fallback?.unlockedAchievementSum === "number") {
+                merged = {
+                  ...merged,
+                  unlockedAchievementSum: fallback.unlockedAchievementSum,
+                };
+              }
+            } catch {
+              /* No achievement data on the self-hosted server either */
+            }
+          }
+
+          setUserStats(merged);
         });
     },
-    [userId]
+    [userId, selfHostedCloudUrl]
   );
 
   const getUserLibraryGames = useCallback(
@@ -181,14 +235,17 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await window.electron.hydraApi.get<{
-          library: UserGame[];
-          pinnedGames: UserGame[];
-        }>(url, { needsAuth: false });
+        const [response, artwork] = await Promise.all([
+          window.electron.hydraApi.get<{
+            library: UserGame[];
+            pinnedGames: UserGame[];
+          }>(url, { needsAuth: false }),
+          getSelfHostedArtwork(),
+        ]);
 
         if (response) {
-          setLibraryGames(response.library);
-          setPinnedGames(response.pinnedGames);
+          setLibraryGames(applySelfHostedArtwork(response.library, artwork));
+          setPinnedGames(applySelfHostedArtwork(response.pinnedGames, artwork));
           setHasMoreLibraryGames(response.library.length === 12);
         } else {
           setLibraryGames([]);
@@ -203,7 +260,7 @@ export function UserProfileContextProvider({
         setIsLoadingLibraryGames(false);
       }
     },
-    [userId]
+    [userId, getSelfHostedArtwork]
   );
 
   const loadMoreLibraryGames = useCallback(
@@ -228,16 +285,22 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await window.electron.hydraApi.get<{
-          library: UserGame[];
-          pinnedGames: UserGame[];
-        }>(url, { needsAuth: false });
+        const [response, artwork] = await Promise.all([
+          window.electron.hydraApi.get<{
+            library: UserGame[];
+            pinnedGames: UserGame[];
+          }>(url, { needsAuth: false }),
+          getSelfHostedArtwork(),
+        ]);
 
         if (response && response.library.length > 0) {
           setLibraryGames((prev) => {
             const existingIds = new Set(prev.map((game) => game.objectId));
-            const newGames = response.library.filter(
-              (game) => !existingIds.has(game.objectId)
+            const newGames = applySelfHostedArtwork(
+              response.library.filter(
+                (game) => !existingIds.has(game.objectId)
+              ),
+              artwork
             );
             return [...prev, ...newGames];
           });
@@ -255,7 +318,13 @@ export function UserProfileContextProvider({
         setIsLoadingLibraryGames(false);
       }
     },
-    [userId, libraryPage, hasMoreLibraryGames, isLoadingLibraryGames]
+    [
+      userId,
+      libraryPage,
+      hasMoreLibraryGames,
+      isLoadingLibraryGames,
+      getSelfHostedArtwork,
+    ]
   );
 
   const fetchSouvenirsPage = useCallback(
@@ -385,15 +454,52 @@ export function UserProfileContextProvider({
         needsAuth: false,
       })
       .then(async (userProfile) => {
-        setUserProfile(userProfile);
+        let profile = userProfile;
 
-        if (userProfile.profileImageUrl) {
-          getHeroBackgroundFromImageUrl(userProfile.profileImageUrl).then(
-            (color) => setHeroBackground(color)
+        /* The official API only stores banners for subscribers; users of a
+           self-hosted cloud server keep theirs there, so fall back to it
+           when the official profile has none. */
+        if (!profile.backgroundImageUrl && selfHostedCloudUrl) {
+          try {
+            const fallback = await window.electron.hydraApi.get<{
+              backgroundImageUrl: string | null;
+            }>(`/profile/banners/${userId}`);
+
+            if (fallback?.backgroundImageUrl) {
+              profile = {
+                ...profile,
+                backgroundImageUrl: fallback.backgroundImageUrl,
+              };
+            }
+          } catch {
+            /* No banner on the self-hosted server either */
+          }
+        }
+
+        /* The profile response embeds its own game lists, which need the
+           same custom images as the paged library above. */
+        const artwork = await getSelfHostedArtwork();
+        if (artwork?.size) {
+          profile = {
+            ...profile,
+            libraryGames: applySelfHostedArtwork(profile.libraryGames, artwork),
+            recentGames: applySelfHostedArtwork(profile.recentGames, artwork),
+          };
+        }
+
+        setUserProfile(profile);
+
+        if (profile.profileImageUrl) {
+          getHeroBackgroundFromImageUrl(profile.profileImageUrl).then((color) =>
+            setHeroBackground(color)
           );
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        /* This catch covers the whole chain above, not just the request, so
+           a bug in the handling reads to the user as a missing profile.
+           Record what actually failed. */
+        logger.error("Failed to load profile", userId, error);
         showErrorToast(t("user_not_found"));
         navigate(-1);
       });
@@ -404,6 +510,8 @@ export function UserProfileContextProvider({
     getUserSouvenirs,
     showErrorToast,
     userId,
+    selfHostedCloudUrl,
+    getSelfHostedArtwork,
     t,
   ]);
 

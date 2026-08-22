@@ -15,7 +15,7 @@ import { HydraApi } from "../hydra-api";
 import { getUnlockedAchievements } from "@main/events/user/get-unlocked-achievements";
 import { publishNewAchievementNotification } from "../notifications";
 import { achievementsLogger } from "../logger";
-import { db, levelKeys } from "@main/level";
+import { db, gamesSublevel, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
 import { AchievementWatcherManager } from "./achievement-watcher-manager";
 import { AchievementMemoryStore } from "./achievement-memory-store";
@@ -26,6 +26,7 @@ import { PendingGroupedSouvenirStore } from "./grouped-souvenir-store";
 import { groupedSouvenirWorker } from "./grouped-souvenir-worker";
 import { launchedGamePids } from "../launched-game-pids";
 import { Wine } from "../wine";
+import { createGame } from "../library-sync/create-game";
 
 const isRareAchievement = (points: number) => {
   const rawPercentage = (50 - Math.sqrt(points)) * 2;
@@ -338,14 +339,60 @@ export const mergeAchievements = async (
 
   const achievementsToSync = mergedLocalAchievements;
 
+  /* The caller's snapshot may predate the remote registration of the game
+     (e.g. one imported from Steam moments ago), so read the latest record
+     and, when the game was never registered remotely, register it now —
+     without a remoteId achievements can't be synced at all. */
+  let syncGame = game;
+
+  if (game.shop !== "custom") {
+    const freshGame = await gamesSublevel.get(gameKey).catch(() => null);
+    if (freshGame && !freshGame.isDeleted) syncGame = freshGame;
+
+    if (!syncGame.remoteId && HydraApi.isLoggedIn()) {
+      await createGame(syncGame).catch(() => {});
+
+      const createdGame = await gamesSublevel.get(gameKey).catch(() => null);
+      if (createdGame) syncGame = createdGame;
+    }
+  }
+
   const shouldSyncWithRemote =
-    Boolean(game.remoteId) && AchievementWatcherManager.hasFinishedPreSearch;
+    Boolean(syncGame.remoteId) &&
+    AchievementWatcherManager.hasFinishedPreSearch;
 
   if (shouldSyncWithRemote) {
+    /* Profile stats on a self-hosted cloud server are computed from the
+       achievements stored there, but the call below goes to the official
+       API whenever there are new achievements — mirror those to the
+       self-hosted server so the profile totals include them. */
+    if (HydraApi.isSelfHostedCloudEnabled() && newAchievements.length) {
+      HydraApi.put(
+        "/profile/games/achievements",
+        {
+          id: syncGame.remoteId,
+          objectId: game.objectId,
+          shop: game.shop,
+          achievements: achievementsToSync,
+        },
+        { needsSubscription: true }
+      ).catch((err) => {
+        achievementsLogger.error(
+          "Failed to sync achievements with self-hosted cloud",
+          game.objectId,
+          err
+        );
+      });
+    }
+
     await HydraApi.put<UpdatedUnlockedAchievements | undefined>(
       "/profile/games/achievements",
       {
-        id: game.remoteId,
+        id: syncGame.remoteId,
+        /* objectId/shop are ignored by the official API but let a
+           self-hosted cloud server key achievements by game */
+        objectId: game.objectId,
+        shop: game.shop,
         achievements: achievementsToSync,
       }
     )

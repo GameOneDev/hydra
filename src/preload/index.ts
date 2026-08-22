@@ -157,6 +157,8 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<CloudSaveOverview>,
+  getCloudSaveV2Supported: () =>
+    ipcRenderer.invoke("getCloudSaveV2Supported") as Promise<boolean>,
   getCloudSaveV2FileDetails: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "getCloudSaveV2FileDetails",
@@ -1117,6 +1119,10 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("cancelScanInstalledGames", requestId),
   addScannedGame: (objectId: string, executablePath: string) =>
     ipcRenderer.invoke("addScannedGame", objectId, executablePath),
+  importSteamGames: () => ipcRenderer.invoke("importSteamGames"),
+  openSteamGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("openSteamGame", shop, objectId),
+  syncSteamPlaytime: () => ipcRenderer.invoke("syncSteamPlaytime"),
   getDefaultWinePrefixSelectionPath: () =>
     ipcRenderer.invoke("getDefaultWinePrefixSelectionPath"),
   createSteamShortcut: (
