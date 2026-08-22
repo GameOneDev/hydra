@@ -14,8 +14,7 @@ import { buildGameDetailsPath } from "@renderer/helpers";
 import {
   useAppSelector,
   useLibrary,
-  useUserDetails,
-  useSupportsCloudFeature,
+  useHiddenGamesEnabled,
 } from "@renderer/hooks";
 
 import type { CatalogueSearchResult } from "@types";
@@ -102,44 +101,20 @@ export function GameItemClassics({ game }: GameItemClassicsProps) {
 
   const { steamGenres } = useAppSelector((state) => state.catalogueSearch);
 
-  const { library, updateLibrary } = useLibrary();
+  const { library, hiddenLibrary, updateLibrary } = useLibrary();
   const [isAddingToLibrary, setIsAddingToLibrary] = useState(false);
   const [added, setAdded] = useState(false);
 
-  const { userDetails } = useUserDetails();
-  const selfHostedCloudUrl = useAppSelector(
-    (state) => state.userPreferences.value?.selfHostedCloudUrl
-  );
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   useEffect(() => {
-    let cancelled = false;
-    const exists = library.some(
+    const isInLibrary = [...library, ...hiddenLibrary].some(
       (libItem) =>
         libItem.shop === game.shop && libItem.objectId === game.objectId
     );
-    if (exists) {
-      setAdded(true);
-    } else {
-      window.electron
-        .getGameByObjectId(game.shop, game.objectId)
-        .then((gameDetails) => {
-          if (cancelled) return;
-          if (gameDetails && !gameDetails.isDeleted) {
-            setAdded(true);
-          } else {
-            setAdded(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setAdded(false);
-        });
-    }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [library, game.shop, game.objectId]);
+    setAdded(isInLibrary);
+  }, [library, hiddenLibrary, game.shop, game.objectId]);
 
   const addGameToLibrary = async (isHidden = false) => {
     if (added || isAddingToLibrary) return;
@@ -236,38 +211,21 @@ export function GameItemClassics({ game }: GameItemClassicsProps) {
       </Link>
 
       <div className="game-item-classics__actions">
-        {!added &&
-          userDetails &&
-          selfHostedCloudUrl &&
-          isHiddenGamesSupported && (
-            <button
-              type="button"
-              className={cn(
-                "game-item-classics__plus-wrapper",
-                "game-item-classics__hide-wrapper",
-                {
-                  "game-item-classics__plus-wrapper--added": added,
-                }
-              )}
-              onClick={(e) => {
-                e.preventDefault();
-                addGameToLibrary(true);
-              }}
-              title={
-                added
-                  ? t("already_in_library")
-                  : t("add_to_library_hidden", "Add to library (hidden)")
-              }
-              aria-label={
-                added
-                  ? t("already_in_library")
-                  : t("add_to_library_hidden", "Add to library (hidden)")
-              }
-              disabled={added || isAddingToLibrary}
-            >
-              {added ? <CheckIcon size={16} /> : <EyeClosedIcon size={16} />}
-            </button>
-          )}
+        {!added && hiddenGamesEnabled && (
+          <button
+            type="button"
+            className="game-item-classics__plus-wrapper"
+            onClick={(e) => {
+              e.preventDefault();
+              addGameToLibrary(true);
+            }}
+            title={t("add_to_library_hidden")}
+            aria-label={t("add_to_library_hidden")}
+            disabled={isAddingToLibrary}
+          >
+            <EyeClosedIcon size={16} />
+          </button>
+        )}
         <button
           type="button"
           className={cn("game-item-classics__plus-wrapper", {

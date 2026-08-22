@@ -1,6 +1,7 @@
 import { registerEvent } from "../register-event";
-import { gamesSublevel } from "@main/level";
+import { gamesSublevel, levelKeys } from "@main/level";
 import { HydraApi, logger } from "@main/services";
+import { createGame } from "@main/services/library-sync";
 import type { GameShop } from "@types";
 
 const unhideGame = async (
@@ -8,58 +9,34 @@ const unhideGame = async (
   shop: GameShop,
   objectId: string
 ) => {
-  const gameKey = `${shop}:${objectId}`;
+  if (!HydraApi.supportsHiddenGames()) return false;
+
+  const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey).catch(() => null);
 
-  if (!game) return;
+  if (!game) return false;
 
-  await HydraApi.delete(
-    `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`,
-    { needsAuth: true }
-  ).catch((err) => {
-    logger.warn(`Failed to sync unhideGame to server for ${gameKey}`, err);
-  });
-
-  let newRemoteId = null;
-  if (HydraApi.isLoggedIn()) {
-    try {
-      const result = await HydraApi.post(
-        "/profile/games",
-        {
-          objectId,
-          shop,
-          playTimeInMilliseconds: Math.trunc(game.playTimeInMilliseconds ?? 0),
-          lastTimePlayed: game.lastTimePlayed,
-        },
-        { needsAuth: true }
-      );
-      if (result?.id) newRemoteId = result.id;
-    } catch (err) {
-      logger.error("FAILED TO RE-ADD GAME", err);
-    }
-
-    if (!newRemoteId) {
-      // It might have failed due to a 409 Conflict (already on profile).
-      // Let's fetch the remote ID from the official profile.
-      try {
-        const remoteGames = await HydraApi.get<any[]>("/profile/games", {
-          take: 1000,
-        }).catch(() => []);
-        const existing = remoteGames.find(
-          (g) => g.shop === shop && g.objectId === objectId
-        );
-        if (existing) newRemoteId = existing.id;
-      } catch (err) {
-        logger.warn(`Failed to fetch remote profile games for ${gameKey}`, err);
-      }
-    }
+  /* Same reasoning as hideGame: while the server still lists the game as
+     hidden, the next sync would hide it back. */
+  try {
+    await HydraApi.delete(
+      `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`
+    );
+  } catch (err) {
+    logger.error(`Failed to unhide ${gameKey} on the server`, err);
+    return false;
   }
 
-  await gamesSublevel.put(gameKey, {
-    ...game,
-    isHidden: false,
-    remoteId: newRemoteId ?? null,
+  const unhiddenGame = { ...game, isHidden: false, remoteId: null };
+  await gamesSublevel.put(gameKey, unhiddenGame);
+
+  /* Restores the public profile entry and its remoteId. A failure leaves
+     remoteId null, so uploadGamesBatch retries. */
+  await createGame(unhiddenGame).catch((err) => {
+    logger.warn(`Failed to restore ${gameKey} on the profile`, err);
   });
+
+  return true;
 };
 
 registerEvent("unhideGame", unhideGame);

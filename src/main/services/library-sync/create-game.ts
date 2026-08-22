@@ -8,11 +8,10 @@ export const createGame = async (game: Game) => {
   }
 
   if (game.isHidden) {
-    return HydraApi.post(
-      "/profile/hidden-games",
-      { shop: game.shop, objectId: game.objectId },
-      { needsAuth: true }
-    ).catch(() => {});
+    return HydraApi.post("/profile/hidden-games", {
+      shop: game.shop,
+      objectId: game.objectId,
+    });
   }
 
   return HydraApi.post(`/profile/games`, {

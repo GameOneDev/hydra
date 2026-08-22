@@ -26,14 +26,14 @@ import {
 } from "@phosphor-icons/react";
 import type { FocusOverrides } from "../../../../services";
 import { BIG_PICTURE_SIDEBAR_ITEM_IDS } from "../../../../layout";
-import { useUserDetails, useUserPreferences } from "../../../../hooks";
-import { useSupportsCloudFeature } from "@renderer/hooks";
+import { useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   getLibraryFiltersTabFocusId,
   LIBRARY_FILTERS_FILTER_SELECT_ID,
   LIBRARY_FILTERS_GRID_VIEW_BUTTON_ID,
   LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
   LIBRARY_FILTERS_SEARCH_INPUT_ID,
+  LIBRARY_FILTERS_SHOW_HIDDEN_BUTTON_ID,
   LIBRARY_FILTERS_SORT_SELECT_ID,
   LIBRARY_FILTERS_TOOLBAR_REGION_ID,
   LIBRARY_HERO_ACTIONS_REGION_ID,
@@ -114,10 +114,7 @@ export function LibraryFilters({
   onShowHiddenChange,
 }: Readonly<LibraryFiltersProps>) {
   const { t } = useTranslation("big_picture");
-  const { userDetails } = useUserDetails();
-  const userPreferences = useUserPreferences();
-  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   const tabDownOverride = useMemo(
     () =>
@@ -263,7 +260,35 @@ export function LibraryFilters({
     },
     right: {
       type: "item",
-      itemId: "library-filters-show-hidden-button",
+      itemId: hiddenGamesEnabled
+        ? LIBRARY_FILTERS_SHOW_HIDDEN_BUTTON_ID
+        : LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
+    },
+    up: toolbarUpOverride,
+    down: toolbarDownOverride,
+  };
+  const showHiddenNavigationOverrides: FocusOverrides = {
+    left: {
+      type: "item",
+      itemId: LIBRARY_FILTERS_FILTER_SELECT_ID,
+    },
+    right: {
+      type: "item",
+      itemId: LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
+    },
+    up: toolbarUpOverride,
+    down: toolbarDownOverride,
+  };
+  const listViewNavigationOverrides: FocusOverrides = {
+    left: {
+      type: "item",
+      itemId: hiddenGamesEnabled
+        ? LIBRARY_FILTERS_SHOW_HIDDEN_BUTTON_ID
+        : LIBRARY_FILTERS_FILTER_SELECT_ID,
+    },
+    right: {
+      type: "item",
+      itemId: LIBRARY_FILTERS_GRID_VIEW_BUTTON_ID,
     },
     up: toolbarUpOverride,
     down: toolbarDownOverride,
@@ -333,21 +358,10 @@ export function LibraryFilters({
         </div>
 
         <div className="library-filters__view-actions">
-          {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
+          {hiddenGamesEnabled && (
             <Button
-              focusId="library-filters-show-hidden-button"
-              focusNavigationOverrides={{
-                left: {
-                  type: "item",
-                  itemId: LIBRARY_FILTERS_SORT_SELECT_ID,
-                },
-                right: {
-                  type: "item",
-                  itemId: LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID,
-                },
-                up: toolbarUpOverride,
-                down: toolbarDownOverride,
-              }}
+              focusId={LIBRARY_FILTERS_SHOW_HIDDEN_BUTTON_ID}
+              focusNavigationOverrides={showHiddenNavigationOverrides}
               className="library-filters__view-button"
               variant={showHidden ? "primary" : "secondary"}
               size="icon"
@@ -365,18 +379,7 @@ export function LibraryFilters({
 
           <Button
             focusId={LIBRARY_FILTERS_LIST_VIEW_BUTTON_ID}
-            focusNavigationOverrides={{
-              left: {
-                type: "item",
-                itemId: "library-filters-show-hidden-button",
-              },
-              right: {
-                type: "item",
-                itemId: LIBRARY_FILTERS_GRID_VIEW_BUTTON_ID,
-              },
-              up: toolbarUpOverride,
-              down: toolbarDownOverride,
-            }}
+            focusNavigationOverrides={listViewNavigationOverrides}
             className="library-filters__view-button library-filters__view-button--list"
             variant={viewMode === "list" ? "primary" : "secondary"}
             size="icon"

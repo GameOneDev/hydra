@@ -39,13 +39,12 @@ const collectAssetPathsToDelete = (game: Game): string[] => {
 
 const updateGameAsDeleted = async (
   game: Game,
-  gameKey: string,
-  keepHidden: boolean
+  gameKey: string
 ): Promise<void> => {
   const updatedGame = {
     ...updateGameExecutablePath(game, null),
     isDeleted: true,
-    isHidden: keepHidden ? game.isHidden : false,
+    isHidden: false,
     ...(game.shop !== "custom" && {
       customIconUrl: null,
       customLogoImageUrl: null,
@@ -96,7 +95,7 @@ const removeGameFromLibrary = async (
 
   const assetPathsToDelete = collectAssetPathsToDelete(game);
 
-  await updateGameAsDeleted(game, gameKey, false);
+  await updateGameAsDeleted(game, gameKey);
 
   if (game.shop !== "custom") {
     await resetShopAssets(gameKey);
@@ -110,8 +109,7 @@ const removeGameFromLibrary = async (
 
   if (game.isHidden) {
     HydraApi.delete(
-      `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`,
-      { needsAuth: true }
+      `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`
     ).catch(() => {});
   }
 

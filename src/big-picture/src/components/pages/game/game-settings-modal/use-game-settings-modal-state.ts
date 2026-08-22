@@ -776,11 +776,16 @@ export function useGameSettingsModalState({
       onArtworkChanged: refreshGameDetails,
       onToggleHide: async () => {
         if (!game) return;
-        if (game.isHidden) {
-          await window.electron.unhideGame(game.shop, game.objectId);
-        } else {
-          await window.electron.hideGame(game.shop, game.objectId);
+
+        const updated = game.isHidden
+          ? await window.electron.unhideGame(game.shop, game.objectId)
+          : await window.electron.hideGame(game.shop, game.objectId);
+
+        if (!updated) {
+          showErrorToast(t("failed_update_visibility"));
+          return;
         }
+
         await updateGame();
         window.dispatchEvent(new Event("library-update"));
       },
@@ -794,6 +799,8 @@ export function useGameSettingsModalState({
     handleClearCustomizationAsset,
     handleProcessAssetPath,
     refreshGameDetails,
+    showErrorToast,
+    t,
     updatingGameTitle,
     updateGame,
   ]);

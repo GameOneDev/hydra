@@ -4,7 +4,7 @@ import { PencilIcon } from "@primer/octicons-react";
 import { Loader2, Trash } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { isVideoArtworkUrl } from "@renderer/hooks";
+import { isVideoArtworkUrl, useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   BumperBadge,
   Checkbox,
@@ -22,8 +22,6 @@ import {
 } from "../../../../helpers";
 import { SettingsSection } from "../../../../pages/settings/settings-section";
 import { GameArtworkPicker } from "./artwork-picker";
-import { useUserDetails, useUserPreferences } from "../../../../hooks";
-import { useSupportsCloudFeature } from "@renderer/hooks";
 
 import "./customization-tab.scss";
 
@@ -129,7 +127,7 @@ export interface GameCustomizationSettingsProps {
     clearArtworkSelection: boolean
   ) => Promise<boolean>;
   onArtworkChanged: () => Promise<void> | void;
-  onToggleHide: (game: LibraryGame) => void;
+  onToggleHide: () => void;
 }
 
 function getAssetPreviewState(
@@ -243,10 +241,7 @@ export function GameCustomizationSettingsTab({
   onToggleHide,
 }: Readonly<GameCustomizationSettingsProps>) {
   const { t } = useTranslation("big_picture");
-  const { userDetails } = useUserDetails();
-  const userPreferences = useUserPreferences();
-  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
   const [hasAssetTabsInteracted, setHasAssetTabsInteracted] = useState(false);
@@ -478,22 +473,19 @@ export function GameCustomizationSettingsTab({
           </div>
         </SettingsSection>
 
-        {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
+        {hiddenGamesEnabled && (
           <SettingsSection
             className="game-customization-settings-tab__section"
-            title={t("visibility", "Visibility")}
-            description={t(
-              "hide_game_description",
-              "Hide this game from your library."
-            )}
+            title="Visibility"
+            description="Hide this game from your library."
           >
             <div className="game-customization-settings-tab__section-content">
               <Checkbox
                 block
                 focusId="game-customization-settings-hide-game"
-                label={t("hide_game", "Hide Game")}
+                label="Hide Game"
                 checked={game.isHidden === true}
-                onChange={() => onToggleHide(game)}
+                onChange={onToggleHide}
               />
             </div>
           </SettingsSection>

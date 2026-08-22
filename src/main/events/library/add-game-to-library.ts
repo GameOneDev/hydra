@@ -85,7 +85,16 @@ const addGameToLibrary = async (
   }
 
   if (game) {
-    await createGame(game).catch(() => {});
+    const created = await createGame(game)
+      .then(() => true)
+      .catch(() => false);
+
+    /* A hidden game the server never recorded would be unhidden by the next
+       sync, so keep it as an ordinary library entry instead. */
+    if (!created && game.isHidden) {
+      game.isHidden = false;
+      await gamesSublevel.put(gameKey, game);
+    }
 
     AchievementWatcherManager.firstSyncWithRemoteIfNeeded(
       game.shop,

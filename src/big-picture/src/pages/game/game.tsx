@@ -42,9 +42,8 @@ import {
   useGameDetails,
   useHeaderTitle,
   useNavigationScreenActions,
-  useUserDetails,
-  useUserPreferences,
 } from "../../hooks";
+import { useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   BIG_PICTURE_SIDEBAR_ITEM_IDS,
   BIG_PICTURE_SIDEBAR_REGION_ID,
@@ -418,23 +417,7 @@ function buildDescriptionSections(document: Document | null) {
 }
 
 export default function Game() {
-  const { userDetails } = useUserDetails();
-  const userPreferences = useUserPreferences();
-  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
-
-  const [isHiddenGamesSupported, setIsHiddenGamesSupported] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    globalThis.window.electron
-      .getHiddenGamesSupported()
-      .then((res) => {
-        if (!cancelled) setIsHiddenGamesSupported(res);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [selfHostedCloudUrl]);
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   const { showErrorToast, showSuccessToast } = useBigPictureToast();
   const { shop, objectId } = useParams<{ shop: GameShop; objectId: string }>();
@@ -1304,12 +1287,7 @@ export default function Game() {
             onClose={closeGame}
             isAddingToLibrary={isAddingToLibrary}
             canAddToLibrary={canAddToLibrary}
-            canAddAsHidden={Boolean(
-              !game &&
-                userDetails &&
-                selfHostedCloudUrl &&
-                isHiddenGamesSupported
-            )}
+            canAddAsHidden={!game && hiddenGamesEnabled}
             downNavigationTarget={contentBelowHeroTarget}
             sidebarEntryTarget={sidebarEntryTarget}
           />

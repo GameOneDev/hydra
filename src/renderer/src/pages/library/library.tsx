@@ -13,7 +13,7 @@ import {
   useAppSelector,
   useGameCollections,
   useUserDetails,
-  useSupportsCloudFeature,
+  useHiddenGamesEnabled,
 } from "@renderer/hooks";
 import { setHeaderTitle } from "@renderer/features";
 import {
@@ -71,29 +71,17 @@ const SORT_OPTIONS: SortOption[] = [
 ];
 
 export default function Library() {
-  const { library, updateLibrary } = useLibrary();
+  const { library, hiddenLibrary, updateLibrary } = useLibrary();
   const [showHidden, setShowHidden] = useState(() => {
     return localStorage.getItem("library-show-hidden") === "true";
   });
-  const [hiddenLibrary, setHiddenLibrary] = useState<LibraryGame[]>([]);
-
-  useEffect(() => {
-    if (showHidden) {
-      window.electron.getHiddenLibrary().then(setHiddenLibrary);
-    } else {
-      setHiddenLibrary([]);
-    }
-  }, [showHidden, library]);
 
   const combinedLibrary = useMemo(() => {
-    return [...library, ...hiddenLibrary];
-  }, [library, hiddenLibrary]);
+    return showHidden ? [...library, ...hiddenLibrary] : library;
+  }, [library, hiddenLibrary, showHidden]);
 
   const { userDetails } = useUserDetails();
-  const selfHostedCloudUrl = useAppSelector(
-    (state) => state.userPreferences.value?.selfHostedCloudUrl
-  );
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
   const {
     collections,
     loadCollections,
@@ -514,7 +502,7 @@ export default function Library() {
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
               />
-              {userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
+              {hiddenGamesEnabled && (
                 <button
                   type="button"
                   className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}
@@ -527,9 +515,7 @@ export default function Library() {
                     );
                   }}
                   title={
-                    showHidden
-                      ? t("hide_hidden_games", "Hide hidden games")
-                      : t("show_hidden_games", "Show hidden games")
+                    showHidden ? t("hide_hidden_games") : t("show_hidden_games")
                   }
                 >
                   {showHidden ? (
@@ -627,42 +613,41 @@ export default function Library() {
                     gap: `${GAP}px`,
                   }}
                 >
-                  {rows[virtualRow.index].map((game) => (
-                    <div
-                      key={`${game.shop}-${game.objectId}`}
-                      style={{
-                        opacity: game.isHidden ? 0.4 : 1,
-                        position: "relative",
-                      }}
-                    >
-                      {game.isHidden && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            zIndex: 10,
-                            background: "rgba(0,0,0,0.7)",
-                            borderRadius: "50%",
-                            padding: 4,
-                          }}
-                        >
+                  {rows[virtualRow.index].map((game) =>
+                    game.isHidden ? (
+                      <div
+                        key={`${game.shop}-${game.objectId}`}
+                        className="library__hidden-game"
+                      >
+                        <span className="library__hidden-game-badge">
                           <EyeClosedIcon size={16} />
-                        </div>
-                      )}
-                      {viewMode === "large" ? (
-                        <LibraryGameCardLarge
-                          game={game}
-                          onContextMenu={handleOpenContextMenu}
-                        />
-                      ) : (
-                        <LibraryGameCard
-                          game={game}
-                          onContextMenu={handleOpenContextMenu}
-                        />
-                      )}
-                    </div>
-                  ))}
+                        </span>
+                        {viewMode === "large" ? (
+                          <LibraryGameCardLarge
+                            game={game}
+                            onContextMenu={handleOpenContextMenu}
+                          />
+                        ) : (
+                          <LibraryGameCard
+                            game={game}
+                            onContextMenu={handleOpenContextMenu}
+                          />
+                        )}
+                      </div>
+                    ) : viewMode === "large" ? (
+                      <LibraryGameCardLarge
+                        key={`${game.shop}-${game.objectId}`}
+                        game={game}
+                        onContextMenu={handleOpenContextMenu}
+                      />
+                    ) : (
+                      <LibraryGameCard
+                        key={`${game.shop}-${game.objectId}`}
+                        game={game}
+                        onContextMenu={handleOpenContextMenu}
+                      />
+                    )
+                  )}
                 </div>
               ))}
             </div>

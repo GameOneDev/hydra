@@ -1,6 +1,7 @@
 export const GAME_PAGE_REGION_ID = "game-page";
 export const GAME_HERO_ACTIONS_REGION_ID = "game-hero-actions";
 export const GAME_HERO_PRIMARY_ACTION_ID = "game-hero-primary-action";
+export const GAME_HERO_ADD_AS_HIDDEN_ID = "game-hero-add-as-hidden";
 export const GAME_HERO_DOWNLOAD_OPTIONS_ID = "game-hero-download-options";
 export const GAME_HERO_OPEN_SETTINGS_ID = "game-hero-open-settings";
 export const GAME_HERO_OPEN_CLOUD_SAVE_ID = "game-hero-open-cloud-save";

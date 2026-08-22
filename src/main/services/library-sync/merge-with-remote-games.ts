@@ -13,6 +13,7 @@ import {
   fetchSelfHostedArtwork,
   type SelfHostedArtworkMap,
 } from "./self-hosted-artwork";
+import { buildSteamCoverImageUrl } from "./steam-assets";
 import { syncHiddenGames } from "./sync-hidden-games";
 
 type ProfileGame = {
@@ -136,7 +137,7 @@ const getRemoteCoverImageUrl = (game: ProfileGame): string | null => {
   if (game.coverImageUrl) return game.coverImageUrl;
   if (game.shop !== "steam") return null;
 
-  return `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.objectId}/library_600x900_2x.jpg`;
+  return buildSteamCoverImageUrl(game.objectId);
 };
 
 const PAGE_SIZE = 100;
