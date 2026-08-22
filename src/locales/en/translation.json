@@ -1873,6 +1873,8 @@
     "open_souvenir_settings": "Open souvenir settings",
     "souvenirs_cloud_title": "Save achievement moments with Hydra Cloud",
     "souvenirs_cloud_description": "Subscribe to capture achievement screenshots and display them as souvenirs on your profile.",
+    "souvenirs_self_hosted_unsupported_title": "Souvenirs aren't available on this server",
+    "souvenirs_self_hosted_unsupported_description": "Your self-hosted cloud server doesn't have the souvenir endpoints yet. Update it to 4.1.2 or later and captures start working — no subscription needed.",
     "souvenir_deleted_successfully": "Souvenir deleted",
     "souvenir_deletion_failed": "Could not delete the souvenir",
     "souvenir_reported": "Souvenir reported",

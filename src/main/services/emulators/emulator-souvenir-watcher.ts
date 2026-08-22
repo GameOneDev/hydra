@@ -41,7 +41,7 @@ interface WatcherRegistration {
 const watchers = new Map<string, WatcherRegistration>();
 
 const isSouvenirCaptureEnabled = async () => {
-  if (!HydraApi.hasActiveSubscription()) return false;
+  if (!HydraApi.supportsAchievementSouvenirs()) return false;
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,

@@ -7,12 +7,14 @@ import type {
   SouvenirsHiddenReason,
   SouvenirsResponse,
   SouvenirSort,
+  SteamAchievement,
   UserProfile,
   UserStats,
   UserGame,
 } from "@types";
 import {
   buildUserSouvenirsPath,
+  enrichSouvenirAchievements,
   getSouvenirKey,
   normalizeProfileSouvenir,
 } from "@shared";
@@ -337,9 +339,26 @@ export function UserProfileContextProvider({
         language,
       });
 
-      return window.electron.hydraApi.get<SouvenirsResponse | null>(path, {
-        needsAuth: Boolean(authUserId),
-      });
+      const response =
+        await window.electron.hydraApi.get<SouvenirsResponse | null>(path, {
+          needsAuth: Boolean(authUserId),
+        });
+
+      if (!response) return null;
+
+      /* A self-hosted cloud server only knows the achievement names the
+         launcher sent it, so the catalogue fills in display names, icons and
+         points. A no-op for official Hydra Cloud, which sends them. */
+      const items = await enrichSouvenirAchievements(
+        (response.items ?? []).map((item) => normalizeProfileSouvenir(item)),
+        (shop, objectId) =>
+          window.electron.hydraApi.get<SteamAchievement[]>(
+            `/games/${shop}/${objectId}/achievements`,
+            { params: { language }, needsAuth: false }
+          )
+      );
+
+      return { ...response, items };
     },
     [authUserId, i18n.language, userId]
   );
@@ -353,9 +372,7 @@ export function UserProfileContextProvider({
         const response = await fetchSouvenirsPage(sortBy, 0);
         if (requestId !== souvenirRequestIdRef.current) return false;
 
-        setSouvenirs(
-          (response?.items ?? []).map((item) => normalizeProfileSouvenir(item))
-        );
+        setSouvenirs(response?.items ?? []);
         setSouvenirsTotal(response?.total ?? 0);
         setSouvenirsHiddenReason(response?.hiddenReason ?? null);
         return true;
@@ -394,11 +411,9 @@ export function UserProfileContextProvider({
           const existingKeys = new Set(
             current.map((souvenir) => getSouvenirKey(souvenir.id))
           );
-          const nextItems = response.items
-            .map((item) => normalizeProfileSouvenir(item))
-            .filter(
-              (souvenir) => !existingKeys.has(getSouvenirKey(souvenir.id))
-            );
+          const nextItems = response.items.filter(
+            (souvenir) => !existingKeys.has(getSouvenirKey(souvenir.id))
+          );
 
           return [...current, ...nextItems];
         });

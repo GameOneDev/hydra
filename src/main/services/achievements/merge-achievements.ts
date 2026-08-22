@@ -49,7 +49,7 @@ const captureAchievementSouvenirs = async (
       userPreferences.enableAchievementSouvenirs,
       process.platform
     ) ||
-    !HydraApi.hasActiveSubscription()
+    !HydraApi.supportsAchievementSouvenirs()
   ) {
     return null;
   }

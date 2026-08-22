@@ -1,4 +1,5 @@
-import type { GameShop } from "@types";
+import type { GameShop, ProfileSouvenir, SteamAchievement } from "@types";
+import { enrichSouvenirAchievements } from "@shared";
 import { useEffect, useState } from "react";
 import {
   fetchSelfHostedArtwork,
@@ -176,4 +177,25 @@ export const fetchSelfHostedAchievementSum = async (
   } catch {
     return null;
   }
+};
+
+/**
+ * Souvenirs carrying the achievement metadata the profile renders.
+ *
+ * A self-hosted cloud server only knows the achievement names the launcher
+ * sent it, so its souvenirs arrive without display names, icons or points.
+ * This joins the public catalogue for them — the same join the recent
+ * achievements above already do — and leaves official Hydra Cloud souvenirs,
+ * which come with metadata, untouched.
+ */
+export const withSouvenirAchievementMetadata = async (
+  souvenirs: ProfileSouvenir[]
+): Promise<ProfileSouvenir[]> => {
+  const language = await getCatalogueLanguage();
+
+  return enrichSouvenirAchievements(souvenirs, (shop, objectId) =>
+    globalThis.window.electron.hydraApi.get<SteamAchievement[]>(
+      `/games/${shop}/${objectId}/achievements?language=${language}`
+    )
+  );
 };

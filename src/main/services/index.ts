@@ -24,6 +24,8 @@ export * from "./7zip";
 export * from "./game-files-manager";
 export * from "./game-executables";
 export * from "./common-redist-manager";
+export * from "./souvenir-routes";
+export * from "./souvenir-visibility-mirror";
 export * from "./sse";
 export * from "./screenshot";
 export * from "./system-path";

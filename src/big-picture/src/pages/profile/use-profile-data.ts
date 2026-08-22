@@ -29,6 +29,7 @@ import {
   fetchSelfHostedRecentAchievements,
   getCatalogueLanguage,
   getProfileArtwork,
+  withSouvenirAchievementMetadata,
   type SelfHostedAchievementGame,
 } from "./self-hosted-profile";
 
@@ -867,13 +868,15 @@ export function useProfileSouvenirs(
         buildUserSouvenirsPath({ userId: targetUserId }),
         { needsAuth: isAuthenticated }
       )
-      .then((response) => {
+      .then(async (response) => {
+        const items = await withSouvenirAchievementMetadata(
+          ensureArray(response?.items).map((item) =>
+            normalizeProfileSouvenir(item)
+          )
+        );
+
         if (isMounted && requestGenerationRef.current === requestGeneration) {
-          setSouvenirs(
-            ensureArray(response?.items).map((item) =>
-              normalizeProfileSouvenir(item)
-            )
-          );
+          setSouvenirs(items);
           setTotal(response?.total ?? 0);
           setHiddenReason(response?.hiddenReason ?? null);
         }
@@ -928,13 +931,21 @@ export function useProfileSouvenirs(
 
       if (requestGenerationRef.current !== requestGeneration) return;
 
+      const page = await withSouvenirAchievementMetadata(
+        ensureArray(response?.items).map((item) =>
+          normalizeProfileSouvenir(item)
+        )
+      );
+
+      if (requestGenerationRef.current !== requestGeneration) return;
+
       setSouvenirs((current) => {
         const knownKeys = new Set(
           current.map((souvenir) => getSouvenirKey(souvenir.id))
         );
-        const nextItems = ensureArray(response?.items)
-          .map((item) => normalizeProfileSouvenir(item))
-          .filter((souvenir) => !knownKeys.has(getSouvenirKey(souvenir.id)));
+        const nextItems = page.filter(
+          (souvenir) => !knownKeys.has(getSouvenirKey(souvenir.id))
+        );
 
         return [...current, ...nextItems];
       });

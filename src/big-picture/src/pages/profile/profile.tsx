@@ -1732,6 +1732,7 @@ interface ProfileSouvenirsProps {
   isLoading: boolean;
   isOwnProfile: boolean;
   hasActiveSubscription: boolean;
+  isSupported: boolean;
   canLike: boolean;
   disableNsfwAlert: boolean;
   updatingLikeKeys: Set<string>;
@@ -2224,6 +2225,8 @@ interface ProfileSouvenirEmptyStateProps {
   isLoading: boolean;
   isOwnProfile: boolean;
   hasActiveSubscription: boolean;
+  /** False when the configured self-hosted cloud server has no souvenirs. */
+  isSupported: boolean;
 }
 
 function ProfileSouvenirEmptyState({
@@ -2231,6 +2234,7 @@ function ProfileSouvenirEmptyState({
   isLoading,
   isOwnProfile,
   hasActiveSubscription,
+  isSupported,
 }: Readonly<ProfileSouvenirEmptyStateProps>) {
   const { t } = useTranslation("user_profile");
   let title = t("no_user_souvenirs");
@@ -2242,6 +2246,11 @@ function ProfileSouvenirEmptyState({
   } else if (hiddenReason) {
     title = t("locked_souvenirs");
     description = "";
+  } else if (isOwnProfile && !isSupported) {
+    /* A self-hosted cloud server without the souvenir endpoints. Offering
+       Hydra Cloud here would be wrong: no subscription fixes an old server. */
+    title = t("souvenirs_self_hosted_unsupported_title");
+    description = t("souvenirs_self_hosted_unsupported_description");
   } else if (isOwnProfile && !hasActiveSubscription) {
     title = t("souvenirs_cloud_title");
     description = t("souvenirs_cloud_description");
@@ -2274,6 +2283,7 @@ function ProfileSouvenirs({
   isLoading,
   isOwnProfile,
   hasActiveSubscription,
+  isSupported,
   canLike,
   disableNsfwAlert,
   updatingLikeKeys,
@@ -2346,6 +2356,7 @@ function ProfileSouvenirs({
           isLoading={isLoading}
           isOwnProfile={isOwnProfile}
           hasActiveSubscription={hasActiveSubscription}
+          isSupported={isSupported}
         />
       )}
     </section>
@@ -2570,6 +2581,16 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
   const hasSelfHostedCloud = Boolean(useUserPreferences()?.selfHostedCloudUrl);
+  /* Optimistic until the answer arrives: official Hydra Cloud always has
+     souvenirs, and only a self-hosted server can say it doesn't. */
+  const [souvenirsSupported, setSouvenirsSupported] = useState(true);
+
+  useEffect(() => {
+    void globalThis.window.electron
+      .getAchievementSouvenirsSupported()
+      .then(setSouvenirsSupported)
+      .catch(() => setSouvenirsSupported(true));
+  }, []);
   /* Custom images also come from a self-hosted cloud server, whose members
      have no official subscription for the check above to find. */
   const hasSelfHostedArtwork = useHasSelfHostedArtwork(targetUserId);
@@ -3169,6 +3190,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
               isLoading={isLoadingSouvenirs}
               isOwnProfile={isOwnProfileTarget}
               hasActiveSubscription={targetHasActiveSubscription}
+              isSupported={souvenirsSupported}
               canLike={Boolean(userDetails)}
               disableNsfwAlert={disableNsfwAlert}
               updatingLikeKeys={updatingLikeKeys}

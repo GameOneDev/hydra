@@ -7,6 +7,7 @@ import { defaultDownloadsPath } from "@main/constants";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { patchUserProfile } from "../profile/update-profile";
 import { DownloadManager, HydraApi, Wine } from "@main/services";
+import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
 import { getDownloadDirectoryPreferences } from "@shared";
 import {
@@ -171,6 +172,9 @@ const updateUserPreferences = async (
       (userPreferences?.selfHostedCloudUrl ?? null);
 
   if (cloudServerChanged) {
+    /* A different server has never been told this account's souvenir privacy
+       setting, so the memo of what was already mirrored has to go with it. */
+    resetSouvenirsVisibilityMirror();
     await HydraApi.handleCloudServerChange();
   }
 };

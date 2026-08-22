@@ -118,7 +118,11 @@ export function ProfileContent() {
     updateSouvenir,
     removeSouvenir,
   } = useContext(userProfileContext);
-  const { userDetails } = useUserDetails();
+  const { userDetails, hasActiveSubscription } = useUserDetails();
+  /* Starts optimistic: on official Hydra Cloud, and until the answer is in,
+     souvenirs exist. Only a self-hosted server that says otherwise turns this
+     off. */
+  const [souvenirsSupported, setSouvenirsSupported] = useState(true);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -130,6 +134,13 @@ export function ProfileContent() {
       window.electron.platform
     )
   );
+  useEffect(() => {
+    window.electron
+      .getAchievementSouvenirsSupported()
+      .then(setSouvenirsSupported)
+      .catch(() => setSouvenirsSupported(true));
+  }, []);
+
   const disableNsfwAlert = useAppSelector(
     (state) => state.userPreferences.value?.disableNsfwAlert === true
   );
@@ -561,9 +572,15 @@ export function ProfileContent() {
                   isMe={isMe}
                   userId={userProfile.id}
                   visibility={userProfile.souvenirsVisibility}
-                  hasActiveSubscription={Boolean(
-                    userProfile.hasActiveSubscription
-                  )}
+                  /* On your own profile this is "can I capture souvenirs",
+                     and with a self-hosted cloud server that is true without
+                     the subscription the official profile reports. */
+                  hasActiveSubscription={
+                    isMe
+                      ? hasActiveSubscription
+                      : Boolean(userProfile.hasActiveSubscription)
+                  }
+                  isSupported={souvenirsSupported}
                   disableNsfwAlert={disableNsfwAlert}
                   likingKeys={likingKeys}
                   onSouvenirClick={requestOpenSouvenir}
