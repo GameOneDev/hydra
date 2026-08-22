@@ -1,113 +1,145 @@
-import { gamesSublevel, gamesShopAssetsSublevel } from "@main/level";
+import { gamesSublevel, gamesShopAssetsSublevel, levelKeys } from "@main/level";
 import { getSteamAppDetails } from "../steam";
 import { HydraApi } from "../hydra-api";
+import { logger } from "../logger";
+import { buildSteamCoverImageUrl } from "./steam-assets";
 import type { GameShop } from "@types";
 
-export const syncHiddenGames = async () => {
-  if (!HydraApi.isLoggedIn() || !HydraApi.isSelfHostedCloudEnabled()) return;
+const PLACEHOLDER_TITLE = "Hidden Game";
 
-  console.log("FETCHING HIDDEN GAMES");
+/** Resolves a title and cover for a game hidden on another device. */
+const resolveHiddenGameAssets = async (shop: GameShop, objectId: string) => {
+  const existingAsset = await gamesShopAssetsSublevel
+    .get(levelKeys.game(shop, objectId))
+    .catch(() => null);
+
+  if (existingAsset && existingAsset.title !== PLACEHOLDER_TITLE) {
+    return {
+      title: existingAsset.title,
+      coverImageUrl: existingAsset.coverImageUrl || null,
+      iconUrl: existingAsset.iconUrl || null,
+    };
+  }
+
+  try {
+    if (shop === "steam") {
+      const details = await getSteamAppDetails(objectId, "english");
+
+      return {
+        title: details?.name ?? PLACEHOLDER_TITLE,
+        coverImageUrl: buildSteamCoverImageUrl(objectId),
+        iconUrl: null,
+      };
+    }
+
+    if (shop === "launchbox") {
+      const basic = await HydraApi.get<{
+        title: string;
+        coverImageUrl: string | null;
+      }>(`/games/launchbox/${objectId}`, null, { needsAuth: false });
+
+      if (basic) {
+        return {
+          title: basic.title,
+          coverImageUrl: basic.coverImageUrl,
+          iconUrl: null,
+        };
+      }
+    }
+  } catch (err) {
+    logger.warn(`Failed to resolve assets for hidden game ${objectId}`, err);
+  }
+
+  return { title: PLACEHOLDER_TITLE, coverImageUrl: null, iconUrl: null };
+};
+
+const createHiddenGamePlaceholder = async (
+  shop: GameShop,
+  objectId: string
+) => {
+  const gameKey = levelKeys.game(shop, objectId);
+  const { title, coverImageUrl, iconUrl } = await resolveHiddenGameAssets(
+    shop,
+    objectId
+  );
+
+  await gamesSublevel.put(gameKey, {
+    shop,
+    objectId,
+    title,
+    iconUrl,
+    libraryHeroImageUrl: null,
+    logoImageUrl: null,
+    isDeleted: false,
+    isHidden: true,
+    remoteId: null,
+    playTimeInMilliseconds: 0,
+    lastTimePlayed: null,
+  });
+
+  await gamesShopAssetsSublevel.put(gameKey, {
+    updatedAt: Date.now(),
+    shop,
+    objectId,
+    title,
+    coverImageUrl,
+    iconUrl,
+    libraryHeroImageUrl: null,
+    libraryImageUrl: null,
+    logoImageUrl: null,
+    logoPosition: null,
+    downloadSources: [],
+  });
+};
+
+export const syncHiddenGames = async () => {
+  if (!HydraApi.supportsHiddenGames()) return;
+
   const hiddenOnServer = await HydraApi.get<
-    Array<{ shop: string; objectId: string }>
-  >("/profile/hidden-games", undefined, { needsAuth: true }).catch((e) => {
-    console.error("FAILED TO FETCH HIDDEN GAMES", e);
+    Array<{ shop: GameShop; objectId: string }>
+  >("/profile/hidden-games").catch((err) => {
+    logger.error("Failed to fetch hidden games", err);
     return null;
   });
 
-  if (!hiddenOnServer) return; // Abort sync if fetching fails to avoid unhiding everything mistakenly
+  /* Without the server list there is no way to tell an unhidden game from an
+     unreachable server, so leave the local state alone. */
+  if (!hiddenOnServer) return;
 
-  const serverHiddenSet = new Set<string>();
+  const serverHiddenKeys = new Set<string>();
 
   for (const { shop, objectId } of hiddenOnServer) {
-    const key = `${shop}:${objectId}`;
-    serverHiddenSet.add(key);
+    const gameKey = levelKeys.game(shop, objectId);
+    serverHiddenKeys.add(gameKey);
 
-    const localGame = await gamesSublevel.get(key).catch(() => null);
+    const game = await gamesSublevel.get(gameKey).catch(() => null);
 
-    if (localGame) {
-      if (localGame.remoteId) {
-        HydraApi.delete(`/profile/games/${localGame.remoteId}`, {
-          needsAuth: true,
-        }).catch(() => {});
-      }
+    if (!game) {
+      await createHiddenGamePlaceholder(shop, objectId);
+      continue;
+    }
 
-      if (!localGame.isHidden || localGame.remoteId) {
-        await gamesSublevel.put(key, {
-          ...localGame,
-          isHidden: true,
-          remoteId: null,
-        });
-      }
-    } else {
-      let title = "Hidden Game";
-      let coverImageUrl: string | null = null;
-      let iconUrl: string | null = null;
+    let { remoteId } = game;
 
-      const existingAsset = await gamesShopAssetsSublevel
-        .get(key)
-        .catch(() => null);
-      if (existingAsset && existingAsset.title !== "Hidden Game") {
-        title = existingAsset.title;
-        coverImageUrl = existingAsset.coverImageUrl || null;
-        iconUrl = existingAsset.iconUrl || null;
-      } else {
-        try {
-          if (shop === "steam") {
-            coverImageUrl = `https://shared.steamstatic.com/store_item_assets/steam/apps/${objectId}/library_600x900_2x.jpg`;
-            const details = await getSteamAppDetails(objectId, "english");
-            if (details?.name) title = details.name;
-          } else if (shop === "launchbox") {
-            const basic = await HydraApi.get<{
-              title: string;
-              coverImageUrl: string | null;
-            }>(`/games/launchbox/${objectId}`, null, {
-              needsAuth: false,
-            }).catch(() => null);
-            if (basic) {
-              title = basic.title;
-              coverImageUrl = basic.coverImageUrl;
-            }
-          }
-        } catch (err) {
-          console.error("FAILED TO FETCH HIDDEN GAME DETAILS", err);
-        }
-      }
+    if (remoteId) {
+      /* Keeping remoteId on failure leaves the removal for the next sync. */
+      const removed = await HydraApi.delete(`/profile/games/${remoteId}`)
+        .then(() => true)
+        .catch(() => false);
 
-      await gamesSublevel.put(key, {
-        shop: shop as GameShop,
-        objectId,
-        title,
-        iconUrl,
-        libraryHeroImageUrl: null,
-        logoImageUrl: null,
-        isDeleted: false,
-        isHidden: true,
-        remoteId: null,
-        playTimeInMilliseconds: 0,
-        lastTimePlayed: null,
-      });
+      if (removed) remoteId = null;
+    }
 
-      await gamesShopAssetsSublevel.put(key, {
-        updatedAt: Date.now(),
-        shop: shop as GameShop,
-        objectId,
-        title,
-        coverImageUrl,
-        iconUrl,
-        libraryHeroImageUrl: null,
-        libraryImageUrl: null,
-        logoImageUrl: null,
-        logoPosition: null,
-        downloadSources: [],
-      });
+    if (!game.isHidden || game.remoteId !== remoteId) {
+      await gamesSublevel.put(gameKey, { ...game, isHidden: true, remoteId });
     }
   }
 
-  // Unhide local games that are no longer hidden on server
   const entries = await gamesSublevel.iterator().all();
-  for (const [key, game] of entries) {
-    if (game.isHidden && !serverHiddenSet.has(key)) {
-      await gamesSublevel.put(key, { ...game, isHidden: false });
+
+  for (const [gameKey, game] of entries) {
+    if (game.isHidden && !serverHiddenKeys.has(gameKey)) {
+      await gamesSublevel.put(gameKey, { ...game, isHidden: false });
     }
   }
 };

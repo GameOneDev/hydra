@@ -808,7 +808,6 @@ contextBridge.exposeInMainWorld("electron", {
   },
 
   /* User preferences */
-  getHiddenGamesSupported: () => ipcRenderer.invoke("getHiddenGamesSupported"),
   getUserPreferences: () => ipcRenderer.invoke("getUserPreferences"),
   updateUserPreferences: (preferences: Partial<UserPreferences>) =>
     ipcRenderer.invoke("updateUserPreferences", preferences),
@@ -1028,6 +1027,7 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("verifyExecutablePathInUse", executablePath),
   getLibrary: () => ipcRenderer.invoke("getLibrary"),
   getHiddenLibrary: () => ipcRenderer.invoke("getHiddenLibrary"),
+  getHiddenGamesEnabled: () => ipcRenderer.invoke("getHiddenGamesEnabled"),
   hideGame: (shop: GameShop, objectId: string) =>
     ipcRenderer.invoke("hideGame", shop, objectId),
   unhideGame: (shop: GameShop, objectId: string) =>

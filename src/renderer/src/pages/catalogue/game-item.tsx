@@ -1,6 +1,10 @@
 import { Badge } from "@renderer/components/badge/badge";
 import { buildGameDetailsPath } from "@renderer/helpers";
-import { useAppSelector, useLibrary } from "@renderer/hooks";
+import {
+  useAppSelector,
+  useLibrary,
+  useHiddenGamesEnabled,
+} from "@renderer/hooks";
 import { lazy, Suspense, useMemo, useState, useEffect } from "react";
 import { Link } from "@renderer/components/link/link";
 
@@ -13,7 +17,6 @@ import {
   CheckIcon,
   EyeClosedIcon,
 } from "@primer/octicons-react";
-import { useUserDetails, useSupportsCloudFeature } from "@renderer/hooks";
 import cn from "classnames";
 
 const ProtonDBBadge = lazy(async () => {
@@ -36,43 +39,19 @@ export function GameItem({ game }: GameItemProps) {
 
   const [added, setAdded] = useState(false);
 
-  const { library, updateLibrary } = useLibrary();
+  const { library, hiddenLibrary, updateLibrary } = useLibrary();
   const shouldShowProtonFeatures = window.electron.platform === "linux";
 
-  const { userDetails } = useUserDetails();
-  const selfHostedCloudUrl = useAppSelector(
-    (state) => state.userPreferences.value?.selfHostedCloudUrl
-  );
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   useEffect(() => {
-    let cancelled = false;
-    const exists = library.some(
+    const isInLibrary = [...library, ...hiddenLibrary].some(
       (libItem) =>
         libItem.shop === game.shop && libItem.objectId === game.objectId
     );
-    if (exists) {
-      setAdded(true);
-    } else {
-      window.electron
-        .getGameByObjectId(game.shop, game.objectId)
-        .then((gameDetails) => {
-          if (cancelled) return;
-          if (gameDetails && !gameDetails.isDeleted) {
-            setAdded(true);
-          } else {
-            setAdded(false);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setAdded(false);
-        });
-    }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [library, game.shop, game.objectId]);
+    setAdded(isInLibrary);
+  }, [library, hiddenLibrary, game.shop, game.objectId]);
 
   const addGameToLibrary = async (isHidden = false) => {
     if (added || isAddingToLibrary) return;
@@ -181,38 +160,21 @@ export function GameItem({ game }: GameItemProps) {
         </div>
       </Link>
       <div className="game-item__actions">
-        {!added &&
-          userDetails &&
-          selfHostedCloudUrl &&
-          isHiddenGamesSupported && (
-            <button
-              type="button"
-              className={cn(
-                "game-item__plus-wrapper",
-                "game-item__hide-wrapper",
-                {
-                  "game-item__plus-wrapper--added": added,
-                }
-              )}
-              onClick={(e) => {
-                e.preventDefault();
-                addGameToLibrary(true);
-              }}
-              title={
-                added
-                  ? t("already_in_library")
-                  : t("add_to_library_hidden", "Add to library (hidden)")
-              }
-              aria-label={
-                added
-                  ? t("already_in_library")
-                  : t("add_to_library_hidden", "Add to library (hidden)")
-              }
-              disabled={added || isAddingToLibrary}
-            >
-              {added ? <CheckIcon size={16} /> : <EyeClosedIcon size={16} />}
-            </button>
-          )}
+        {!added && hiddenGamesEnabled && (
+          <button
+            type="button"
+            className="game-item__plus-wrapper"
+            onClick={(e) => {
+              e.preventDefault();
+              addGameToLibrary(true);
+            }}
+            title={t("add_to_library_hidden")}
+            aria-label={t("add_to_library_hidden")}
+            disabled={isAddingToLibrary}
+          >
+            <EyeClosedIcon size={16} />
+          </button>
+        )}
         <button
           type="button"
           className={cn("game-item__plus-wrapper", {

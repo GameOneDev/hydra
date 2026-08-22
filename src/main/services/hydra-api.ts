@@ -160,6 +160,19 @@ export class HydraApi {
   }
 
   /**
+   * Hidden games are stored on the self-hosted server, so the feature needs an
+   * authenticated session against one that advertises it. Both renderers gate
+   * their UI on this, and the hide/unhide handlers enforce it.
+   */
+  public static supportsHiddenGames() {
+    return (
+      this.isLoggedIn() &&
+      this.isSelfHostedCloudEnabled() &&
+      this.supportsCloudFeature("hidden-games")
+    );
+  }
+
+  /**
    * Reads /capabilities from the self-hosted server. Unauthenticated and
    * cheap, so it runs on every setup and whenever the URL changes.
    *

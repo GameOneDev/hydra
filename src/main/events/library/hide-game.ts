@@ -1,5 +1,5 @@
 import { registerEvent } from "../register-event";
-import { gamesSublevel } from "@main/level";
+import { gamesSublevel, levelKeys } from "@main/level";
 import { HydraApi, logger } from "@main/services";
 import type { GameShop } from "@types";
 
@@ -8,51 +8,39 @@ const hideGame = async (
   shop: GameShop,
   objectId: string
 ) => {
-  const gameKey = `${shop}:${objectId}`;
+  if (!HydraApi.supportsHiddenGames()) return false;
+
+  const gameKey = levelKeys.game(shop, objectId);
   const game = await gamesSublevel.get(gameKey).catch(() => null);
 
-  if (!game) return;
+  if (!game) return false;
 
-  await HydraApi.post(
-    "/profile/hidden-games",
-    { shop, objectId },
-    { needsAuth: true }
-  ).catch((err) => {
-    logger.warn(`Failed to sync hideGame to server for ${gameKey}`, err);
-  });
-
-  let remoteIdToDelete = game.remoteId;
-
-  if (!remoteIdToDelete && HydraApi.isLoggedIn()) {
-    try {
-      const remoteGames = await HydraApi.get<any[]>("/profile/games", {
-        take: 1000,
-      }).catch(() => []);
-      const existing = remoteGames.find(
-        (g) => g.shop === shop && g.objectId === objectId
-      );
-      if (existing) remoteIdToDelete = existing.id;
-    } catch (err) {
-      logger.warn(`Failed to fetch remote profile games for ${gameKey}`, err);
-    }
+  /* The server owns the hidden state: if it never records the game, the next
+     sync unhides it again and re-uploads it to the public profile. */
+  try {
+    await HydraApi.post("/profile/hidden-games", { shop, objectId });
+  } catch (err) {
+    logger.error(`Failed to hide ${gameKey} on the server`, err);
+    return false;
   }
 
-  if (remoteIdToDelete) {
-    await HydraApi.delete(`/profile/games/${remoteIdToDelete}`, {
-      needsAuth: true,
-    }).catch((err) => {
-      logger.warn(
-        `Failed to delete game from profile games for ${remoteIdToDelete}`,
-        err
-      );
-    });
+  let { remoteId } = game;
+
+  if (remoteId) {
+    /* Keeping remoteId on failure leaves the removal for the next sync. */
+    const removed = await HydraApi.delete(`/profile/games/${remoteId}`)
+      .then(() => true)
+      .catch((err) => {
+        logger.warn(`Failed to remove ${gameKey} from the profile`, err);
+        return false;
+      });
+
+    if (removed) remoteId = null;
   }
 
-  await gamesSublevel.put(gameKey, {
-    ...game,
-    isHidden: true,
-    remoteId: null,
-  });
+  await gamesSublevel.put(gameKey, { ...game, isHidden: true, remoteId });
+
+  return true;
 };
 
 registerEvent("hideGame", hideGame);

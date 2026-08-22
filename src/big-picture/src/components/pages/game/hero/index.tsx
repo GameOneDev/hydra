@@ -26,6 +26,7 @@ import {
 } from "../../../common";
 import {
   GAME_HERO_ACTIONS_REGION_ID,
+  GAME_HERO_ADD_AS_HIDDEN_ID,
   GAME_HERO_DOWNLOAD_OPTIONS_ID,
   GAME_HERO_OPEN_CLOUD_SAVE_ID,
   GAME_HERO_OPEN_SETTINGS_ID,
@@ -159,7 +160,7 @@ export function Hero({
     settingsButton,
     addAsHiddenButton,
   } = useMemo(() => {
-    const primaryActionRightTarget = shouldShowCatalogActions
+    const catalogActionsRightTarget = shouldShowCatalogActions
       ? {
           type: "item" as const,
           itemId: GAME_HERO_DOWNLOAD_OPTIONS_ID,
@@ -170,6 +171,15 @@ export function Hero({
             itemId: GAME_HERO_OPEN_SETTINGS_ID,
           }
         : lastActionRightTarget;
+
+    /* Keeps the add-as-hidden button in the horizontal chain instead of
+       leaving it unreachable between its neighbours. */
+    const primaryActionRightTarget = canAddAsHidden
+      ? {
+          type: "item" as const,
+          itemId: GAME_HERO_ADD_AS_HIDDEN_ID,
+        }
+      : catalogActionsRightTarget;
     const primaryActionNavigationOverrides: FocusOverrides = {
       left: {
         type: "item",
@@ -178,10 +188,20 @@ export function Hero({
       right: primaryActionRightTarget,
       down: heroDownNavigationTarget,
     };
-    const downloadOptionsNavigationOverrides: FocusOverrides = {
+    const addAsHiddenNavigationOverrides: FocusOverrides = {
       left: {
         type: "item",
         itemId: GAME_HERO_PRIMARY_ACTION_ID,
+      },
+      right: catalogActionsRightTarget,
+      down: heroDownNavigationTarget,
+    };
+    const downloadOptionsNavigationOverrides: FocusOverrides = {
+      left: {
+        type: "item",
+        itemId: canAddAsHidden
+          ? GAME_HERO_ADD_AS_HIDDEN_ID
+          : GAME_HERO_PRIMARY_ACTION_ID,
       },
       right: shouldShowFavoriteButton
         ? {
@@ -330,8 +350,8 @@ export function Hero({
       ),
       addAsHiddenButton: canAddAsHidden ? (
         <Button
-          focusId={`${GAME_HERO_PRIMARY_ACTION_ID}-hidden`}
-          focusNavigationOverrides={primaryActionNavigationOverrides}
+          focusId={GAME_HERO_ADD_AS_HIDDEN_ID}
+          focusNavigationOverrides={addAsHiddenNavigationOverrides}
           variant="secondary"
           color={dominantColor ?? undefined}
           icon={<EyeClosedIcon size={24} />}

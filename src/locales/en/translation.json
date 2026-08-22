@@ -300,6 +300,7 @@
     "accuracy": "{{accuracy}}% accuracy",
     "add_to_library": "Add to library",
     "already_in_library": "Already in library",
+    "add_to_library_hidden": "Add to library (hidden)",
     "remove_from_library": "Remove from library",
     "no_downloads": "No downloads available",
     "play_time": "Played for {{amount}}",
@@ -362,6 +363,9 @@
     "open_download_location": "See downloaded files",
     "pin_game": "Pin game",
     "unpin_game": "Unpin game",
+    "hide_game": "Hide game",
+    "unhide_game": "Unhide game",
+    "failed_update_visibility": "Could not update game visibility",
     "failed_update_pinned": "Failed to update pin",
     "create_shortcut": "Create Desktop Shortcut",
     "create_shortcut_simple": "Create shortcut",
@@ -1876,7 +1880,9 @@
     "context_menu_options": "Options",
     "context_menu_uninstall": "Uninstall",
     "context_menu_remove_from_library": "Remove from Library",
-    "context_menu_add_to_library": "Add to Library"
+    "context_menu_add_to_library": "Add to Library",
+    "show_hidden_games": "Show hidden games",
+    "hide_hidden_games": "Hide hidden games"
   },
   "achievement": {
     "achievement_unlocked": "Achievement unlocked",

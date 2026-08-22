@@ -17,4 +17,4 @@ export * from "./use-retroarch-scan";
 export * from "./use-game-artwork-grid";
 export * from "./game-artwork-utils";
 export * from "./use-cover-poster";
-export * from "./use-supports-cloud-feature";
+export * from "./use-hidden-games-enabled";

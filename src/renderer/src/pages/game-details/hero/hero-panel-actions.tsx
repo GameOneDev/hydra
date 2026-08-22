@@ -16,8 +16,7 @@ import {
   useLibrary,
   useToast,
   useUserDetails,
-  useSupportsCloudFeature,
-  useAppSelector,
+  useHiddenGamesEnabled,
 } from "@renderer/hooks";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -53,10 +52,7 @@ export function HeroPanelActions() {
     transferProgress,
   } = useContext(gameDetailsContext);
 
-  const selfHostedCloudUrl = useAppSelector(
-    (state) => state.userPreferences.value?.selfHostedCloudUrl
-  );
-  const isHiddenGamesSupported = useSupportsCloudFeature("hidden-games");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   const { lastPacket } = useDownload();
 
@@ -312,17 +308,17 @@ export function HeroPanelActions() {
   const deleting = game ? isGameDeleting(game?.id) : false;
 
   const addGameToLibraryButton = (
-    <div style={{ display: "flex", gap: "8px" }}>
-      {!game && userDetails && selfHostedCloudUrl && isHiddenGamesSupported && (
+    <div className="hero-panel-actions__container">
+      {!game && hiddenGamesEnabled && (
         <Button
           theme="outline"
           disabled={toggleLibraryGameDisabled}
           onClick={() => addGameToLibrary(true)}
           className="hero-panel-actions__action"
-          title={t("add_to_library_hidden", "Add to library (hidden)")}
+          title={t("add_to_library_hidden")}
         >
           <EyeClosedIcon />
-          {t("add_to_library_hidden", "Add to library (hidden)")}
+          {t("add_to_library_hidden")}
         </Button>
       )}
       <Button
