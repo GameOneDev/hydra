@@ -876,8 +876,17 @@ contextBridge.exposeInMainWorld("electron", {
     shop: GameShop,
     objectId: string,
     title: string,
-    platform?: string | null
-  ) => ipcRenderer.invoke("addGameToLibrary", shop, objectId, title, platform),
+    platform?: string | null,
+    isHidden?: boolean
+  ) =>
+    ipcRenderer.invoke(
+      "addGameToLibrary",
+      shop,
+      objectId,
+      title,
+      platform,
+      isHidden
+    ),
   addCustomGameToLibrary: (
     title: string,
     executablePath: string,
@@ -1017,6 +1026,12 @@ contextBridge.exposeInMainWorld("electron", {
   verifyExecutablePathInUse: (executablePath: string) =>
     ipcRenderer.invoke("verifyExecutablePathInUse", executablePath),
   getLibrary: () => ipcRenderer.invoke("getLibrary"),
+  getHiddenLibrary: () => ipcRenderer.invoke("getHiddenLibrary"),
+  getHiddenGamesEnabled: () => ipcRenderer.invoke("getHiddenGamesEnabled"),
+  hideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("hideGame", shop, objectId),
+  unhideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("unhideGame", shop, objectId),
   refreshLibraryAssets: () => ipcRenderer.invoke("refreshLibraryAssets"),
   getClassicsImportStatus: (): Promise<boolean> =>
     ipcRenderer.invoke("getClassicsImportStatus"),

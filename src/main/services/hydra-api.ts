@@ -66,6 +66,7 @@ export class HydraApi {
 
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
+    "/profile/hidden-games",
     /* Custom game images (covers, icons, logos, banners). Uploads already
        route here via needsSubscription; the read side has no such flag, and
        these listing endpoints only exist on the self-hosted server. */
@@ -156,6 +157,19 @@ export class HydraApi {
   public static supportsCloudFeature(feature: string) {
     if (!this.isSelfHostedCloudEnabled()) return true;
     return this.selfHostedFeatures?.has(feature) ?? false;
+  }
+
+  /**
+   * Hidden games are stored on the self-hosted server, so the feature needs an
+   * authenticated session against one that advertises it. Both renderers gate
+   * their UI on this, and the hide/unhide handlers enforce it.
+   */
+  public static supportsHiddenGames() {
+    return (
+      this.isLoggedIn() &&
+      this.isSelfHostedCloudEnabled() &&
+      this.supportsCloudFeature("hidden-games")
+    );
   }
 
   /**

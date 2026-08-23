@@ -611,6 +611,7 @@ export type LibraryGame = Game &
     download: Download | null;
     unlockedAchievementCount?: number;
     achievementCount?: number;
+    isHidden?: boolean;
   };
 
 export type UserGameDetails = ShopAssets & {

@@ -336,4 +336,21 @@
     justify-content: flex-end;
     gap: calc(globals.$spacing-unit);
   }
+
+  &__hidden-game {
+    position: relative;
+    opacity: 0.4;
+  }
+
+  &__hidden-game-badge {
+    position: absolute;
+    top: globals.$spacing-unit;
+    right: globals.$spacing-unit;
+    z-index: 10;
+    display: flex;
+    padding: calc(globals.$spacing-unit / 2);
+    border-radius: 50%;
+    background-color: globals.$dark-background-color;
+    color: globals.$muted-color;
+  }
 }

@@ -17,6 +17,8 @@ import {
   XIcon,
   PinIcon,
   PinSlashIcon,
+  EyeIcon,
+  EyeClosedIcon,
 } from "@primer/octicons-react";
 import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 import {
@@ -27,7 +29,12 @@ import {
   CreateCollectionModal,
   useGameActions,
 } from "..";
-import { useGameCollections, useToast, useUserDetails } from "@renderer/hooks";
+import {
+  useGameCollections,
+  useToast,
+  useUserDetails,
+  useHiddenGamesEnabled,
+} from "@renderer/hooks";
 import { useCollectionContextMenu } from "@renderer/context";
 import { getGameCollectionIds } from "@renderer/helpers";
 import type { GameCollection } from "@types";
@@ -57,6 +64,7 @@ export function GameContextMenu({
   const { t } = useTranslation("game_details");
   const { showSuccessToast, showErrorToast } = useToast();
   const { userDetails } = useUserDetails();
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
   const [searchParams] = useSearchParams();
   const [showConfirmRemoveLibrary, setShowConfirmRemoveLibrary] =
     useState(false);
@@ -323,6 +331,37 @@ export function GameContextMenu({
           onClick: onPinToggle ?? handleTogglePin,
           disabled: isDeleting,
         },
+        ...(hiddenGamesEnabled
+          ? [
+              {
+                id: "hide-game",
+                label: game.isHidden ? t("unhide_game") : t("hide_game"),
+                icon: game.isHidden ? (
+                  <EyeIcon size={16} />
+                ) : (
+                  <EyeClosedIcon size={16} />
+                ),
+                onClick: async () => {
+                  const updated = game.isHidden
+                    ? await window.electron.unhideGame(game.shop, game.objectId)
+                    : await window.electron.hideGame(game.shop, game.objectId);
+
+                  if (!updated) {
+                    showErrorToast(t("failed_update_visibility"));
+                    return;
+                  }
+
+                  window.dispatchEvent(
+                    new CustomEvent("hydra:game-pin-toggled", {
+                      detail: { shop: game.shop, objectId: game.objectId },
+                    })
+                  );
+                  onClose();
+                },
+                disabled: isDeleting,
+              },
+            ]
+          : []),
         ...(game.executablePath
           ? [
               {

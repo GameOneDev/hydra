@@ -4,6 +4,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -127,6 +128,29 @@ export default function LibraryPage() {
     getInitialLibrarySecondaryFilter
   );
   const [search, setSearch] = useState("");
+
+  const [showHidden, setShowHidden] = useState(() => {
+    return (
+      globalThis.window?.localStorage.getItem("library-show-hidden") === "true"
+    );
+  });
+  const [hiddenLibrary, setHiddenLibrary] = useState<LibraryGame[]>([]);
+
+  useEffect(() => {
+    if (showHidden) {
+      window.electron
+        .getHiddenLibrary()
+        .then(setHiddenLibrary)
+        .catch(() => {});
+    } else {
+      setHiddenLibrary([]);
+    }
+  }, [showHidden, library]);
+
+  const combinedLibrary = useMemo(() => {
+    return [...library, ...hiddenLibrary];
+  }, [library, hiddenLibrary]);
+
   const [contextMenuState, setContextMenuState] =
     useState<GameContextMenuState>({
       game: null,
@@ -142,7 +166,13 @@ export default function LibraryPage() {
     firstGridItemId,
     firstListItemId,
     lastPlayedGames,
-  } = useLibraryPageData(library, selectedFilterTab, search, sortBy, filterBy);
+  } = useLibraryPageData(
+    combinedLibrary,
+    selectedFilterTab,
+    search,
+    sortBy,
+    filterBy
+  );
 
   /** Must change when sorting, secondary filter or search updates so grid/list fades. */
   const deferredSearchTransition = useDeferredValue(search);
@@ -397,8 +427,16 @@ export default function LibraryPage() {
             onFilterByChange={setFilterBy}
             search={search}
             onSearchChange={setSearch}
+            showHidden={showHidden}
+            onShowHiddenChange={(v) => {
+              setShowHidden(v);
+              globalThis.window?.localStorage.setItem(
+                "library-show-hidden",
+                String(v)
+              );
+            }}
             counts={filterCounts}
-            library={library}
+            library={combinedLibrary}
             collections={collections}
             firstContentItemId={firstContentItemId}
           />

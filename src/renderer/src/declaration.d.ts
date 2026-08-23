@@ -302,7 +302,8 @@ declare global {
       shop: GameShop,
       objectId: string,
       title: string,
-      platform?: string | null
+      platform?: string | null,
+      isHidden?: boolean
     ) => Promise<void>;
     addCustomGameToLibrary: (
       title: string,
@@ -423,6 +424,10 @@ declare global {
     ) => Promise<string | null>;
     verifyExecutablePathInUse: (executablePath: string) => Promise<Game>;
     getLibrary: () => Promise<LibraryGame[]>;
+    getHiddenLibrary: () => Promise<LibraryGame[]>;
+    getHiddenGamesEnabled: () => Promise<boolean>;
+    hideGame: (shop: GameShop, objectId: string) => Promise<boolean>;
+    unhideGame: (shop: GameShop, objectId: string) => Promise<boolean>;
     refreshLibraryAssets: () => Promise<void>;
     openGameInstaller: (shop: GameShop, objectId: string) => Promise<boolean>;
     getGameInstallerActionType: (
