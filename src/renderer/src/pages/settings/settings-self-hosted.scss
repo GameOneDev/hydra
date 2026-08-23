@@ -1,0 +1,42 @@
+@use "../../scss/globals.scss";
+
+.settings-self-hosted {
+  display: flex;
+  flex-direction: column;
+  gap: calc(globals.$spacing-unit * 2);
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+    flex-shrink: 0;
+
+    button {
+      white-space: nowrap;
+    }
+  }
+
+  &__status {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+    color: var(--text-secondary);
+    font-size: globals.$small-font-size;
+
+    &--online {
+      color: globals.$success-color;
+    }
+
+    &--degraded {
+      color: globals.$warning-color;
+    }
+
+    &--offline {
+      color: globals.$error-color;
+    }
+  }
+
+  &__note {
+    color: var(--text-secondary);
+  }
+}

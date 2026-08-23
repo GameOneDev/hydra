@@ -3,5 +3,8 @@ import "./authenticate-premiumize";
 import "./authenticate-all-debrid";
 import "./authenticate-torbox";
 import "./auto-launch";
+import "./get-self-hosted-status";
 import "./get-user-preferences";
+import "./refresh-self-hosted-status";
+import "./test-self-hosted-server";
 import "./update-user-preferences";

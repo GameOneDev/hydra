@@ -38,6 +38,8 @@ import type {
   EmulationBackupProgress,
   EmulationCloudSave,
   EmulationSavePlatform,
+  SelfHostedServerProbe,
+  SelfHostedServerStatus,
   MemcardFormatState,
   MemcardRestoreResult,
   MemcardRestoreTarget,
@@ -828,6 +830,37 @@ contextBridge.exposeInMainWorld("electron", {
   getUserPreferences: () => ipcRenderer.invoke("getUserPreferences"),
   updateUserPreferences: (preferences: Partial<UserPreferences>) =>
     ipcRenderer.invoke("updateUserPreferences", preferences),
+  getSelfHostedStatus: () =>
+    ipcRenderer.invoke(
+      "getSelfHostedStatus"
+    ) as Promise<SelfHostedServerStatus>,
+  refreshSelfHostedStatus: () =>
+    ipcRenderer.invoke(
+      "refreshSelfHostedStatus"
+    ) as Promise<SelfHostedServerStatus>,
+  testSelfHostedServer: (url: string) =>
+    ipcRenderer.invoke(
+      "testSelfHostedServer",
+      url
+    ) as Promise<SelfHostedServerProbe>,
+  onSelfHostedStatusUpdated: (cb: (status: SelfHostedServerStatus) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      status: SelfHostedServerStatus
+    ) => cb(status);
+    ipcRenderer.on("on-self-hosted-status-updated", listener);
+    return () =>
+      ipcRenderer.removeListener("on-self-hosted-status-updated", listener);
+  },
+  onCloudServerChanged: (cb: (status: SelfHostedServerStatus) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      status: SelfHostedServerStatus
+    ) => cb(status);
+    ipcRenderer.on("on-cloud-server-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("on-cloud-server-changed", listener);
+  },
   onUserPreferencesUpdated: (
     cb: (preferences: UserPreferences | null) => void
   ) => {

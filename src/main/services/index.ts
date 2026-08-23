@@ -18,6 +18,7 @@ export * from "./process-watcher";
 export * from "./launched-game-pids";
 export * from "./main-loop";
 export * from "./hydra-api";
+export * from "./self-hosted";
 export * from "./ludusavi";
 export * from "./cloud-sync";
 export * from "./7zip";

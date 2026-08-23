@@ -32,4 +32,5 @@ export * from "./retroarch-scan-indicator/retroarch-scan-indicator";
 export * from "./classics-spinner/classics-spinner";
 export * from "./error-boundary/error-fallback";
 export * from "./online-friends-bar/online-friends-bar";
+export * from "./self-hosted-status-indicator/self-hosted-status-indicator";
 export * from "./error-boundary/error-boundary";

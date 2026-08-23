@@ -10,6 +10,8 @@ import {
   useUserDetails,
 } from "@renderer/hooks";
 
+import { SelfHostedStatusIndicator } from "../self-hosted-status-indicator/self-hosted-status-indicator";
+
 import "./bottom-panel.scss";
 
 import { useNavigate } from "react-router-dom";
@@ -225,6 +227,8 @@ export function BottomPanel() {
       </div>
 
       <div className="bottom-panel__right">
+        <SelfHostedStatusIndicator />
+
         <button
           data-open-workwonders-changelog-mini
           className="bottom-panel__version-button"

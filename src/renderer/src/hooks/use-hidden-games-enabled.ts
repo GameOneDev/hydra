@@ -26,6 +26,9 @@ export function useHiddenGamesEnabled() {
 
     const unsubscribers = [
       window.electron.onUserPreferencesUpdated(refresh),
+      /* The preferences broadcast lands before the new server's capabilities
+         are known, so the answer computed from it can still be the old one. */
+      window.electron.onCloudServerChanged(refresh),
       window.electron.onSignIn(refresh),
       window.electron.onSignOut(refresh),
     ];
