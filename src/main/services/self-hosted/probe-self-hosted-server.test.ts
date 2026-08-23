@@ -188,6 +188,42 @@ describe("probeSelfHostedServer", () => {
     assert.equal(result.version, "4.1.1");
   });
 
+  /* A host that answers one path and not the other is up and misconfigured,
+     not offline. */
+  it("stays reachable when only capabilities answers", async () => {
+    const { result } = await probe({
+      "/health": failingWith(axiosErrorWithoutResponse("ECONNREFUSED")),
+      "/capabilities": ok(capabilitiesPayload),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.error, "/health: ECONNREFUSED");
+  });
+
+  /* A 2xx with no feature list validates nothing — claiming the server is up
+     would hand the launcher features it never read. */
+  it("reports a capabilities payload with no feature list", async () => {
+    const { result } = await probe({
+      "/health": ok(healthPayload),
+      "/capabilities": ok({ hello: "world" }),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.error, "/capabilities: unexpected response");
+    assert.deepEqual(result.features, []);
+  });
+
+  it("accepts a server that advertises no features", async () => {
+    const { result } = await probe({
+      "/health": ok(healthPayload),
+      "/capabilities": ok({ features: [] }),
+    });
+
+    assert.equal(result.error, null);
+    assert.deepEqual(result.features, []);
+  });
+
   it("reports a connection failure as unreachable", async () => {
     const { result } = await probe({
       "/health": failingWith(axiosErrorWithoutResponse("ECONNREFUSED")),

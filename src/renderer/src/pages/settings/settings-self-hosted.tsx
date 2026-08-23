@@ -189,10 +189,13 @@ export function SettingsSelfHosted() {
 
     try {
       /* Ping before committing so a typo is reported here, instead of turning
-         into features that silently stay off. */
-      const probe = normalizedUrl
-        ? await runTest(normalizedUrl).catch(() => null)
-        : null;
+         into features that silently stay off — reusing the result if the user
+         just tested this very URL, rather than paying for it twice. */
+      const probe = !normalizedUrl
+        ? null
+        : testResult?.url === normalizedUrl
+          ? testResult.probe
+          : await runTest(normalizedUrl).catch(() => null);
 
       await updateUserPreferences({
         selfHostedCloudUrl: normalizedUrl || null,

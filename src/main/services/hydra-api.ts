@@ -82,6 +82,15 @@ export class HydraApi {
   private static selfHostedFeatures: Set<string> | null = null;
   private static selfHostedVersion: string | null = null;
 
+  /* The server the cached features describe. Features outlive a probe (a
+     re-check must not disable them while it runs), so they need to be pinned
+     to the URL they came from. */
+  private static selfHostedCapabilitiesUrl: string | null = null;
+
+  /* Bumped per probe so a slow one can tell it has been superseded: the
+     periodic monitor and a URL change can be in flight at the same time. */
+  private static selfHostedProbeGeneration = 0;
+
   /* Last known reachability of the configured server, rendered by the
      launcher's status indicator and the settings page. */
   private static selfHostedStatus: SelfHostedServerStatus =
@@ -214,25 +223,38 @@ export class HydraApi {
     );
   }
 
-  /**
-   * Reads /capabilities from the self-hosted server. Unauthenticated and
-   * cheap, so it runs on every setup, whenever the URL changes, and on the
-   * status monitor's tick.
-   *
-   * Anything other than a capabilities payload — a 404 from a server
-   * predating the endpoint, a URL that isn't Hydra Cloud, an unreachable
-   * host — leaves the feature set empty, which is exactly the conservative
-   * answer we want. The probe result doubles as the status the UI shows.
-   */
-  private static async refreshSelfHostedCapabilities() {
+  private static forgetSelfHostedCapabilities() {
     this.selfHostedFeatures = null;
     this.selfHostedVersion = null;
+    this.selfHostedCapabilitiesUrl = null;
+  }
+
+  /**
+   * Probes the self-hosted server for its health and capabilities.
+   * Unauthenticated and cheap, so it runs on every setup, whenever the URL
+   * changes, and on the status monitor's tick.
+   *
+   * Anything other than a healthy server with a readable capabilities payload
+   * leaves the feature set empty, which is exactly the conservative answer we
+   * want. The probe result doubles as the status the UI shows.
+   */
+  private static async refreshSelfHostedCapabilities() {
+    const generation = ++this.selfHostedProbeGeneration;
 
     const baseUrl = this.selfHostedCloudUrl;
 
     if (!baseUrl) {
+      this.forgetSelfHostedCapabilities();
       this.setSelfHostedStatus(disabledSelfHostedServerStatus());
       return;
+    }
+
+    /* Cached features describing a DIFFERENT server are wrong the moment the
+       URL changes, so they go now. Ones describing this server stay until the
+       probe answers: dropping them for the duration of a routine re-check
+       would disable the features gated on them every minute. */
+    if (this.selfHostedCapabilitiesUrl !== baseUrl) {
+      this.forgetSelfHostedCapabilities();
     }
 
     /* Only announce "checking" when there is nothing better to show — a
@@ -254,9 +276,14 @@ export class HydraApi {
       userAgent: `Hydra Launcher v${appVersion}`,
     });
 
+    /* A newer probe started while this one was in flight — its answer is the
+       current one, and publishing this stale result would overwrite it. */
+    if (generation !== this.selfHostedProbeGeneration) return;
+
     if (probe.error === null) {
       this.selfHostedFeatures = new Set(probe.features);
       this.selfHostedVersion = probe.version;
+      this.selfHostedCapabilitiesUrl = baseUrl;
 
       logger.log(
         "self-hosted cloud server",
@@ -266,6 +293,8 @@ export class HydraApi {
         probe.features.join(", ")
       );
     } else {
+      this.forgetSelfHostedCapabilities();
+
       logger.error(
         "self-hosted cloud server probe failed — features gated on it stay disabled",
         probe.error

@@ -29,6 +29,10 @@ export function useHiddenGamesEnabled() {
       /* The preferences broadcast lands before the new server's capabilities
          are known, so the answer computed from it can still be the old one. */
       window.electron.onCloudServerChanged(refresh),
+      /* A server can lose or regain the feature while it runs — the periodic
+         probe publishes that, and without this the UI keeps offering an
+         action the main process now rejects. */
+      window.electron.onSelfHostedStatusUpdated(refresh),
       window.electron.onSignIn(refresh),
       window.electron.onSignOut(refresh),
     ];

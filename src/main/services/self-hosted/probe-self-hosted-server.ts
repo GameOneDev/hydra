@@ -15,9 +15,9 @@ export const CAPABILITIES_PATH = "/capabilities";
 /** Value `/health` reports when the server considers itself healthy. */
 export const HEALTHY_STATUS = "ok";
 
-/* A 2xx body with no status field isn't a Hydra server answering, whatever
-   else is on that URL. */
-const MISSING_STATUS_REASON = "unexpected response";
+/* A 2xx body without the field that endpoint exists to serve isn't a Hydra
+   server answering, whatever else is on that URL. */
+const UNEXPECTED_RESPONSE_REASON = "unexpected response";
 
 export const DEFAULT_PROBE_TIMEOUT_IN_MS = 10_000;
 
@@ -179,23 +179,34 @@ export const probeSelfHostedServer = async (
   const resolveError = () => {
     /* Nothing answered at all: the bare connection error is what the user
        needs to see (ECONNREFUSED, ETIMEDOUT, DNS), unprefixed. */
-    if (health.statusCode === null) return health.error;
+    if (health.statusCode === null && capabilities.statusCode === null) {
+      return health.error;
+    }
 
     if (health.error !== null) return `${HEALTH_PATH}: ${health.error}`;
 
-    if (status === null) return `${HEALTH_PATH}: ${MISSING_STATUS_REASON}`;
+    if (status === null) return `${HEALTH_PATH}: ${UNEXPECTED_RESPONSE_REASON}`;
     if (status !== HEALTHY_STATUS) return `${HEALTH_PATH}: ${status}`;
 
     if (capabilities.error !== null) {
       return `${CAPABILITIES_PATH}: ${capabilities.error}`;
     }
 
+    /* A 2xx that carried no feature list validates nothing, so claiming the
+       server is fully up would hand the launcher a feature set it never
+       actually read. */
+    if (!Array.isArray(capabilities.data.features)) {
+      return `${CAPABILITIES_PATH}: ${UNEXPECTED_RESPONSE_REASON}`;
+    }
+
     return null;
   };
 
   return {
-    reachable: health.statusCode !== null,
-    statusCode: health.statusCode,
+    /* Either endpoint answering means the host is up — that is what separates
+       a degraded server from an offline one. */
+    reachable: health.statusCode !== null || capabilities.statusCode !== null,
+    statusCode: health.statusCode ?? capabilities.statusCode,
     latencyInMs: health.latencyInMs,
     name: asString(health.data.name),
     status,
