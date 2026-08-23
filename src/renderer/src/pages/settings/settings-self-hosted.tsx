@@ -130,9 +130,33 @@ export function SettingsSelfHosted() {
     return probe;
   }, []);
 
+  /**
+   * One button for both jobs: a URL that isn't saved yet is probed on its own,
+   * and the one already in use is re-probed through the main process, so the
+   * launcher's own view of the server (and the status below) refreshes too.
+   */
   const handleTest = async () => {
     if (!normalizedUrl || !isValidServerUrl(normalizedUrl)) {
       showErrorToast(t("self_hosted_invalid_url"));
+      return;
+    }
+
+    if (normalizedUrl === savedUrl) {
+      try {
+        const next = await refresh();
+
+        if (next.state === "online") {
+          showSuccessToast(
+            t("self_hosted_test_succeeded"),
+            describeStatus(next)
+          );
+        } else {
+          showWarningToast(t("self_hosted_test_failed"), describeStatus(next));
+        }
+      } catch (err) {
+        showErrorToast(err instanceof Error ? err.message : String(err));
+      }
+
       return;
     }
 
@@ -192,12 +216,6 @@ export function SettingsSelfHosted() {
     }
   };
 
-  const handleRefresh = () => {
-    refresh().catch((err) =>
-      showErrorToast(err instanceof Error ? err.message : String(err))
-    );
-  };
-
   const statusIcon = (state: SelfHostedServerStatus["state"]) => {
     if (state === "checking") {
       return <SyncIcon size={STATUS_ICON_SIZE} />;
@@ -210,7 +228,7 @@ export function SettingsSelfHosted() {
     return <AlertIcon size={STATUS_ICON_SIZE} />;
   };
 
-  const isBusy = isSubmitting || isTesting;
+  const isBusy = isSubmitting || isTesting || isRefreshing;
 
   return (
     <form className="settings-self-hosted" onSubmit={handleSubmit}>
@@ -233,7 +251,7 @@ export function SettingsSelfHosted() {
               onClick={handleTest}
               disabled={isBusy || !normalizedUrl}
             >
-              {isTesting
+              {isTesting || isRefreshing
                 ? t("self_hosted_testing")
                 : t("self_hosted_test_connection")}
             </Button>
@@ -259,24 +277,11 @@ export function SettingsSelfHosted() {
       )}
 
       {savedUrl && (
-        <div className="settings-self-hosted__current">
-          <div
-            className={`settings-self-hosted__status settings-self-hosted__status--${status.state}`}
-          >
-            {statusIcon(status.state)}
-            <small>{describeStatus(status)}</small>
-          </div>
-
-          <Button
-            type="button"
-            theme="outline"
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-          >
-            {isRefreshing
-              ? t("self_hosted_checking")
-              : t("self_hosted_check_again")}
-          </Button>
+        <div
+          className={`settings-self-hosted__status settings-self-hosted__status--${status.state}`}
+        >
+          {statusIcon(status.state)}
+          <small>{describeStatus(status)}</small>
         </div>
       )}
 

@@ -16,14 +16,6 @@
     }
   }
 
-  &__current {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: globals.$spacing-unit;
-  }
-
   &__status {
     display: flex;
     align-items: center;

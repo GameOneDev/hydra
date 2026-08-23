@@ -1131,8 +1131,6 @@
     "self_hosted_status_degraded": "Server reachable, but not healthy ({{error}})",
     "self_hosted_status_offline": "Server unreachable ({{error}})",
     "self_hosted_status_disabled": "No server configured",
-    "self_hosted_check_again": "Check again",
-    "self_hosted_checking": "Checking…",
     "download_sources": "Download sources",
     "compatibility": "Compatibility",
     "language": "Language",
