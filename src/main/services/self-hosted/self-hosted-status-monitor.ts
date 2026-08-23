@@ -9,7 +9,7 @@ import { networkLogger as logger } from "../logger";
  * nothing leaves the machine.
  */
 export class SelfHostedStatusMonitor {
-  public static readonly REFRESH_INTERVAL_IN_MS = 60_000;
+  public static readonly REFRESH_INTERVAL_IN_MS = 600_000;
 
   private static interval: NodeJS.Timeout | null = null;
 
