@@ -27,6 +27,12 @@ import {
   probeSelfHostedServer,
   resolveSelfHostedServerStatus,
 } from "./self-hosted/probe-self-hosted-server";
+import {
+  ACHIEVEMENT_SOUVENIRS_FEATURE,
+  forgetSouvenirSources,
+  isOfficialSouvenirProfile,
+  isSouvenirRoute,
+} from "./souvenir-routes";
 
 export interface HydraApiOptions {
   needsAuth?: boolean;
@@ -310,6 +316,19 @@ export class HydraApi {
       return this.instance;
     }
 
+    /* The upload and the profile listing it have to agree on where souvenirs
+       live, so a server without the endpoints keeps the whole feature on the
+       official API rather than 404ing halfway through a capture. */
+    if (isSouvenirRoute(url)) {
+      /* A profile whose souvenirs came from official Hydra keeps its likes
+         and reports there too. */
+      if (isOfficialSouvenirProfile(url)) return this.instance;
+
+      return this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
+        ? this.cloudInstance
+        : this.instance;
+    }
+
     const isCloudRoute =
       options?.needsSubscription === true ||
       this.CLOUD_ROUTED_PREFIXES.some((prefix) => url.startsWith(prefix)) ||
@@ -321,6 +340,19 @@ export class HydraApi {
 
   public static isLoggedIn() {
     return this.userAuth.authToken !== "";
+  }
+
+  /**
+   * Upstream only asks whether the account has Hydra Cloud. With a self-hosted
+   * server standing in for the subscription, the question is also whether
+   * *that* server has the endpoints — capturing screenshots whose sync can
+   * only 404 fills the retry queue with work that can never finish.
+   */
+  public static supportsAchievementSouvenirs() {
+    return (
+      this.hasActiveSubscription() &&
+      this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
+    );
   }
 
   public static hasActiveSubscription() {
@@ -338,6 +370,22 @@ export class HydraApi {
     this.userAuth.subscription = subscription
       ? { expiresAt: subscription.expiresAt }
       : null;
+
+    if (process.platform === "linux" && !this.hasActiveSubscription()) {
+      void import("./linux-game-capture-session").then(
+        ({ stopAllLinuxGameCaptureSessions }) => {
+          if (!this.hasActiveSubscription()) {
+            stopAllLinuxGameCaptureSessions();
+          }
+        }
+      );
+    }
+
+    if (this.isLoggedIn() && this.hasActiveSubscription()) {
+      void import("./achievements/grouped-souvenir-worker").then(
+        ({ groupedSouvenirWorker }) => groupedSouvenirWorker.trigger()
+      );
+    }
   }
 
   static async handleExternalAuth(uri: string) {
@@ -393,6 +441,11 @@ export class HydraApi {
       }
     });
 
+    const { groupedSouvenirWorker } = await import(
+      "./achievements/grouped-souvenir-worker"
+    );
+    void groupedSouvenirWorker.trigger();
+
     if (WindowManager.mainWindow) {
       WindowManager.mainWindow.webContents.send("on-signin");
       await clearGamesRemoteIds();
@@ -416,6 +469,7 @@ export class HydraApi {
      the library re-syncs against the new server, and download sources are
      pulled from it again. */
   static async handleCloudServerChange() {
+    forgetSouvenirSources();
     await this.setupApi();
 
     WindowManager.sendToAppWindows(
@@ -441,6 +495,8 @@ export class HydraApi {
   }
 
   static async handleSignOut() {
+    forgetSouvenirSources();
+
     this.userAuth = {
       authToken: "",
       refreshToken: "",
@@ -452,6 +508,14 @@ export class HydraApi {
       "./achievements/achievement-watcher-manager"
     );
     AchievementWatcherManager.resetSessionState();
+    const { stopAllLinuxGameCaptureSessions } = await import(
+      "./linux-game-capture-session"
+    );
+    stopAllLinuxGameCaptureSessions();
+    const { groupedSouvenirWorker } = await import(
+      "./achievements/grouped-souvenir-worker"
+    );
+    groupedSouvenirWorker.stop();
 
     this.sendSignOutEvent();
     this.post("/auth/logout", {}, { needsAuth: false }).catch(() => {});
@@ -655,6 +719,15 @@ export class HydraApi {
       );
       AchievementWatcherManager.resetSessionState();
 
+      const { stopAllLinuxGameCaptureSessions } = await import(
+        "./linux-game-capture-session"
+      );
+      stopAllLinuxGameCaptureSessions();
+      const { groupedSouvenirWorker } = await import(
+        "./achievements/grouped-souvenir-worker"
+      );
+      groupedSouvenirWorker.stop();
+
       db.batch([
         {
           type: "del",
@@ -769,6 +842,26 @@ export class HydraApi {
         signal: options?.signal,
       })
       .then((response) => response.data)
+      .catch(this.handleUnauthorizedError);
+  }
+
+  static async postResponse<T = unknown>(
+    url: string,
+    data?: unknown,
+    options?: HydraApiOptions
+  ) {
+    await this.validateOptions(options);
+
+    return this.instance
+      .post<T>(url, data, {
+        ...this.getAxiosConfig(),
+        validateStatus: options?.validateStatus,
+        signal: options?.signal,
+      })
+      .then((response) => ({
+        status: response.status,
+        data: response.data,
+      }))
       .catch(this.handleUnauthorizedError);
   }
 

@@ -1,5 +1,6 @@
 import { registerEvent } from "../register-event";
 import { HydraApi, WindowManager } from "@main/services";
+import { mirrorSouvenirsVisibility } from "@main/services/souvenir-visibility-mirror";
 import fs from "node:fs";
 import path from "node:path";
 import type { UpdateProfileRequest, UserProfile } from "@types";
@@ -103,6 +104,11 @@ const updateProfile = async (
       omit(payload, ["backgroundImageUrl"])
     );
   }
+
+  mirrorSouvenirsVisibility(
+    updatedProfile.id,
+    updatedProfile.souvenirsVisibility
+  );
 
   // Notify every window (e.g. the friends window, which has its own store) so
   // they can re-fetch the signed-in user's details after a profile change.

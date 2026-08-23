@@ -9,6 +9,7 @@ import { logger, networkLogger } from "./logger";
 import { PowerSaveBlockerManager } from "./power-save-blocker";
 import path from "node:path";
 import { AchievementWatcherManager } from "./achievements/achievement-watcher-manager";
+import { abortAchievementMetadataExport } from "./achievements/metadata-export";
 import { INTERVALS } from "@main/constants";
 import { Wine } from "./wine";
 import { NativeAddon } from "./native-addon";
@@ -33,6 +34,10 @@ import {
   gamesPlaytime,
   setGamePlaytime,
 } from "./game-running-state";
+import {
+  prepareLinuxGameCaptureSession,
+  stopLinuxGameCaptureSession,
+} from "./linux-game-capture-session";
 
 export { gamesPlaytime };
 export { isGameRunning } from "./game-running-state";
@@ -368,6 +373,10 @@ function onOpenGame(game: Game) {
   const now = performance.now();
   const gameKey = levelKeys.game(game.shop, game.objectId);
 
+  if (game.remoteId) {
+    void prepareLinuxGameCaptureSession(gameKey);
+  }
+
   setGamePlaytime(gameKey, {
     lastTick: now,
     firstTick: now,
@@ -396,10 +405,7 @@ function onOpenGame(game: Game) {
 
   if (game.shop === "custom") return;
 
-  AchievementWatcherManager.firstSyncWithRemoteIfNeeded(
-    game.shop,
-    game.objectId
-  );
+  AchievementWatcherManager.syncGameAchievementFiles(game.shop, game.objectId);
 
   if (game.remoteId) {
     const deltaToSync = game.unsyncedDeltaPlayTimeInMilliseconds ?? 0;
@@ -532,7 +538,9 @@ const onCloseGame = (game: Game) => {
   const gamePlaytime = gamesPlaytime.get(gameKey)!;
   deleteGamePlaytime(gameKey);
   launchedGamePids.delete(gameKey);
+  stopLinuxGameCaptureSession(gameKey);
   PowerSaveBlockerManager.markGameClosed(gameKey);
+  abortAchievementMetadataExport(gameKey);
 
   const delta = now - gamePlaytime.lastTick;
 

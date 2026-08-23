@@ -1,5 +1,6 @@
 import { User, type ProfileVisibility, type UserDetails } from "@types";
 import { HydraApi } from "../hydra-api";
+import { mirrorSouvenirsVisibility } from "../souvenir-visibility-mirror";
 import { UserNotLoggedInError } from "@shared";
 import { logger } from "../logger";
 import { db } from "@main/level";
@@ -46,6 +47,11 @@ export const getUserData = async () => {
 
       const me = applySelfHostedCloudPerks(remoteMe);
 
+      /* The self-hosted server can't read this account's official profile, so
+         it only knows the souvenir privacy setting because the launcher tells
+         it — including on a machine that never changed it. */
+      mirrorSouvenirsVisibility(remoteMe.id, remoteMe.souvenirsVisibility);
+
       try {
         const user = await db.get<string, User>(levelKeys.user, {
           valueEncoding: "json",
@@ -89,6 +95,7 @@ export const getUserData = async () => {
             bio: "",
             email: null,
             profileVisibility: "PUBLIC" as ProfileVisibility,
+            souvenirsVisibility: "PRIVATE" as ProfileVisibility,
             quirks: {
               backupsPerGameLimit: 0,
             },

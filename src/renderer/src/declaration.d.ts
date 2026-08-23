@@ -74,11 +74,16 @@ import type {
   ArtworkKind,
   ArtworkPage,
   GameArtworkSelection,
+  GameLauncherStatusPayload,
   CloudSaveAutomaticSyncModeChangedEvent,
   CloudSaveAutomaticSyncEvent,
   CloudSaveConflictResolution,
   CloudSaveOverview,
   CloudSaveV2FileDetails,
+  AchievementSouvenirSyncCleanupResult,
+  AchievementSouvenirSyncDetails,
+  AchievementSouvenirSyncRetryResult,
+  AchievementSouvenirSyncStatus,
   CloudSaveSyncProgressPayload,
   SyncCloudSaveOnGamePageResult,
   SyncGameCloudSaveResult,
@@ -90,6 +95,8 @@ import type {
   ConfirmCloudSaveCustomPathRebindApprovalResult,
   LegacySaveExportProgress,
   LegacySaveExportResult,
+  SouvenirSort,
+  SouvenirsResponse,
 } from "@types";
 import type { AxiosProgressEvent } from "axios";
 
@@ -134,6 +141,19 @@ declare global {
     ) => Promise<CloudSaveOverview>;
     /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
     getCloudSaveV2Supported: () => Promise<boolean>;
+    /** False when a self-hosted cloud server has no souvenir endpoints. */
+    getAchievementSouvenirsSupported: () => Promise<boolean>;
+    /**
+     * A profile's souvenirs, from whichever server its owner captured them on
+     * — the self-hosted one, or official Hydra for everyone else.
+     */
+    getProfileSouvenirs: (payload: {
+      userId: string;
+      take?: number;
+      skip?: number;
+      sortBy?: SouvenirSort;
+      language?: string;
+    }) => Promise<SouvenirsResponse | null>;
     getCloudSaveV2FileDetails: (
       objectId: string,
       shop: GameShop
@@ -982,6 +1002,21 @@ declare global {
     isStaging: () => Promise<boolean>;
     ping: () => string;
     getDefaultDownloadsPath: () => Promise<string>;
+    getScreenshotsPath: () => Promise<string>;
+    getAchievementSouvenirSyncStatus: () => Promise<AchievementSouvenirSyncStatus>;
+    getAchievementSouvenirSyncDetails: () => Promise<AchievementSouvenirSyncDetails>;
+    retryAchievementSouvenirSync: () => Promise<AchievementSouvenirSyncRetryResult>;
+    cleanupAchievementSouvenirSync: () => Promise<AchievementSouvenirSyncCleanupResult>;
+    onAchievementSouvenirSyncStatus: (
+      cb: (status: AchievementSouvenirSyncStatus) => void
+    ) => () => Electron.IpcRenderer;
+    onAchievementSouvenirSyncCompleted: (
+      cb: (syncedCount: number) => void
+    ) => () => Electron.IpcRenderer;
+    onAchievementSouvenirScreenshotsMissing: (
+      cb: (count: number) => void
+    ) => () => Electron.IpcRenderer;
+    openFolder: (folderPath: string) => Promise<string>;
     isPortableVersion: () => Promise<boolean>;
     showOpenDialog: (
       options: Electron.OpenDialogOptions
@@ -1013,6 +1048,15 @@ declare global {
           needsSubscription?: boolean;
         }
       ) => Promise<T>;
+      postResponse: <T = unknown>(
+        url: string,
+        options?: {
+          data?: unknown;
+          needsAuth?: boolean;
+          needsSubscription?: boolean;
+          acceptedStatuses?: number[];
+        }
+      ) => Promise<{ status: number; data: T }>;
       put: <T = unknown>(
         url: string,
         options?: {
@@ -1060,6 +1104,9 @@ declare global {
     onPreflightProgress: (
       cb: (value: { status: string; detail: string | null }) => void
     ) => () => Electron.IpcRenderer;
+    onGameLauncherStatus: (
+      cb: (value: GameLauncherStatusPayload) => void
+    ) => () => Electron.IpcRenderer;
     resetCommonRedistPreflight: () => Promise<void>;
     saveTempFile: (fileName: string, fileData: Uint8Array) => Promise<string>;
     deleteTempFile: (filePath: string) => Promise<void>;
@@ -1094,12 +1141,17 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<UserAchievement[]>;
+    deleteAchievementSouvenir: (payload: {
+      souvenirId: string;
+    }) => Promise<void>;
     getRetroAchievementsAchievements: (
       objectId: string,
       shop: GameShop,
       raGameId?: number
     ) => Promise<UserAchievement[] | null>;
-    resetRetroAchievementsAchievements: () => Promise<void>;
+    resetRetroAchievementsAchievements: (
+      pendingSouvenirsOnly?: boolean
+    ) => Promise<void>;
 
     /* Profile */
     getMe: () => Promise<UserDetails | null>;
