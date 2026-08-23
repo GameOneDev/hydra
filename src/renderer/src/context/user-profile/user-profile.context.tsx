@@ -5,7 +5,6 @@ import type {
   Badge,
   ProfileSouvenir,
   SouvenirsHiddenReason,
-  SouvenirsResponse,
   SouvenirSort,
   SteamAchievement,
   UserProfile,
@@ -13,7 +12,6 @@ import type {
   UserGame,
 } from "@types";
 import {
-  buildUserSouvenirsPath,
   enrichSouvenirAchievements,
   getSouvenirKey,
   normalizeProfileSouvenir,
@@ -332,17 +330,15 @@ export function UserProfileContextProvider({
   const fetchSouvenirsPage = useCallback(
     async (sortBy: SouvenirSort, skip: number) => {
       const language = i18n.language.split("-")[0];
-      const path = buildUserSouvenirsPath({
+
+      /* Reads from whichever server this profile's owner captured on — the
+         self-hosted one, or official Hydra for everyone else. */
+      const response = await window.electron.getProfileSouvenirs({
         userId,
         skip,
         sortBy,
         language,
       });
-
-      const response =
-        await window.electron.hydraApi.get<SouvenirsResponse | null>(path, {
-          needsAuth: Boolean(authUserId),
-        });
 
       if (!response) return null;
 
@@ -360,7 +356,7 @@ export function UserProfileContextProvider({
 
       return { ...response, items };
     },
-    [authUserId, i18n.language, userId]
+    [i18n.language, userId]
   );
 
   const getUserSouvenirs = useCallback(

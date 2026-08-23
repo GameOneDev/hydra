@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { isSouvenirRoute } from "./souvenir-routes.js";
+import {
+  forgetSouvenirSources,
+  isOfficialSouvenirProfile,
+  isSouvenirRoute,
+  rememberSouvenirSource,
+} from "./souvenir-routes.js";
 
 describe("souvenir cloud routing", () => {
   it("routes the souvenir endpoints", () => {
@@ -38,5 +43,47 @@ describe("souvenir cloud routing", () => {
     ]) {
       assert.equal(isSouvenirRoute(url), false, url);
     }
+  });
+});
+
+describe("souvenir source per profile", () => {
+  it("sends nothing to official until a profile is known to live there", () => {
+    forgetSouvenirSources();
+
+    assert.equal(isOfficialSouvenirProfile("/users/u1/souvenirs"), false);
+  });
+
+  it("keeps a profile's likes and reports on the server that listed it", () => {
+    forgetSouvenirSources();
+    rememberSouvenirSource("u1", "official");
+
+    for (const url of [
+      "/users/u1/souvenirs",
+      "/users/u1/souvenirs?take=24",
+      "/users/u1/souvenirs/abc/like",
+      "/users/u1/souvenirs/abc/report",
+    ]) {
+      assert.equal(isOfficialSouvenirProfile(url), true, url);
+    }
+
+    /* Another profile is unaffected — the answer is per owner, not global. */
+    assert.equal(isOfficialSouvenirProfile("/users/u2/souvenirs"), false);
+  });
+
+  it("reads a profile id that arrived percent-encoded", () => {
+    forgetSouvenirSources();
+    rememberSouvenirSource("user one", "official");
+
+    assert.equal(
+      isOfficialSouvenirProfile("/users/user%20one/souvenirs"),
+      true
+    );
+  });
+
+  it("goes back to asking the self-hosted server once cleared", () => {
+    rememberSouvenirSource("u1", "official");
+    forgetSouvenirSources();
+
+    assert.equal(isOfficialSouvenirProfile("/users/u1/souvenirs"), false);
   });
 });

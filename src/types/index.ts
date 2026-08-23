@@ -312,6 +312,11 @@ export interface SouvenirsResponse {
   items: Array<ProfileSouvenir | ProfileAchievement>;
   total: number;
   hiddenReason: SouvenirsHiddenReason;
+  /**
+   * Self-hosted only: false when that server has never seen this profile, so
+   * the launcher knows to read its souvenirs from official Hydra instead.
+   */
+  isMember?: boolean;
 }
 
 export interface UserProfile {

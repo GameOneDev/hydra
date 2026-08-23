@@ -17,6 +17,8 @@ import {
 } from "./network-log-payload";
 import {
   ACHIEVEMENT_SOUVENIRS_FEATURE,
+  forgetSouvenirSources,
+  isOfficialSouvenirProfile,
   isSouvenirRoute,
 } from "./souvenir-routes";
 
@@ -218,6 +220,10 @@ export class HydraApi {
        live, so a server without the endpoints keeps the whole feature on the
        official API rather than 404ing halfway through a capture. */
     if (isSouvenirRoute(url)) {
+      /* A profile whose souvenirs came from official Hydra keeps its likes
+         and reports there too. */
+      if (isOfficialSouvenirProfile(url)) return this.instance;
+
       return this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
         ? this.cloudInstance
         : this.instance;
@@ -357,10 +363,13 @@ export class HydraApi {
      changes — only the cloud axios instance needs rebuilding, and the user
      data refresh re-applies (or removes) the synthetic subscription. */
   static async handleCloudServerChange() {
+    forgetSouvenirSources();
     await this.setupApi();
   }
 
   static async handleSignOut() {
+    forgetSouvenirSources();
+
     this.userAuth = {
       authToken: "",
       refreshToken: "",

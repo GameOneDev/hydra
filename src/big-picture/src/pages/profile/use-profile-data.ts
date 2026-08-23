@@ -3,7 +3,6 @@ import type {
   ComparedAchievements,
   ProfileSouvenir,
   SouvenirsHiddenReason,
-  SouvenirsResponse,
   SteamAchievement,
   UserAchievement,
   UserFriend,
@@ -14,7 +13,6 @@ import type {
   UserStats,
 } from "@types";
 import {
-  buildUserSouvenirsPath,
   getSouvenirKey,
   normalizeProfileSouvenir,
   SOUVENIRS_PAGE_SIZE,
@@ -863,11 +861,10 @@ export function useProfileSouvenirs(
     setIsLoading(true);
     let isMounted = true;
 
-    globalThis.window.electron.hydraApi
-      .get<SouvenirsResponse | null>(
-        buildUserSouvenirsPath({ userId: targetUserId }),
-        { needsAuth: isAuthenticated }
-      )
+    /* Reads from whichever server this profile's owner captured on — the
+       self-hosted one, or official Hydra for everyone else. */
+    globalThis.window.electron
+      .getProfileSouvenirs({ userId: targetUserId })
       .then(async (response) => {
         const items = await withSouvenirAchievementMetadata(
           ensureArray(response?.items).map((item) =>
@@ -919,15 +916,11 @@ export function useProfileSouvenirs(
     setIsLoadingMore(true);
 
     try {
-      const response =
-        await globalThis.window.electron.hydraApi.get<SouvenirsResponse | null>(
-          buildUserSouvenirsPath({
-            userId: targetUserId,
-            skip,
-            take: SOUVENIRS_PAGE_SIZE,
-          }),
-          { needsAuth: isAuthenticated }
-        );
+      const response = await globalThis.window.electron.getProfileSouvenirs({
+        userId: targetUserId,
+        skip,
+        take: SOUVENIRS_PAGE_SIZE,
+      });
 
       if (requestGenerationRef.current !== requestGeneration) return;
 
@@ -959,7 +952,7 @@ export function useProfileSouvenirs(
         setIsLoadingMore(false);
       }
     }
-  }, [isAuthenticated, souvenirs.length, targetUserId, total]);
+  }, [souvenirs.length, targetUserId, total]);
 
   const updateSouvenir = useCallback(
     (souvenirId: string, update: Partial<ProfileSouvenir>) => {

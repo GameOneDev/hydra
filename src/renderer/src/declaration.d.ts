@@ -93,6 +93,8 @@ import type {
   ConfirmCloudSaveCustomPathRebindApprovalResult,
   LegacySaveExportProgress,
   LegacySaveExportResult,
+  SouvenirSort,
+  SouvenirsResponse,
 } from "@types";
 import type { AxiosProgressEvent } from "axios";
 
@@ -139,6 +141,17 @@ declare global {
     getCloudSaveV2Supported: () => Promise<boolean>;
     /** False when a self-hosted cloud server has no souvenir endpoints. */
     getAchievementSouvenirsSupported: () => Promise<boolean>;
+    /**
+     * A profile's souvenirs, from whichever server its owner captured them on
+     * — the self-hosted one, or official Hydra for everyone else.
+     */
+    getProfileSouvenirs: (payload: {
+      userId: string;
+      take?: number;
+      skip?: number;
+      sortBy?: SouvenirSort;
+      language?: string;
+    }) => Promise<SouvenirsResponse | null>;
     getCloudSaveV2FileDetails: (
       objectId: string,
       shop: GameShop

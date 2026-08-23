@@ -65,6 +65,8 @@ import type {
   LegacySaveExportProgress,
   LegacySaveExportResult,
   AchievementSouvenirSyncStatus,
+  SouvenirSort,
+  SouvenirsResponse,
 } from "@types";
 import type { AuthPage } from "@shared";
 import type { AxiosProgressEvent } from "axios";
@@ -161,6 +163,17 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("getCloudSaveV2Supported") as Promise<boolean>,
   getAchievementSouvenirsSupported: () =>
     ipcRenderer.invoke("getAchievementSouvenirsSupported") as Promise<boolean>,
+  getProfileSouvenirs: (payload: {
+    userId: string;
+    take?: number;
+    skip?: number;
+    sortBy?: SouvenirSort;
+    language?: string;
+  }) =>
+    ipcRenderer.invoke(
+      "getProfileSouvenirs",
+      payload
+    ) as Promise<SouvenirsResponse | null>,
   getCloudSaveV2FileDetails: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "getCloudSaveV2FileDetails",
