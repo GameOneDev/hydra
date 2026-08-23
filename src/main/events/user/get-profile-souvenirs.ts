@@ -5,6 +5,7 @@ import {
   ACHIEVEMENT_SOUVENIRS_FEATURE,
   HydraApi,
   rememberSouvenirSource,
+  shouldReadSouvenirsFromOfficial,
 } from "@main/services";
 import { logger } from "@main/services/logger";
 
@@ -22,9 +23,10 @@ interface ProfileSouvenirsPayload {
  * A profile's souvenirs, read from whichever server its owner captured them on.
  *
  * The self-hosted server is asked first — on a self-hosted deployment most
- * profiles are its own members, so that is one request for the common case. It
- * answers `isMember: false` for a profile it has never seen, and those keep
- * their souvenirs on official Hydra, so the launcher asks there instead.
+ * profiles are its own members, so that is one request for the common case —
+ * and anything it has nothing to show for is read from official Hydra instead.
+ * That covers strangers and equally a member who joined with souvenirs already
+ * on official; see [`shouldReadSouvenirsFromOfficial`].
  *
  * Asking official first would not work: upstream defaults an account's souvenir
  * privacy to PRIVATE, so a non-subscriber's profile can answer "hidden" rather
@@ -55,14 +57,9 @@ const getProfileSouvenirs = async (
     options
   );
 
-  /* A server predating `isMember` can't say, so fall back on the shape of its
-     answer: nothing to show and nothing hidden reads as "not this server's
-     profile". */
-  const knowsProfile =
-    response?.isMember ??
-    Boolean(response && (response.total > 0 || response.hiddenReason !== null));
-
-  if (knowsProfile) {
+  /* An empty first page means this server has nothing for the profile, whoever
+     it belongs to. */
+  if (!shouldReadSouvenirsFromOfficial(response, skip ?? 0)) {
     rememberSouvenirSource(userId, "cloud");
     return response;
   }

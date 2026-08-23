@@ -6,6 +6,7 @@ import {
   isOfficialSouvenirProfile,
   isSouvenirRoute,
   rememberSouvenirSource,
+  shouldReadSouvenirsFromOfficial,
 } from "./souvenir-routes.js";
 
 describe("souvenir cloud routing", () => {
@@ -85,5 +86,49 @@ describe("souvenir source per profile", () => {
     forgetSouvenirSources();
 
     assert.equal(isOfficialSouvenirProfile("/users/u1/souvenirs"), false);
+  });
+});
+
+describe("falling back to official Hydra", () => {
+  /* Emptiness decides, not membership: a member can have souvenirs on official
+     and none here — from before they joined, or from a machine still pointed
+     at it. */
+  it("asks official when the self-hosted server has nothing to show", () => {
+    assert.equal(
+      shouldReadSouvenirsFromOfficial({ items: [], hiddenReason: null }, 0),
+      true
+    );
+  });
+
+  it("keeps a page it got answers for", () => {
+    assert.equal(
+      shouldReadSouvenirsFromOfficial({ items: [{}], hiddenReason: null }, 0),
+      false
+    );
+  });
+
+  /* Hidden is a privacy decision, not an absence — reading official instead
+     would show what the owner asked us not to. */
+  it("leaves a hidden tab hidden", () => {
+    assert.equal(
+      shouldReadSouvenirsFromOfficial(
+        { items: [], hiddenReason: "PRIVATE" },
+        0
+      ),
+      false
+    );
+  });
+
+  /* Otherwise loadMore would splice official's page two onto a list from
+     here. */
+  it("only switches source on the first page", () => {
+    assert.equal(
+      shouldReadSouvenirsFromOfficial({ items: [], hiddenReason: null }, 24),
+      false
+    );
+  });
+
+  it("asks official when the self-hosted server answered with nothing", () => {
+    assert.equal(shouldReadSouvenirsFromOfficial(null, 0), true);
   });
 });

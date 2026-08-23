@@ -58,3 +58,29 @@ export const isOfficialSouvenirProfile = (url: string) => {
     ? sourceByProfile.get(decodeURIComponent(userId)) === "official"
     : false;
 };
+
+interface SouvenirPage {
+  items?: unknown[];
+  hiddenReason?: string | null;
+}
+
+/**
+ * Whether the self-hosted server's answer means "ask official Hydra instead".
+ *
+ * Emptiness, not membership: a member who joined with souvenirs already on
+ * official — or who captures from a machine still pointed at it — has nothing
+ * here yet, and their profile should still show them.
+ *
+ * Two things it deliberately does not do. A `hiddenReason` is an explicit
+ * privacy decision rather than an absence, so a hidden tab stays hidden even
+ * though it looks empty. And only the first page may switch source: `loadMore`
+ * asks the same question with a skip, and an empty page three would otherwise
+ * splice official's page three into a list from here.
+ */
+export const shouldReadSouvenirsFromOfficial = (
+  page: SouvenirPage | null | undefined,
+  skip: number
+) =>
+  skip === 0 &&
+  (page?.hiddenReason ?? null) === null &&
+  (page?.items?.length ?? 0) === 0;
