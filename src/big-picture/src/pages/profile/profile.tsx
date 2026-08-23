@@ -2247,8 +2247,8 @@ function ProfileSouvenirEmptyState({
     title = t("locked_souvenirs");
     description = "";
   } else if (isOwnProfile && !isSupported) {
-    /* A self-hosted cloud server without the souvenir endpoints. Offering
-       Hydra Cloud here would be wrong: no subscription fixes an old server. */
+    /* Offering Hydra Cloud would be wrong here: no subscription fixes an old
+       self-hosted server. */
     title = t("souvenirs_self_hosted_unsupported_title");
     description = t("souvenirs_self_hosted_unsupported_description");
   } else if (isOwnProfile && !hasActiveSubscription) {
@@ -2581,8 +2581,8 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
   const hasSelfHostedCloud = Boolean(useUserPreferences()?.selfHostedCloudUrl);
-  /* Optimistic until the answer arrives: official Hydra Cloud always has
-     souvenirs, and only a self-hosted server can say it doesn't. */
+  /* Optimistic until the answer arrives: only a self-hosted server can say it
+     has no souvenirs. */
   const [souvenirsSupported, setSouvenirsSupported] = useState(true);
 
   useEffect(() => {

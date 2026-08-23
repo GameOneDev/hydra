@@ -119,9 +119,8 @@ export function ProfileContent() {
     removeSouvenir,
   } = useContext(userProfileContext);
   const { userDetails, hasActiveSubscription } = useUserDetails();
-  /* Starts optimistic: on official Hydra Cloud, and until the answer is in,
-     souvenirs exist. Only a self-hosted server that says otherwise turns this
-     off. */
+  /* Optimistic until the answer is in: only a self-hosted server can say it
+     has no souvenirs. */
   const [souvenirsSupported, setSouvenirsSupported] = useState(true);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -572,9 +571,9 @@ export function ProfileContent() {
                   isMe={isMe}
                   userId={userProfile.id}
                   visibility={userProfile.souvenirsVisibility}
-                  /* On your own profile this is "can I capture souvenirs",
-                     and with a self-hosted cloud server that is true without
-                     the subscription the official profile reports. */
+                  /* On your own profile this asks "can I capture souvenirs",
+                     which a self-hosted server answers, not the subscription
+                     flag on the official profile. */
                   hasActiveSubscription={
                     isMe
                       ? hasActiveSubscription

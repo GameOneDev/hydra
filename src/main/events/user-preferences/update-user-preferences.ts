@@ -172,8 +172,7 @@ const updateUserPreferences = async (
       (userPreferences?.selfHostedCloudUrl ?? null);
 
   if (cloudServerChanged) {
-    /* A different server has never been told this account's souvenir privacy
-       setting, so the memo of what was already mirrored has to go with it. */
+    // A different server has never been told the souvenir privacy setting.
     resetSouvenirsVisibilityMirror();
     await HydraApi.handleCloudServerChange();
   }

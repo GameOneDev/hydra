@@ -222,14 +222,10 @@ const synchronizeAchievements = async (
     );
   }
 
-  /* The souvenir was uploaded to the self-hosted cloud server, so the call
-     that files it against its achievements has to land there too — and it
-     needs the game, which the official API resolves from `id` alone but a
-     self-hosted server keys its own rows by.
-
-     The official API still gets the achievements, without the souvenir it has
-     no image for: this fork mirrors every achievement sync to both servers,
-     and dropping this one would leave the official profile behind. */
+  /* The souvenir was uploaded to the self-hosted server, so the call filing it
+     lands there too — with the game, which that server keys its rows by. The
+     official API still gets the achievements (this fork mirrors every sync to
+     both), just not the souvenir it has no image for. */
   const game = await gamesSublevel.get(pending.gameKey).catch(() => null);
 
   HydraApi.put("/profile/games/achievements", {

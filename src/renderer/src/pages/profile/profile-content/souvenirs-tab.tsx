@@ -366,9 +366,8 @@ function SouvenirsEmptyState({
     );
   }
 
-  /* A self-hosted cloud server that predates souvenirs. Saying "get Hydra
-     Cloud" here would be wrong twice over: this account doesn't need a
-     subscription, and nothing it could buy would fix the server. */
+  /* Offering Hydra Cloud would be wrong twice over: this account needs no
+     subscription, and none would fix an old self-hosted server. */
   if (!isSupported) {
     return (
       <div className="profile-content__no-games profile-content__souvenirs-empty">

@@ -214,11 +214,9 @@ export class HydraApi {
       return this.instance;
     }
 
-    /* Souvenirs are stored wherever they are captured, so the upload and the
-       profile that lists them have to agree. A server without the endpoints
-       keeps the whole feature on the official API, where it stays
-       subscriber-only — better than answering 404 halfway through a
-       capture. */
+    /* The upload and the profile listing it have to agree on where souvenirs
+       live, so a server without the endpoints keeps the whole feature on the
+       official API rather than 404ing halfway through a capture. */
     if (isSouvenirRoute(url)) {
       return this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
         ? this.cloudInstance
@@ -239,13 +237,10 @@ export class HydraApi {
   }
 
   /**
-   * Whether achievement souvenirs can be captured at all.
-   *
-   * Upstream only asks whether the account has Hydra Cloud. With a
-   * self-hosted server standing in for the subscription the real question is
-   * also whether *that* server has the souvenir endpoints — capturing
-   * screenshots whose sync can only 404 fills the retry queue with work that
-   * can never finish, and leaves the screenshots on disk behind it.
+   * Upstream only asks whether the account has Hydra Cloud. With a self-hosted
+   * server standing in for the subscription, the question is also whether
+   * *that* server has the endpoints — capturing screenshots whose sync can
+   * only 404 fills the retry queue with work that can never finish.
    */
   public static supportsAchievementSouvenirs() {
     return (

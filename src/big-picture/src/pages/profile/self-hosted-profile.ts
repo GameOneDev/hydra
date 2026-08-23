@@ -180,13 +180,10 @@ export const fetchSelfHostedAchievementSum = async (
 };
 
 /**
- * Souvenirs carrying the achievement metadata the profile renders.
- *
- * A self-hosted cloud server only knows the achievement names the launcher
- * sent it, so its souvenirs arrive without display names, icons or points.
- * This joins the public catalogue for them — the same join the recent
- * achievements above already do — and leaves official Hydra Cloud souvenirs,
- * which come with metadata, untouched.
+ * A self-hosted server only knows the achievement names it was sent, so its
+ * souvenirs arrive without display names, icons or points. This joins the
+ * catalogue for them, as the recent achievements above already do, and leaves
+ * official Hydra Cloud souvenirs untouched.
  */
 export const withSouvenirAchievementMetadata = async (
   souvenirs: ProfileSouvenir[]

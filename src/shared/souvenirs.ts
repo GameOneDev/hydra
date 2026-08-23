@@ -123,11 +123,7 @@ export const getPrimarySouvenirAchievement = (
     isPlatinum: false,
   };
 
-/**
- * Same rarity rule the achievement notifications use: under 10% of players.
- * Official Hydra Cloud sends `isRare` with each souvenir; a self-hosted server
- * has no points to compute it from, so it is derived here from the catalogue's.
- */
+/** Same rule the achievement notifications use: under 10% of players. */
 const isRareByPoints = (points: number | null | undefined) =>
   typeof points === "number" && (50 - Math.sqrt(points)) * 2 < 10;
 
@@ -163,14 +159,10 @@ const withCatalogueMetadata = (
 };
 
 /**
- * Fills in the achievement metadata a self-hosted cloud server cannot know.
- *
- * Such a server only ever receives achievement *names* — display names, icons
- * and points live in the public catalogue — so its souvenirs come back
- * labelled `ACH_WIN_ONE_GAME`. This joins the catalogue for them, exactly as
- * the profile's recent-achievement list already does, and never fetches
- * anything for souvenirs that already arrived with icons (which is what
- * official Hydra Cloud returns).
+ * Fills in the metadata a self-hosted cloud server cannot know: it only ever
+ * receives achievement *names*, so its souvenirs come back labelled
+ * `ACH_WIN_ONE_GAME`. Nothing is fetched for souvenirs that already arrived
+ * with icons, which is what official Hydra Cloud returns.
  *
  * Failures are swallowed per game: a souvenir keeps its raw names rather than
  * the whole tab failing to render.
@@ -198,9 +190,8 @@ export const enrichSouvenirAchievements = async (
       );
       if (!Array.isArray(achievements)) return;
 
-      /* Case-insensitive, as everything else that joins achievement names is:
-         what the launcher reads out of achievement files doesn't reliably
-         match the catalogue's casing. */
+      /* Case-insensitive: what the launcher reads out of achievement files
+         doesn't reliably match the catalogue's casing. */
       catalogues.set(
         key,
         new Map(
