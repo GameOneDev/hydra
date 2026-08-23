@@ -122,16 +122,6 @@ describe("probeSelfHostedServer", () => {
     assert.equal(result.error, null);
   });
 
-  it("falls back to the capabilities version when /health has none", async () => {
-    const { result } = await probe({
-      "/health": ok({ status: "ok" }),
-      "/capabilities": ok({ version: "3.9.0", features: [] }),
-    });
-
-    assert.equal(result.version, "3.9.0");
-    assert.equal(result.error, null);
-  });
-
   it("ignores non-string entries in the feature list", async () => {
     const { result } = await probe({
       "/health": ok(healthPayload),
@@ -141,17 +131,27 @@ describe("probeSelfHostedServer", () => {
     assert.deepEqual(result.features, ["hidden-games"]);
   });
 
-  /* A deployment predating /health answers 404 there. It still works, so it
-     must not read as unhealthy. */
-  it("does not penalise a server without a health endpoint", async () => {
+  /* Every Hydra server serves /health, so a URL without it is the wrong URL,
+     not an old server. */
+  it("reports a server with no health endpoint as unhealthy", async () => {
     const { result } = await probe({
-      "/capabilities": ok({ version: "3.9.0", features: ["hidden-games"] }),
+      "/capabilities": ok(capabilitiesPayload),
     });
 
     assert.equal(result.reachable, true);
-    assert.equal(result.error, null);
-    assert.equal(result.version, "3.9.0");
-    assert.equal(result.latencyInMs, 42);
+    assert.equal(result.error, "/health: HTTP 404");
+    assert.equal(result.version, null);
+  });
+
+  it("reports a health response that carries no status", async () => {
+    const { result } = await probe({
+      "/health": ok({ hello: "world" }),
+      "/capabilities": ok(capabilitiesPayload),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.status, null);
+    assert.equal(result.error, "/health: unexpected response");
   });
 
   it("reports a server that says it is unhealthy", async () => {
@@ -183,7 +183,7 @@ describe("probeSelfHostedServer", () => {
     });
 
     assert.equal(result.reachable, true);
-    assert.equal(result.error, "HTTP 404");
+    assert.equal(result.error, "/capabilities: HTTP 404");
     assert.deepEqual(result.features, []);
     assert.equal(result.version, "4.1.1");
   });
@@ -239,12 +239,12 @@ describe("resolveSelfHostedServerStatus", () => {
   it("is degraded when the server answered with a reason", () => {
     const status = resolveSelfHostedServerStatus(
       BASE_URL,
-      probeOf({ features: [], error: "HTTP 404" }),
+      probeOf({ features: [], error: "/capabilities: HTTP 404" }),
       1700
     );
 
     assert.equal(status.state, "degraded");
-    assert.equal(status.error, "HTTP 404");
+    assert.equal(status.error, "/capabilities: HTTP 404");
   });
 
   it("is offline when nothing answered", () => {
