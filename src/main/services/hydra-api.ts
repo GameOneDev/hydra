@@ -75,12 +75,38 @@ export class HydraApi {
   private static cloudInstance: AxiosInstance | null = null;
   private static selfHostedCloudUrl: string | null = null;
 
-  /* Features the configured self-hosted server reports at /capabilities.
-     `null` means "not known yet or the server didn't answer" — treated as
-     supporting nothing, so a feature is only enabled once the server has
-     actually claimed it. */
+  /* Features the configured self-hosted server reports at /capabilities,
+     plus the URL they were read from. `null` means "not known yet or the
+     server didn't answer" — treated as supporting nothing, so a feature is
+     only enabled once the server has actually claimed it. Capabilities read
+     from another URL never gate the current server, which is what the URL
+     alongside them is for. */
   private static selfHostedFeatures: Set<string> | null = null;
   private static selfHostedVersion: string | null = null;
+  private static selfHostedCapabilitiesUrl: string | null = null;
+
+  private static clearSelfHostedCapabilities() {
+    this.selfHostedFeatures = null;
+    this.selfHostedVersion = null;
+    this.selfHostedCapabilitiesUrl = null;
+  }
+
+  private static storeSelfHostedCapabilities(
+    url: string,
+    probe: SelfHostedServerProbe
+  ) {
+    this.selfHostedFeatures = new Set(probe.features);
+    this.selfHostedVersion = probe.version;
+    this.selfHostedCapabilitiesUrl = url;
+  }
+
+  /* Whether what we last read still describes the server we are routing to. */
+  private static hasCapabilitiesForCurrentServer() {
+    return (
+      this.selfHostedCapabilitiesUrl !== null &&
+      this.selfHostedCapabilitiesUrl === this.selfHostedCloudUrl
+    );
+  }
 
   /* Last known reachability of the configured server, rendered by the
      launcher's status indicator and the settings page. */
@@ -162,7 +188,9 @@ export class HydraApi {
   }
 
   public static getSelfHostedVersion() {
-    return this.selfHostedVersion;
+    return this.hasCapabilitiesForCurrentServer()
+      ? this.selfHostedVersion
+      : null;
   }
 
   public static getSelfHostedStatus() {
@@ -198,6 +226,7 @@ export class HydraApi {
    */
   public static supportsCloudFeature(feature: string) {
     if (!this.isSelfHostedCloudEnabled()) return true;
+    if (!this.hasCapabilitiesForCurrentServer()) return false;
     return this.selfHostedFeatures?.has(feature) ?? false;
   }
 
@@ -223,16 +252,29 @@ export class HydraApi {
    * predating the endpoint, a URL that isn't Hydra Cloud, an unreachable
    * host — leaves the feature set empty, which is exactly the conservative
    * answer we want. The probe result doubles as the status the UI shows.
+   *
+   * A re-check of a server we already have an answer for keeps that answer
+   * until the new one lands: the probe can take ten seconds, and nothing
+   * gated on the server should read as unsupported meanwhile.
    */
   private static async refreshSelfHostedCapabilities() {
-    this.selfHostedFeatures = null;
-    this.selfHostedVersion = null;
-
     const baseUrl = this.selfHostedCloudUrl;
 
     if (!baseUrl) {
+      this.clearSelfHostedCapabilities();
       this.setSelfHostedStatus(disabledSelfHostedServerStatus());
       return;
+    }
+
+    /* Capabilities belonging to a different server say nothing about this
+       one, so those go before the probe. What we already know about THIS
+       server stays live until the probe answers: a probe takes up to ten
+       seconds, and dropping the feature set for that long on every monitor
+       tick would disable hidden games, cloud saves and souvenirs — or route
+       them back to the official API — on a server that never stopped being
+       healthy. */
+    if (!this.hasCapabilitiesForCurrentServer()) {
+      this.clearSelfHostedCapabilities();
     }
 
     /* Only announce "checking" when there is nothing better to show — a
@@ -257,8 +299,7 @@ export class HydraApi {
     if (this.selfHostedCloudUrl !== baseUrl) return;
 
     if (probe.error === null) {
-      this.selfHostedFeatures = new Set(probe.features);
-      this.selfHostedVersion = probe.version;
+      this.storeSelfHostedCapabilities(baseUrl, probe);
 
       logger.log(
         "self-hosted cloud server",
@@ -268,6 +309,11 @@ export class HydraApi {
         probe.features.join(", ")
       );
     } else {
+      /* The probe has spoken: whatever we were still holding from the last
+         successful one no longer describes a server we can reach, so the
+         gating falls back closed. */
+      this.clearSelfHostedCapabilities();
+
       logger.error(
         "self-hosted cloud server probe failed — features gated on it stay disabled",
         probe.error
