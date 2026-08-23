@@ -38,6 +38,8 @@ import type {
   AchievementNotificationRequest,
   Game,
   DiskUsage,
+  SelfHostedServerProbe,
+  SelfHostedServerStatus,
   NetworkInterface,
   DownloadSource,
   LocalNotification,
@@ -826,6 +828,15 @@ declare global {
       saveId: string,
       label: string
     ) => Promise<EmulationCloudSave>;
+    getSelfHostedStatus: () => Promise<SelfHostedServerStatus>;
+    refreshSelfHostedStatus: () => Promise<SelfHostedServerStatus>;
+    testSelfHostedServer: (url: string) => Promise<SelfHostedServerProbe>;
+    onSelfHostedStatusUpdated: (
+      cb: (status: SelfHostedServerStatus) => void
+    ) => () => Electron.IpcRenderer;
+    onCloudServerChanged: (
+      cb: (status: SelfHostedServerStatus) => void
+    ) => () => Electron.IpcRenderer;
     onUserPreferencesUpdated: (
       cb: (preferences: UserPreferences | null) => void
     ) => () => Electron.IpcRenderer;

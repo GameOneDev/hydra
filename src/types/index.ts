@@ -642,3 +642,4 @@ export * from "./emulator.types";
 export * from "./retroarch.types";
 export * from "./artwork.types";
 export * from "./cloud-save.types";
+export * from "./self-hosted.types";

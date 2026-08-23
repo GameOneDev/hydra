@@ -22,6 +22,7 @@ import {
   DeckyPlugin,
   DownloadSourcesChecker,
   DownloadOrchestrator,
+  SelfHostedStatusMonitor,
   SSEClient,
   Wine,
   WindowManager,
@@ -107,6 +108,8 @@ export const loadState = async () => {
   }
 
   await HydraApi.setupApi().then(async () => {
+    SelfHostedStatusMonitor.start();
+
     uploadGamesBatch();
     void migrateDownloadSources();
 

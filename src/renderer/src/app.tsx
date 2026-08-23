@@ -442,6 +442,18 @@ export function App() {
         updateLibrary();
       }),
       window.electron.onSignOut(() => clearUserDetails()),
+      /* The cloud storage server changed: the user carries the self-hosted
+         subscription perks and the library carries that server's artwork, so
+         both are stale until refetched — this is what saves the user a
+         relaunch. */
+      window.electron.onCloudServerChanged(() => {
+        fetchUserDetails()
+          .then((response) => {
+            if (response) updateUserDetails(response);
+          })
+          .catch(() => {});
+        updateLibrary();
+      }),
       window.electron.onExtractionProgress((shop, objectId, progress) => {
         dispatch(setExtractionProgress({ shop, objectId, progress }));
       }),
@@ -476,7 +488,16 @@ export function App() {
     return () => {
       listeners.forEach((unsubscribe) => unsubscribe());
     };
-  }, [onSignIn, updateLibrary, clearUserDetails, dispatch, showErrorToast, t]);
+  }, [
+    onSignIn,
+    updateLibrary,
+    clearUserDetails,
+    fetchUserDetails,
+    updateUserDetails,
+    dispatch,
+    showErrorToast,
+    t,
+  ]);
 
   useEffect(() => {
     const asyncScrollAndNotify = async () => {

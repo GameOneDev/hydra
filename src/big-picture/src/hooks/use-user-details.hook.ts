@@ -137,6 +137,12 @@ export function useUserDetails() {
       globalThis.window.electron.onAccountUpdated(() => {
         void fetchUserDetails();
       });
+    /* The self-hosted subscription perks ride on the user payload, so a cloud
+       server change makes it stale here too. */
+    const unsubscribeCloudServerChanged =
+      globalThis.window.electron.onCloudServerChanged(() => {
+        void fetchUserDetails();
+      });
     const unsubscribeSignIn = globalThis.window.electron.onSignIn(() => {
       void fetchUserDetails();
     });
@@ -146,6 +152,7 @@ export function useUserDetails() {
 
     return () => {
       unsubscribeAccountUpdated();
+      unsubscribeCloudServerChanged();
       unsubscribeSignIn();
       unsubscribeSignOut();
     };
