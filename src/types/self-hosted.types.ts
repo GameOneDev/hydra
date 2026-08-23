@@ -3,10 +3,10 @@
  *
  * - `disabled`: no server configured, everything runs against official Hydra
  * - `checking`: a probe is in flight and no answer has landed yet
- * - `online`: the server answered `/capabilities` and its features are known
- * - `degraded`: the server answered, but not with capabilities (an older
- *   deployment, or a URL pointing at something that is not Hydra Cloud) —
- *   features gated on capabilities stay off
+ * - `online`: the server is up and its features are known
+ * - `degraded`: the server answered, but not as a working Hydra Cloud server —
+ *   an older deployment, one reporting itself unhealthy, or a URL pointing at
+ *   something else entirely; features gated on capabilities stay off
  * - `offline`: nothing answered (wrong URL, server down, network blocked)
  */
 export type SelfHostedServerState =
@@ -16,7 +16,7 @@ export type SelfHostedServerState =
   | "degraded"
   | "offline";
 
-/** Outcome of a single `/capabilities` request against a server URL. */
+/** Outcome of a single probe against a server URL. */
 export interface SelfHostedServerProbe {
   /** Whether the host answered at all, whatever the status code. */
   reachable: boolean;
@@ -24,6 +24,10 @@ export interface SelfHostedServerProbe {
   statusCode: number | null;
   /** Round trip of the probe request in milliseconds. */
   latencyInMs: number | null;
+  /** Server name from `/health`, e.g. `hydra-server`. */
+  name: string | null;
+  /** Health status from `/health`, e.g. `ok`. */
+  status: string | null;
   version: string | null;
   features: string[];
   /** Short, human readable reason the probe did not succeed. */

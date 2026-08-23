@@ -6,28 +6,36 @@ import type {
   SelfHostedServerStatus,
 } from "@types";
 
-/** Unauthenticated endpoint every Hydra Cloud server answers. */
+/** Unauthenticated health check: `{ name, status, version }`. */
+export const HEALTH_PATH = "/health";
+
+/** Unauthenticated feature list the launcher gates cloud features on. */
 export const CAPABILITIES_PATH = "/capabilities";
 
-export const DEFAULT_PROBE_TIMEOUT_IN_MS = 10_000;
+/** Value `/health` reports when the server considers itself healthy. */
+export const HEALTHY_STATUS = "ok";
 
-interface CapabilitiesResponse {
-  version?: string;
-  features?: string[];
-}
+/* Statuses that mean "this server has no health endpoint" rather than "this
+   server is unwell" — a deployment predating /health must not read as broken. */
+const HEALTH_ABSENT_STATUS_CODES = new Set([404, 501]);
+
+export const DEFAULT_PROBE_TIMEOUT_IN_MS = 10_000;
 
 export interface ProbeResponse {
   statusCode: number;
   data: unknown;
 }
 
+/** Elapsed milliseconds since the stopwatch was created. */
+export type Stopwatch = () => number;
+
 export interface ProbeSelfHostedServerOptions {
   timeoutInMs?: number;
   userAgent?: string;
   /** Seam for tests; defaults to a plain unauthenticated GET. */
   request?: (url: string, timeoutInMs: number) => Promise<ProbeResponse>;
-  /** Seam for tests; defaults to a monotonic clock. */
-  now?: () => number;
+  /** Seam for tests; defaults to a monotonic clock per endpoint read. */
+  stopwatch?: () => Stopwatch;
 }
 
 export const normalizeSelfHostedUrl = (url?: string | null) => {
@@ -45,9 +53,9 @@ export const isValidSelfHostedUrl = (url: string) => {
 };
 
 /**
- * Turns whatever went wrong into something a user can act on. `/capabilities`
- * is unauthenticated and carries no user data, so the raw reason is safe to
- * surface.
+ * Turns whatever went wrong into something a user can act on. Both probed
+ * endpoints are unauthenticated and carry no user data, so the raw reason is
+ * safe to surface.
  */
 const describeError = (error: unknown) => {
   if (axios.isAxiosError(error)) {
@@ -60,12 +68,17 @@ const describeError = (error: unknown) => {
   return "UNKNOWN_ERROR";
 };
 
-const requestCapabilities = async (
+const startStopwatch = (): Stopwatch => {
+  const startedAt = performance.now();
+  return () => Math.max(0, Math.round(performance.now() - startedAt));
+};
+
+const requestJson = async (
   url: string,
   timeoutInMs: number,
   userAgent?: string
 ) => {
-  const { status, data } = await axios.get<CapabilitiesResponse>(url, {
+  const { status, data } = await axios.get<unknown>(url, {
     timeout: timeoutInMs,
     headers: userAgent ? { "User-Agent": userAgent } : undefined,
   });
@@ -73,46 +86,42 @@ const requestCapabilities = async (
   return { statusCode: status, data };
 };
 
-/**
- * Reads `/capabilities` from a self-hosted server and times the round trip.
- *
- * Never throws: every failure comes back as an unreachable (or non-2xx)
- * result, because the two callers — the status monitor and the settings
- * connection test — both want to render the failure rather than crash on it.
- */
-export const probeSelfHostedServer = async (
-  baseUrl: string,
-  options: ProbeSelfHostedServerOptions = {}
-): Promise<SelfHostedServerProbe> => {
-  const {
-    timeoutInMs = DEFAULT_PROBE_TIMEOUT_IN_MS,
-    userAgent,
-    request = (url, timeout) => requestCapabilities(url, timeout, userAgent),
-    now = () => performance.now(),
-  } = options;
+interface EndpointResult {
+  statusCode: number | null;
+  latencyInMs: number | null;
+  data: Record<string, unknown>;
+  error: string | null;
+}
 
-  const startedAt = now();
+const asRecord = (data: unknown): Record<string, unknown> =>
+  typeof data === "object" && data !== null
+    ? (data as Record<string, unknown>)
+    : {};
+
+const asString = (value: unknown) =>
+  typeof value === "string" && value ? value : null;
+
+const asStringArray = (value: unknown) =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
+/** Reads one endpoint, timing it, and never throws. */
+const readEndpoint = async (
+  url: string,
+  timeoutInMs: number,
+  request: (url: string, timeoutInMs: number) => Promise<ProbeResponse>,
+  stopwatch: () => Stopwatch
+): Promise<EndpointResult> => {
+  const elapsed = stopwatch();
 
   try {
-    const { statusCode, data } = await request(
-      `${baseUrl}${CAPABILITIES_PATH}`,
-      timeoutInMs
-    );
-
-    const latencyInMs = Math.max(0, Math.round(now() - startedAt));
-    const capabilities = (data ?? {}) as CapabilitiesResponse;
+    const { statusCode, data } = await request(url, timeoutInMs);
 
     return {
-      reachable: true,
       statusCode,
-      latencyInMs,
-      version:
-        typeof capabilities.version === "string" ? capabilities.version : null,
-      features: Array.isArray(capabilities.features)
-        ? capabilities.features.filter(
-            (feature): feature is string => typeof feature === "string"
-          )
-        : [],
+      latencyInMs: elapsed(),
+      data: asRecord(data),
       error: null,
     };
   } catch (error) {
@@ -121,17 +130,88 @@ export const probeSelfHostedServer = async (
       : null;
 
     return {
-      /* A status code means the host answered — it just isn't serving
-         capabilities on this URL. */
-      reachable: statusCode !== null,
       statusCode,
-      latencyInMs:
-        statusCode !== null ? Math.max(0, Math.round(now() - startedAt)) : null,
-      version: null,
-      features: [],
+      /* A status code means the host answered, so the round trip is real. */
+      latencyInMs: statusCode !== null ? elapsed() : null,
+      data: {},
       error: describeError(error),
     };
   }
+};
+
+/**
+ * Pings a self-hosted server: `/health` for liveness, version and round trip,
+ * `/capabilities` for the feature list the launcher gates cloud features on.
+ *
+ * Both are read in parallel, so the probe costs one round trip of wall time.
+ * `/capabilities` is the endpoint the launcher actually depends on, so failing
+ * it is what makes a server degraded; `/health` only adds a reason of its own
+ * when the server reports itself unhealthy — a deployment predating it is not
+ * penalised for answering 404 there.
+ *
+ * Never throws: every failure comes back as a result, because both callers —
+ * the status monitor and the settings connection test — want to render the
+ * failure rather than crash on it.
+ */
+export const probeSelfHostedServer = async (
+  baseUrl: string,
+  options: ProbeSelfHostedServerOptions = {}
+): Promise<SelfHostedServerProbe> => {
+  const {
+    timeoutInMs = DEFAULT_PROBE_TIMEOUT_IN_MS,
+    userAgent,
+    request = (url, timeout) => requestJson(url, timeout, userAgent),
+    stopwatch = startStopwatch,
+  } = options;
+
+  const [health, capabilities] = await Promise.all([
+    readEndpoint(`${baseUrl}${HEALTH_PATH}`, timeoutInMs, request, stopwatch),
+    readEndpoint(
+      `${baseUrl}${CAPABILITIES_PATH}`,
+      timeoutInMs,
+      request,
+      stopwatch
+    ),
+  ]);
+
+  const status = asString(health.data.status);
+  const isUnhealthy = status !== null && status !== HEALTHY_STATUS;
+  const isHealthAbsent =
+    health.statusCode !== null &&
+    HEALTH_ABSENT_STATUS_CODES.has(health.statusCode);
+
+  const resolveError = () => {
+    /* Nothing answered: report why the health check failed, which is the
+       connection error the user needs (ECONNREFUSED, ETIMEDOUT, DNS). */
+    if (health.statusCode === null && capabilities.statusCode === null) {
+      return health.error ?? capabilities.error;
+    }
+
+    if (capabilities.error !== null) return capabilities.error;
+    if (isUnhealthy) return `${HEALTH_PATH}: ${status}`;
+
+    /* A server that has the endpoint and still failed it is unwell, even if
+       its capabilities came back fine. */
+    if (health.error !== null && !isHealthAbsent) {
+      return `${HEALTH_PATH}: ${health.error}`;
+    }
+
+    return null;
+  };
+
+  return {
+    reachable: health.statusCode !== null || capabilities.statusCode !== null,
+    /* `/health` is the ping; fall back to capabilities when a server has no
+       health endpoint at all. */
+    statusCode: health.statusCode ?? capabilities.statusCode,
+    latencyInMs: health.latencyInMs ?? capabilities.latencyInMs,
+    name: asString(health.data.name),
+    status,
+    version:
+      asString(health.data.version) ?? asString(capabilities.data.version),
+    features: asStringArray(capabilities.data.features),
+    error: resolveError(),
+  };
 };
 
 const resolveState = (probe: SelfHostedServerProbe): SelfHostedServerState => {

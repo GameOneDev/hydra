@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 
 import { AxiosError, AxiosHeaders } from "axios";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
+import type { SelfHostedServerProbe } from "@types";
 
 import {
   isValidSelfHostedUrl,
@@ -10,6 +11,8 @@ import {
   probeSelfHostedServer,
   resolveSelfHostedServerStatus,
 } from "./probe-self-hosted-server.js";
+
+const BASE_URL = "https://cloud.example.com";
 
 const config = { headers: new AxiosHeaders() } as InternalAxiosRequestConfig;
 
@@ -25,23 +28,55 @@ const axiosErrorWithStatus = (status: number) =>
 const axiosErrorWithoutResponse = (code: string) =>
   new AxiosError("connect failed", code, config);
 
-/* A clock that advances a fixed amount per read, so latency is deterministic:
-   the probe reads it once before and once after the request. */
-const clockAdvancingBy = (stepInMs: number) => {
-  let current = 0;
+const healthPayload = {
+  name: "hydra-server",
+  status: "ok",
+  version: "4.1.1",
+};
 
-  return () => {
-    const value = current;
-    current += stepInMs;
-    return value;
+const capabilitiesPayload = { features: ["hidden-games", "cloud-saves-v2"] };
+
+/** Answers each endpoint from a map, and records what was requested. */
+const serverAnswering = (
+  answers: Record<string, () => { statusCode: number; data: unknown }>
+) => {
+  const requested: string[] = [];
+
+  const request = async (url: string) => {
+    requested.push(url);
+
+    const answer = answers[new URL(url).pathname];
+    if (!answer) throw axiosErrorWithStatus(404);
+
+    return answer();
   };
+
+  return { request, requested };
+};
+
+const probe = (
+  answers: Record<string, () => { statusCode: number; data: unknown }>,
+  latencyInMs = 42
+) => {
+  const { request, requested } = serverAnswering(answers);
+
+  return probeSelfHostedServer(BASE_URL, {
+    request,
+    stopwatch: () => () => latencyInMs,
+  }).then((result) => ({ result, requested }));
+};
+
+const ok = (data: unknown) => () => ({ statusCode: 200, data });
+
+const failingWith = (error: unknown) => () => {
+  throw error;
 };
 
 describe("normalizeSelfHostedUrl", () => {
   it("strips trailing slashes and surrounding whitespace", () => {
     assert.equal(
       normalizeSelfHostedUrl("  https://cloud.example.com///  "),
-      "https://cloud.example.com"
+      BASE_URL
     );
   });
 
@@ -56,7 +91,7 @@ describe("normalizeSelfHostedUrl", () => {
 describe("isValidSelfHostedUrl", () => {
   it("accepts http and https", () => {
     assert.equal(isValidSelfHostedUrl("http://localhost:3000"), true);
-    assert.equal(isValidSelfHostedUrl("https://cloud.example.com"), true);
+    assert.equal(isValidSelfHostedUrl(BASE_URL), true);
   });
 
   it("rejects anything else", () => {
@@ -67,119 +102,144 @@ describe("isValidSelfHostedUrl", () => {
 });
 
 describe("probeSelfHostedServer", () => {
-  it("reads the version and features off a capabilities response", async () => {
-    const requested: string[] = [];
-
-    const probe = await probeSelfHostedServer("https://cloud.example.com", {
-      now: clockAdvancingBy(42),
-      request: async (url) => {
-        requested.push(url);
-        return {
-          statusCode: 200,
-          data: { version: "1.4.0", features: ["hidden-games", 7, null] },
-        };
-      },
+  it("reads status and version from /health and features from /capabilities", async () => {
+    const { result, requested } = await probe({
+      "/health": ok(healthPayload),
+      "/capabilities": ok(capabilitiesPayload),
     });
 
-    assert.deepEqual(requested, ["https://cloud.example.com/capabilities"]);
-    assert.equal(probe.reachable, true);
-    assert.equal(probe.statusCode, 200);
-    assert.equal(probe.latencyInMs, 42);
-    assert.equal(probe.version, "1.4.0");
-    assert.deepEqual(probe.features, ["hidden-games"]);
-    assert.equal(probe.error, null);
+    assert.deepEqual(requested.sort(), [
+      `${BASE_URL}/capabilities`,
+      `${BASE_URL}/health`,
+    ]);
+    assert.equal(result.reachable, true);
+    assert.equal(result.statusCode, 200);
+    assert.equal(result.latencyInMs, 42);
+    assert.equal(result.name, "hydra-server");
+    assert.equal(result.status, "ok");
+    assert.equal(result.version, "4.1.1");
+    assert.deepEqual(result.features, ["hidden-games", "cloud-saves-v2"]);
+    assert.equal(result.error, null);
   });
 
-  it("tolerates a server that answers without a capabilities payload", async () => {
-    const probe = await probeSelfHostedServer("https://cloud.example.com", {
-      now: clockAdvancingBy(10),
-      request: async () => ({ statusCode: 204, data: null }),
+  it("falls back to the capabilities version when /health has none", async () => {
+    const { result } = await probe({
+      "/health": ok({ status: "ok" }),
+      "/capabilities": ok({ version: "3.9.0", features: [] }),
     });
 
-    assert.equal(probe.reachable, true);
-    assert.equal(probe.version, null);
-    assert.deepEqual(probe.features, []);
-    assert.equal(probe.error, null);
+    assert.equal(result.version, "3.9.0");
+    assert.equal(result.error, null);
   });
 
-  /* A server predating /capabilities answers 404: it IS reachable, but the
-     launcher still knows nothing about its features. */
-  it("reports an HTTP error as reachable with the status as the reason", async () => {
-    const probe = await probeSelfHostedServer("https://cloud.example.com", {
-      now: clockAdvancingBy(5),
-      request: async () => {
-        throw axiosErrorWithStatus(404);
-      },
+  it("ignores non-string entries in the feature list", async () => {
+    const { result } = await probe({
+      "/health": ok(healthPayload),
+      "/capabilities": ok({ features: ["hidden-games", 7, null] }),
     });
 
-    assert.equal(probe.reachable, true);
-    assert.equal(probe.statusCode, 404);
-    assert.equal(probe.latencyInMs, 5);
-    assert.equal(probe.error, "HTTP 404");
-    assert.deepEqual(probe.features, []);
+    assert.deepEqual(result.features, ["hidden-games"]);
+  });
+
+  /* A deployment predating /health answers 404 there. It still works, so it
+     must not read as unhealthy. */
+  it("does not penalise a server without a health endpoint", async () => {
+    const { result } = await probe({
+      "/capabilities": ok({ version: "3.9.0", features: ["hidden-games"] }),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.error, null);
+    assert.equal(result.version, "3.9.0");
+    assert.equal(result.latencyInMs, 42);
+  });
+
+  it("reports a server that says it is unhealthy", async () => {
+    const { result } = await probe({
+      "/health": ok({ ...healthPayload, status: "degraded" }),
+      "/capabilities": ok(capabilitiesPayload),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.status, "degraded");
+    assert.equal(result.error, "/health: degraded");
+  });
+
+  it("reports a health endpoint that exists and fails", async () => {
+    const { result } = await probe({
+      "/health": failingWith(axiosErrorWithStatus(500)),
+      "/capabilities": ok(capabilitiesPayload),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.error, "/health: HTTP 500");
+  });
+
+  /* Capabilities is what the launcher gates cloud features on, so losing it
+     is the failure that matters most — even with a healthy /health. */
+  it("reports missing capabilities even when the server is healthy", async () => {
+    const { result } = await probe({
+      "/health": ok(healthPayload),
+    });
+
+    assert.equal(result.reachable, true);
+    assert.equal(result.error, "HTTP 404");
+    assert.deepEqual(result.features, []);
+    assert.equal(result.version, "4.1.1");
   });
 
   it("reports a connection failure as unreachable", async () => {
-    const probe = await probeSelfHostedServer("https://cloud.example.com", {
-      request: async () => {
-        throw axiosErrorWithoutResponse("ECONNREFUSED");
-      },
+    const { result } = await probe({
+      "/health": failingWith(axiosErrorWithoutResponse("ECONNREFUSED")),
+      "/capabilities": failingWith(axiosErrorWithoutResponse("ECONNREFUSED")),
     });
 
-    assert.equal(probe.reachable, false);
-    assert.equal(probe.statusCode, null);
-    assert.equal(probe.latencyInMs, null);
-    assert.equal(probe.error, "ECONNREFUSED");
+    assert.equal(result.reachable, false);
+    assert.equal(result.statusCode, null);
+    assert.equal(result.latencyInMs, null);
+    assert.equal(result.error, "ECONNREFUSED");
   });
 
   it("never throws, whatever the request does", async () => {
-    const probe = await probeSelfHostedServer("https://cloud.example.com", {
-      request: async () => {
-        throw new Error("boom");
-      },
+    const { result } = await probe({
+      "/health": failingWith(new Error("boom")),
+      "/capabilities": failingWith(new Error("boom")),
     });
 
-    assert.equal(probe.reachable, false);
-    assert.equal(probe.error, "boom");
+    assert.equal(result.reachable, false);
+    assert.equal(result.error, "boom");
   });
 });
 
 describe("resolveSelfHostedServerStatus", () => {
   const probeOf = (
-    overrides: Partial<Awaited<ReturnType<typeof probeSelfHostedServer>>>
-  ) => ({
+    overrides: Partial<SelfHostedServerProbe> = {}
+  ): SelfHostedServerProbe => ({
     reachable: true,
     statusCode: 200,
     latencyInMs: 20,
-    version: "1.4.0",
+    name: "hydra-server",
+    status: "ok",
+    version: "4.1.1",
     features: ["hidden-games"],
     error: null,
     ...overrides,
   });
 
-  it("is online when capabilities came back", () => {
-    const status = resolveSelfHostedServerStatus(
-      "https://cloud.example.com",
-      probeOf({}),
-      1700
-    );
+  it("is online when the server is healthy and its features are known", () => {
+    const status = resolveSelfHostedServerStatus(BASE_URL, probeOf(), 1700);
 
     assert.equal(status.state, "online");
-    assert.equal(status.url, "https://cloud.example.com");
+    assert.equal(status.url, BASE_URL);
     assert.equal(status.latencyInMs, 20);
-    assert.equal(status.version, "1.4.0");
+    assert.equal(status.version, "4.1.1");
     assert.equal(status.checkedAt, 1700);
   });
 
-  it("is degraded when the server answered with something else", () => {
+  it("is degraded when the server answered with a reason", () => {
     const status = resolveSelfHostedServerStatus(
-      "https://cloud.example.com",
-      probeOf({
-        statusCode: 404,
-        version: null,
-        features: [],
-        error: "HTTP 404",
-      }),
+      BASE_URL,
+      probeOf({ features: [], error: "HTTP 404" }),
       1700
     );
 
@@ -189,11 +249,13 @@ describe("resolveSelfHostedServerStatus", () => {
 
   it("is offline when nothing answered", () => {
     const status = resolveSelfHostedServerStatus(
-      "https://cloud.example.com",
+      BASE_URL,
       probeOf({
         reachable: false,
         statusCode: null,
         latencyInMs: null,
+        name: null,
+        status: null,
         version: null,
         features: [],
         error: "ETIMEDOUT",

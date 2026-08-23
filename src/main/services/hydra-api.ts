@@ -253,14 +253,15 @@ export class HydraApi {
       this.selfHostedVersion = probe.version;
 
       logger.log(
-        "self-hosted cloud capabilities",
-        this.selfHostedVersion,
+        "self-hosted cloud server",
+        probe.name ?? "unknown server",
+        this.selfHostedVersion ?? "unknown version",
         `${probe.latencyInMs}ms`,
         probe.features.join(", ")
       );
     } else {
       logger.error(
-        "failed to read self-hosted cloud capabilities — features gated on it stay disabled",
+        "self-hosted cloud server probe failed — features gated on it stay disabled",
         probe.error
       );
     }
@@ -285,6 +286,8 @@ export class HydraApi {
         reachable: false,
         statusCode: null,
         latencyInMs: null,
+        name: null,
+        status: null,
         version: null,
         features: [],
         error: "EMPTY_URL",
