@@ -190,9 +190,12 @@ export function SettingsSelfHosted() {
     try {
       /* Ping before committing so a typo is reported here, instead of turning
          into features that silently stay off. */
-      const probe = normalizedUrl
-        ? await runTest(normalizedUrl).catch(() => null)
-        : null;
+       const probe =
+         normalizedUrl && testResult?.url === normalizedUrl
+           ? testResult.probe
+           : normalizedUrl
+             ? await runTest(normalizedUrl).catch(() => null)
+             : null;
 
       await updateUserPreferences({
         selfHostedCloudUrl: normalizedUrl || null,
