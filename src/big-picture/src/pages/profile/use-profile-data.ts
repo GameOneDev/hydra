@@ -1,6 +1,8 @@
 import type {
   Badge,
   ComparedAchievements,
+  ProfileSouvenir,
+  SouvenirsHiddenReason,
   SteamAchievement,
   UserAchievement,
   UserFriend,
@@ -10,7 +12,12 @@ import type {
   UserProfile,
   UserStats,
 } from "@types";
-import { useCallback, useEffect, useState } from "react";
+import {
+  getSouvenirKey,
+  normalizeProfileSouvenir,
+  SOUVENIRS_PAGE_SIZE,
+} from "@shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { applySelfHostedArtwork } from "@renderer/services/self-hosted-artwork.service";
 import { logger } from "@renderer/logger";
 import { getGameIdentityKey } from "../../helpers";
@@ -20,6 +27,7 @@ import {
   fetchSelfHostedRecentAchievements,
   getCatalogueLanguage,
   getProfileArtwork,
+  withSouvenirAchievementMetadata,
   type SelfHostedAchievementGame,
 } from "./self-hosted-profile";
 
@@ -811,4 +819,173 @@ export function useRecentAchievements(
   }, [hasActiveSubscription, isOwnProfile, refreshKey, targetUserId]);
 
   return groups;
+}
+
+export function useProfileSouvenirs(
+  targetUserId: string | undefined,
+  isAuthenticated: boolean
+) {
+  const [souvenirs, setSouvenirs] = useState<ProfileSouvenir[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hiddenReason, setHiddenReason] = useState<SouvenirsHiddenReason>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadedTargetUserId, setLoadedTargetUserId] = useState<string | null>(
+    null
+  );
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const isLoadingMoreRef = useRef(false);
+  const requestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    if (!targetUserId) {
+      requestGenerationRef.current += 1;
+      setSouvenirs([]);
+      setTotal(0);
+      setHiddenReason(null);
+      setIsLoading(false);
+      setLoadedTargetUserId(null);
+      setIsLoadingMore(false);
+      isLoadingMoreRef.current = false;
+      return;
+    }
+
+    const requestGeneration = requestGenerationRef.current + 1;
+    requestGenerationRef.current = requestGeneration;
+    isLoadingMoreRef.current = false;
+    setSouvenirs([]);
+    setTotal(0);
+    setHiddenReason(null);
+    setLoadedTargetUserId(null);
+    setIsLoadingMore(false);
+    setIsLoading(true);
+    let isMounted = true;
+
+    /* Reads from whichever server this profile's owner captured on — the
+       self-hosted one, or official Hydra for everyone else. */
+    globalThis.window.electron
+      .getProfileSouvenirs({ userId: targetUserId })
+      .then(async (response) => {
+        const items = await withSouvenirAchievementMetadata(
+          ensureArray(response?.items).map((item) =>
+            normalizeProfileSouvenir(item)
+          )
+        );
+
+        if (isMounted && requestGenerationRef.current === requestGeneration) {
+          setSouvenirs(items);
+          setTotal(response?.total ?? 0);
+          setHiddenReason(response?.hiddenReason ?? null);
+        }
+      })
+      .catch(() => {
+        if (isMounted && requestGenerationRef.current === requestGeneration) {
+          setSouvenirs([]);
+          setTotal(0);
+          setHiddenReason(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted && requestGenerationRef.current === requestGeneration) {
+          setIsLoading(false);
+          setLoadedTargetUserId(targetUserId);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isAuthenticated, refreshKey, targetUserId]);
+
+  const refresh = useCallback(() => {
+    setRefreshKey((currentKey) => currentKey + 1);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (
+      !targetUserId ||
+      isLoadingMoreRef.current ||
+      souvenirs.length >= total
+    ) {
+      return;
+    }
+
+    const requestGeneration = requestGenerationRef.current;
+    const skip = souvenirs.length;
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+
+    try {
+      const response = await globalThis.window.electron.getProfileSouvenirs({
+        userId: targetUserId,
+        skip,
+        take: SOUVENIRS_PAGE_SIZE,
+      });
+
+      if (requestGenerationRef.current !== requestGeneration) return;
+
+      const page = await withSouvenirAchievementMetadata(
+        ensureArray(response?.items).map((item) =>
+          normalizeProfileSouvenir(item)
+        )
+      );
+
+      if (requestGenerationRef.current !== requestGeneration) return;
+
+      setSouvenirs((current) => {
+        const knownKeys = new Set(
+          current.map((souvenir) => getSouvenirKey(souvenir.id))
+        );
+        const nextItems = page.filter(
+          (souvenir) => !knownKeys.has(getSouvenirKey(souvenir.id))
+        );
+
+        return [...current, ...nextItems];
+      });
+      setTotal(response?.total ?? total);
+      setHiddenReason(response?.hiddenReason ?? null);
+    } catch {
+      // Keep the already loaded page visible and allow a later retry.
+    } finally {
+      if (requestGenerationRef.current === requestGeneration) {
+        isLoadingMoreRef.current = false;
+        setIsLoadingMore(false);
+      }
+    }
+  }, [souvenirs.length, targetUserId, total]);
+
+  const updateSouvenir = useCallback(
+    (souvenirId: string, update: Partial<ProfileSouvenir>) => {
+      setSouvenirs((current) =>
+        current.map((souvenir) =>
+          souvenir.id === souvenirId ? { ...souvenir, ...update } : souvenir
+        )
+      );
+    },
+    []
+  );
+
+  const removeSouvenir = useCallback((souvenirId: string) => {
+    setSouvenirs((current) =>
+      current.filter((souvenir) => souvenir.id !== souvenirId)
+    );
+    setTotal((current) => Math.max(0, current - 1));
+  }, []);
+
+  const hasLoadedTarget = loadedTargetUserId === targetUserId;
+  const visibleSouvenirs = hasLoadedTarget ? souvenirs : [];
+  const visibleTotal = hasLoadedTarget ? total : 0;
+
+  return {
+    souvenirs: visibleSouvenirs,
+    total: visibleTotal,
+    hiddenReason: hasLoadedTarget ? hiddenReason : null,
+    isLoading: Boolean(targetUserId) && (isLoading || !hasLoadedTarget),
+    hasMore: visibleSouvenirs.length < visibleTotal,
+    isLoadingMore,
+    refresh,
+    loadMore,
+    updateSouvenir,
+    removeSouvenir,
+  };
 }

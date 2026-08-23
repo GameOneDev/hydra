@@ -27,6 +27,7 @@ import {
   WindowManager,
   logger,
   migrateCloudSaveAutomaticSyncDefaults,
+  groupedSouvenirWorker,
   syncSteamPlaytimeForLibrary,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
@@ -120,6 +121,7 @@ export const loadState = async () => {
 
     if (HydraApi.isLoggedIn()) {
       SSEClient.connect();
+      void groupedSouvenirWorker.trigger();
     }
   });
 
