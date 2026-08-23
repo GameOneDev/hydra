@@ -254,6 +254,8 @@ export class HydraApi {
       userAgent: `Hydra Launcher v${appVersion}`,
     });
 
+    if (this.selfHostedCloudUrl !== baseUrl) return;
+
     if (probe.error === null) {
       this.selfHostedFeatures = new Set(probe.features);
       this.selfHostedVersion = probe.version;
