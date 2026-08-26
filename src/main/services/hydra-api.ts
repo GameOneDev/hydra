@@ -23,6 +23,7 @@ import {
 } from "./network-log-payload";
 import {
   disabledSelfHostedServerStatus,
+  isValidSelfHostedUrl,
   normalizeSelfHostedUrl,
   probeSelfHostedServer,
   resolveSelfHostedServerStatus,
@@ -55,6 +56,12 @@ export class HydraApi {
 
   private static readonly EXPIRATION_OFFSET_IN_MS = 1000 * 60 * 5; // 5 minutes
   private static readonly ADD_LOG_INTERCEPTOR = true;
+
+  /* Axios defaults to waiting forever. Every route through these clients is a
+     JSON call — the big binary uploads go straight to presigned URLs — so a
+     request still going after a minute is a server that stopped answering,
+     and a self-hosted one is the likeliest to do it. */
+  private static readonly REQUEST_TIMEOUT_IN_MS = 60_000;
 
   private static secondsToMilliseconds(seconds: number) {
     return seconds * 1000;
@@ -98,6 +105,17 @@ export class HydraApi {
     this.selfHostedFeatures = new Set(probe.features);
     this.selfHostedVersion = probe.version;
     this.selfHostedCapabilitiesUrl = url;
+  }
+
+  /* Resolves once the probe started by the last setupApi() has answered.
+     Startup work that needs the capabilities awaits this; the launcher itself
+     does not, so a server that is off the network can't hold the window
+     closed. */
+  private static selfHostedCapabilitiesSettled: Promise<void> =
+    Promise.resolve();
+
+  public static whenSelfHostedCapabilitiesSettled() {
+    return this.selfHostedCapabilitiesSettled;
   }
 
   /* Probes overlap: the monitor's tick, the settings page's re-check and a
@@ -183,8 +201,18 @@ export class HydraApi {
     );
   }
 
+  /* A URL that isn't http(s) is not something axios can be pointed at, and
+     the renderer's check is not a guarantee — preferences also arrive from
+     disk, where an older or hand-edited value can be anything. */
   private static normalizeUrl(url?: string | null) {
-    return normalizeSelfHostedUrl(url);
+    const normalized = normalizeSelfHostedUrl(url);
+
+    if (normalized && !isValidSelfHostedUrl(normalized)) {
+      logger.error("ignoring self-hosted cloud URL that is not http(s)");
+      return null;
+    }
+
+    return normalized;
   }
 
   public static isSelfHostedCloudEnabled() {
@@ -349,24 +377,30 @@ export class HydraApi {
   public static async testSelfHostedServer(
     url: string
   ): Promise<SelfHostedServerProbe> {
-    const baseUrl = this.normalizeUrl(url);
+    const baseUrl = normalizeSelfHostedUrl(url);
 
-    if (!baseUrl) {
-      return {
-        reachable: false,
-        statusCode: null,
-        latencyInMs: null,
-        name: null,
-        status: null,
-        version: null,
-        features: [],
-        error: "EMPTY_URL",
-      };
-    }
+    if (!baseUrl) return this.unprobableUrl("EMPTY_URL");
+    if (!isValidSelfHostedUrl(baseUrl))
+      return this.unprobableUrl("INVALID_URL");
 
     return probeSelfHostedServer(baseUrl, {
       userAgent: `Hydra Launcher v${appVersion}`,
     });
+  }
+
+  /* A URL there is no point sending a request to, shaped like the probe the
+     settings page is waiting for. */
+  private static unprobableUrl(error: string): SelfHostedServerProbe {
+    return {
+      reachable: false,
+      statusCode: null,
+      latencyInMs: null,
+      name: null,
+      status: null,
+      version: null,
+      features: [],
+      error,
+    };
   }
 
   private static resolveInstance(url: string, options?: HydraApiOptions) {
@@ -536,6 +570,11 @@ export class HydraApi {
     forgetSouvenirSources();
     await this.setupApi();
 
+    /* The renderers recompute their capability-gated UI off this broadcast, so
+       it has to carry the new server's answer, not the previous one's. */
+    await this.whenSelfHostedCapabilitiesSettled();
+    await this.refreshSession();
+
     WindowManager.sendToAppWindows(
       "on-cloud-server-changed",
       this.selfHostedStatus
@@ -599,16 +638,24 @@ export class HydraApi {
     this.instance = axios.create({
       baseURL: import.meta.env.MAIN_VITE_API_URL,
       headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+      timeout: this.REQUEST_TIMEOUT_IN_MS,
     });
 
     this.cloudInstance = this.selfHostedCloudUrl
       ? axios.create({
           baseURL: this.selfHostedCloudUrl,
           headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+          timeout: this.REQUEST_TIMEOUT_IN_MS,
         })
       : null;
 
-    await this.refreshSelfHostedCapabilities();
+    /* Started, not awaited: the probe waits up to ten seconds on a server that
+       may be off the network, and nothing here needs the answer. Callers that
+       do await whenSelfHostedCapabilitiesSettled(). */
+    this.selfHostedCapabilitiesSettled =
+      this.refreshSelfHostedCapabilities().catch((err) => {
+        logger.error("failed to refresh self-hosted capabilities", err);
+      });
 
     if (this.ADD_LOG_INTERCEPTOR) {
       this.instance.interceptors.request.use(
@@ -694,7 +741,17 @@ export class HydraApi {
         ? { expiresAt: user.subscription?.expiresAt }
         : null,
     };
+  }
 
+  /**
+   * Re-reads the account from the official API, which is what applies (or
+   * removes) the subscription the self-hosted server stands in for.
+   *
+   * Split out of setupApi() because it is network-bound: the session restored
+   * from disk is enough to answer the renderer, so this settles behind the
+   * open window instead of holding it closed.
+   */
+  public static async refreshSession() {
     const updatedUserData = await getUserData();
 
     this.updateUserSubscription(updatedUserData?.subscription);

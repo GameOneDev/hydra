@@ -38,19 +38,14 @@ export interface ProbeSelfHostedServerOptions {
   stopwatch?: () => Stopwatch;
 }
 
-export const normalizeSelfHostedUrl = (url?: string | null) => {
-  const trimmed = url?.trim().replace(/\/+$/, "");
-  return trimmed ? trimmed : null;
-};
-
-export const isValidSelfHostedUrl = (url: string) => {
-  try {
-    const { protocol } = new URL(url);
-    return protocol === "http:" || protocol === "https:";
-  } catch {
-    return false;
-  }
-};
+/* Re-exported from the shared module the settings page validates with, so the
+   URL this probe accepts and the URL that page lets the user save are decided
+   by the same two functions. Imported by path rather than through "@shared",
+   whose barrel pulls in browser-only modules. */
+export {
+  isValidSelfHostedUrl,
+  normalizeSelfHostedUrl,
+} from "../../../shared/self-hosted-url.js";
 
 /**
  * Turns whatever went wrong into something a user can act on. Both probed

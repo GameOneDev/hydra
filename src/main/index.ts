@@ -28,7 +28,7 @@ import { GameShop, UserPreferences } from "@types";
 import { launchGame, openClassicsGame } from "./helpers";
 import { refreshPortableShortcutLauncher } from "./helpers/shortcut-launch";
 import { lookupCachedPlatform } from "./events/library/get-library";
-import { loadState } from "./main";
+import { loadState, prepareForWindows } from "./main";
 
 crashReporter.start({
   uploadToServer: false,
@@ -164,10 +164,13 @@ const initializeApp = async () => {
     });
   });
 
+  /* Only the part a window cannot open without is awaited here. */
+  let userPreferences: UserPreferences | null = null;
+
   try {
-    await loadState();
+    userPreferences = await prepareForWindows();
   } catch (error) {
-    logger.error("Failed to load app state during startup", error);
+    logger.error("Failed to prepare the app during startup", error);
   }
 
   // Suspend can outlive the 60s stall watchdog; reconnect right away instead
@@ -200,8 +203,16 @@ const initializeApp = async () => {
 
   WindowManager.createSystemTray(language || "en");
 
+  /* The rest of startup — the self-hosted probe, the session refresh, the
+     download subsystem — settles behind the window now that one is up. */
+  const state = loadState(userPreferences).catch((error) => {
+    logger.error("Failed to load app state during startup", error);
+  });
+
+  /* A "run" deep link launches a game, which needs the download subsystem the
+     line above is still starting. */
   if (deepLinkArg) {
-    handleDeepLinkPath(deepLinkArg);
+    void state.then(() => handleDeepLinkPath(deepLinkArg));
   }
 };
 
