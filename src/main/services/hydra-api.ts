@@ -100,6 +100,14 @@ export class HydraApi {
     this.selfHostedCapabilitiesUrl = url;
   }
 
+  /* Probes overlap: the monitor's tick, the settings page's re-check and a
+     server change all call in, and they don't come back in the order they
+     left. Applying an older answer over a newer one would leave both the
+     gating and the indicator describing a state the server has already moved
+     on from, until the next tick ten minutes later. */
+  private static selfHostedProbeSequence = 0;
+  private static appliedSelfHostedProbeSequence = 0;
+
   /* Whether what we last read still describes the server we are routing to. */
   private static hasCapabilitiesForCurrentServer() {
     return (
@@ -279,7 +287,7 @@ export class HydraApi {
 
     /* Only announce "checking" when there is nothing better to show — a
        periodic re-check of a server already known to be up shouldn't make the
-       indicator flicker every minute. */
+       indicator flicker on every tick. */
     const hasResultForThisServer =
       this.selfHostedStatus.url === baseUrl &&
       this.selfHostedStatus.checkedAt !== null;
@@ -292,11 +300,19 @@ export class HydraApi {
       });
     }
 
+    const sequence = ++this.selfHostedProbeSequence;
+
     const probe = await probeSelfHostedServer(baseUrl, {
       userAgent: `Hydra Launcher v${appVersion}`,
     });
 
     if (this.selfHostedCloudUrl !== baseUrl) return;
+
+    /* A probe that started later has already answered: it knows more about
+       the server than this one does. */
+    if (sequence < this.appliedSelfHostedProbeSequence) return;
+
+    this.appliedSelfHostedProbeSequence = sequence;
 
     if (probe.error === null) {
       this.storeSelfHostedCapabilities(baseUrl, probe);
