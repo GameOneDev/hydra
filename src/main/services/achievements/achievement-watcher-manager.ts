@@ -195,6 +195,27 @@ export class AchievementWatcherManager {
   public static resetSessionState() {
     this.alreadySyncedGames.clear();
     AchievementMemoryStore.clear();
+
+    /* The tracked mtimes belong to the baseline that was just dropped. Keeping
+       them would leave every file looking unchanged, so no merge would run and
+       the games would sit without a baseline until something else happened to
+       sync them — and the first genuine unlock after that would be swallowed
+       as a baseline merge. Clearing them makes the next watcher pass rebuild
+       every baseline silently instead. */
+    fileStats.clear();
+    fltFiles.clear();
+  }
+
+  /* Re-establishes every game's baseline while keeping what is already known
+     to be unlocked. Used when a preference brings achievement files into scope
+     that were not being watched before: such a file holds unlock history the
+     baseline has never seen, and the watcher would otherwise read its first
+     sighting as a burst of fresh unlocks. */
+  public static rebaselineAchievementFiles() {
+    AchievementMemoryStore.clearHydration();
+
+    fileStats.clear();
+    fltFiles.clear();
   }
 
   public static forgetAchievementFiles(gameKey: string, filePaths: string[]) {
@@ -308,7 +329,13 @@ export class AchievementWatcherManager {
       }
     }
 
-    if (!unlockedAchievements.length) return 0;
+    /* Nothing unlocked on disk is itself a valid baseline: record it so the
+       game's first ever unlock is recognised as new rather than being
+       swallowed as the merge that establishes its baseline. */
+    if (!unlockedAchievements.length) {
+      AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+      return 0;
+    }
 
     await mergeAchievements(game, unlockedAchievements, false);
 
@@ -389,11 +416,29 @@ export class AchievementWatcherManager {
     try {
       const gameAchievementFiles = await this.getGameAchievementFiles();
 
-      const newAchievementsCount = await Promise.all(
+      /* One game failing must not cost the others their baseline: with
+         Promise.all a single rejection (getGameAchievementData rethrows
+         UserNotLoggedInError by design) abandoned every game queued behind it,
+         while the watcher was unblocked regardless — so the next change to any
+         of their files replayed the whole unlock history as notifications. */
+      const settledCounts = await Promise.allSettled(
         gameAchievementFiles.map(({ game, achievementFiles }) => {
           return this.preProcessGameAchievementFiles(game, achievementFiles);
         })
       );
+
+      const newAchievementsCount = settledCounts.map((result, index) => {
+        if (result.status === "fulfilled") return result.value;
+
+        achievementsLogger.error(
+          "Failed to pre-process achievements for",
+          gameAchievementFiles[index].game.objectId,
+          gameAchievementFiles[index].game.title,
+          result.reason
+        );
+
+        return 0;
+      });
 
       const gamesWithNewAchievements = gameAchievementFiles.filter(
         (_, index) => newAchievementsCount[index] > 0
@@ -406,6 +451,9 @@ export class AchievementWatcherManager {
         0
       );
 
+      /* Set before the upload on purpose: mergeAchievements gates its API PUT
+         on this flag, and uploadPreSearchAchievements is the one intentional
+         batch sync of what the startup scan found. */
       this._hasFinishedPreSearch = true;
 
       await this.uploadPreSearchAchievements(gamesWithNewAchievements);
@@ -419,9 +467,9 @@ export class AchievementWatcherManager {
       }
     } catch (err) {
       achievementsLogger.error("Error on preSearchAchievements", err);
+    } finally {
+      this._hasFinishedPreSearch = true;
     }
-
-    this._hasFinishedPreSearch = true;
   }
 
   private static async uploadPreSearchAchievements(

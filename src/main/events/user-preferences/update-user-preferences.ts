@@ -9,6 +9,7 @@ import { patchUserProfile } from "../profile/update-profile";
 import { DownloadManager, HydraApi, Wine } from "@main/services";
 import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
+import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { getDownloadDirectoryPreferences } from "@shared";
 import {
   restoreDuckStationFileLogging,
@@ -154,6 +155,18 @@ const updateUserPreferences = async (
       valueEncoding: "json",
     }
   );
+
+  /* Right after the write, with nothing awaited in between: from here on the
+     watcher collects the Steam cache files too, and each one carries the
+     account's whole achievement history for that game. Re-baselining folds
+     them in silently instead of announcing all of it as freshly unlocked. */
+  if (
+    Object.hasOwn(preferences, "enableSteamAchievements") &&
+    preferences.enableSteamAchievements === true &&
+    userPreferences?.enableSteamAchievements !== true
+  ) {
+    AchievementWatcherManager.rebaselineAchievementFiles();
+  }
 
   Wine.syncUserPreferences(updatedPreferences);
 
