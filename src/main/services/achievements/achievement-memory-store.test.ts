@@ -51,8 +51,6 @@ describe("AchievementMemoryStore baselines", () => {
     AchievementMemoryStore.markHydrated("steam", "10");
 
     assert.equal(AchievementMemoryStore.isHydrated("steam", "10"), true);
-    /* A phantom entry would read as "zero unlocked" and override the
-       server-known count the library falls back to. */
     assert.equal(AchievementMemoryStore.get("steam", "10"), undefined);
   });
 

@@ -156,10 +156,6 @@ const updateUserPreferences = async (
     }
   );
 
-  /* Right after the write, with nothing awaited in between: from here on the
-     watcher collects the Steam cache files too, and each one carries the
-     account's whole achievement history for that game. Re-baselining folds
-     them in silently instead of announcing all of it as freshly unlocked. */
   if (
     Object.hasOwn(preferences, "enableSteamAchievements") &&
     preferences.enableSteamAchievements === true &&

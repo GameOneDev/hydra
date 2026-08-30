@@ -31,11 +31,6 @@ import { launchedGamePids } from "../launched-game-pids";
 import { Wine } from "../wine";
 import { createGame } from "../library-sync/create-game";
 
-/* Above this many achievements at once, the queue is collapsed into a single
-   combined notification. Each popup holds the screen for several seconds, so
-   an unbounded batch turns into minutes of back-to-back popups — a genuine
-   unlock run this large is vanishingly rare, and it keeps any future way of
-   producing an oversized batch from being user-visibly catastrophic. */
 const MAX_INDIVIDUAL_ACHIEVEMENT_NOTIFICATIONS = 10;
 
 const isRareAchievement = (points: number) => {
@@ -303,13 +298,6 @@ export const mergeAchievements = async (
 ) => {
   const gameKey = levelKeys.game(game.shop, game.objectId);
 
-  /* The memory store is session-scoped, so it is empty at launch and after
-     every sign-in/sign-out/401 that clears it. Diffing against an empty
-     baseline classifies the game's whole unlock history as new, which is how
-     old achievements end up being announced again after an update or a
-     machine change. The first merge of a session therefore only establishes
-     the baseline: it still syncs to the API, but it never notifies and
-     reports no new achievements to its caller. */
   const isBaselineMerge = !AchievementMemoryStore.isHydrated(
     game.shop,
     game.objectId
@@ -501,9 +489,6 @@ export const mergeAchievements = async (
 
   if (pendingGroupedSouvenir) void groupedSouvenirWorker.trigger();
 
-  /* Only once the unlocked list has actually been written: marking earlier
-     would leave a hydrated-but-empty baseline behind if the merge threw
-     midway, and the next merge would announce the whole history again. */
   AchievementMemoryStore.markHydrated(game.shop, game.objectId);
 
   return isBaselineMerge ? 0 : newAchievements.length;
