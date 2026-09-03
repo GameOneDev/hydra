@@ -17,28 +17,31 @@ import {
   useUserDetails,
 } from "@renderer/hooks";
 import { formatBytes } from "@shared";
-import type { GameArtifact, GameShop } from "@types";
+import type { GameArtifact, LibraryCloudSaveSnapshot } from "@types";
 import {
   ClockIcon,
   DeviceDesktopIcon,
+  FileIcon,
   PinIcon,
   SyncIcon,
   TrashIcon,
+  VersionsIcon,
 } from "@primer/octicons-react";
+
+import { getCloudSaveVisibility } from "../game-details/cloud-save-visibility";
+
+import {
+  buildCloudSaveManagerEntries,
+  groupCloudSaveManagerEntries,
+  sumCloudSaveManagerSizes,
+  type CloudSaveManagerEntry,
+  type ManagedArtifact,
+  type ManagedSnapshot,
+} from "./cloud-save-manager";
 
 import "./settings-cloud-saves.scss";
 
 const CONCURRENT_ARTIFACT_REQUESTS = 6;
-
-type ManagedArtifact = GameArtifact & { shop: GameShop; objectId: string };
-
-interface CloudSaveGroup {
-  key: string;
-  title: string;
-  iconUrl: string | null;
-  artifacts: ManagedArtifact[];
-  totalSizeInBytes: number;
-}
 
 export function SettingsContextCloudSaves() {
   const { t } = useTranslation("settings");
@@ -57,10 +60,11 @@ export function SettingsContextCloudSaves() {
   const [enableCloudSavesByDefault, setEnableCloudSavesByDefault] =
     useState(false);
   const [artifacts, setArtifacts] = useState<ManagedArtifact[]>([]);
+  const [snapshots, setSnapshots] = useState<ManagedSnapshot[]>([]);
   const [loading, setLoading] = useState(false);
-  const [artifactToDelete, setArtifactToDelete] =
-    useState<ManagedArtifact | null>(null);
-  const [deletingArtifact, setDeletingArtifact] = useState(false);
+  const [entryToDelete, setEntryToDelete] =
+    useState<CloudSaveManagerEntry | null>(null);
+  const [deletingEntry, setDeletingEntry] = useState(false);
 
   useEffect(() => {
     setEnableCloudSavesByDefault(
@@ -73,6 +77,21 @@ export function SettingsContextCloudSaves() {
     setEnableCloudSavesByDefault(value);
     updateUserPreferences({ enableCloudSavesByDefault: value });
   };
+
+  const syncableGames = useMemo(
+    () => library.filter((game) => game.shop !== "custom"),
+    [library]
+  );
+
+  /* Only these shops ever hold a V2 snapshot, so the per-game fallback below
+     doesn't ask about the rest. */
+  const cloudSaveV2Games = useMemo(
+    () =>
+      syncableGames.filter(
+        (game) => getCloudSaveVisibility(game.shop).settings.showV2
+      ),
+    [syncableGames]
+  );
 
   const fetchAllArtifacts = useCallback(async (): Promise<
     ManagedArtifact[]
@@ -97,11 +116,14 @@ export function SettingsContextCloudSaves() {
     }
 
     /* The official API only answers per game, so query each library game. */
-    const games = library.filter((game) => game.shop !== "custom");
     const collected: ManagedArtifact[] = [];
 
-    for (let i = 0; i < games.length; i += CONCURRENT_ARTIFACT_REQUESTS) {
-      const batch = games.slice(i, i + CONCURRENT_ARTIFACT_REQUESTS);
+    for (
+      let i = 0;
+      i < syncableGames.length;
+      i += CONCURRENT_ARTIFACT_REQUESTS
+    ) {
+      const batch = syncableGames.slice(i, i + CONCURRENT_ARTIFACT_REQUESTS);
 
       const responses = await Promise.all(
         batch.map((game) => {
@@ -130,96 +152,262 @@ export function SettingsContextCloudSaves() {
     }
 
     return collected;
-  }, [library]);
+  }, [syncableGames]);
 
-  const refreshArtifacts = useCallback(async () => {
+  const fetchAllSnapshots = useCallback(async (): Promise<
+    ManagedSnapshot[]
+  > => {
+    if (!(await window.electron.getCloudSaveV2Supported())) return [];
+
+    /* Same shape as the artifacts listing: one request against a server that
+       can list every snapshot, per-game requests against one that can't. */
+    try {
+      const results = await window.electron.hydraApi.get<
+        LibraryCloudSaveSnapshot[]
+      >("/profile/cloud-saves/all-snapshots", { needsSubscription: true });
+
+      if (
+        results.length > 0 &&
+        results.every((snapshot) => snapshot.shop && snapshot.objectId)
+      ) {
+        return results;
+      }
+    } catch {
+      /* Fall through to the per-game requests below. */
+    }
+
+    const collected: ManagedSnapshot[] = [];
+
+    for (
+      let i = 0;
+      i < cloudSaveV2Games.length;
+      i += CONCURRENT_ARTIFACT_REQUESTS
+    ) {
+      const batch = cloudSaveV2Games.slice(i, i + CONCURRENT_ARTIFACT_REQUESTS);
+
+      const responses = await Promise.all(
+        batch.map((game) => {
+          const params = new URLSearchParams({
+            objectId: game.objectId,
+            shop: game.shop,
+          });
+
+          return window.electron.hydraApi
+            .get<LibraryCloudSaveSnapshot[]>(
+              `/profile/cloud-saves/snapshots?${params.toString()}`,
+              { needsSubscription: true }
+            )
+            .then((items) =>
+              items.map((item) => ({
+                ...item,
+                shop: game.shop,
+                objectId: game.objectId,
+              }))
+            )
+            .catch(() => [] as ManagedSnapshot[]);
+        })
+      );
+
+      collected.push(...responses.flat());
+    }
+
+    return collected;
+  }, [cloudSaveV2Games]);
+
+  const refreshCloudSaves = useCallback(async () => {
     setLoading(true);
     try {
-      setArtifacts(await fetchAllArtifacts());
+      const [nextArtifacts, nextSnapshots] = await Promise.all([
+        fetchAllArtifacts(),
+        fetchAllSnapshots(),
+      ]);
+      setArtifacts(nextArtifacts);
+      setSnapshots(nextSnapshots);
     } finally {
       setLoading(false);
     }
-  }, [fetchAllArtifacts]);
+  }, [fetchAllArtifacts, fetchAllSnapshots]);
 
   useEffect(() => {
     if (hasActiveSubscription) {
-      refreshArtifacts();
+      refreshCloudSaves();
     }
-  }, [hasActiveSubscription, refreshArtifacts]);
+  }, [hasActiveSubscription, refreshCloudSaves]);
 
-  const groups = useMemo<CloudSaveGroup[]>(() => {
-    const byGame = new Map<string, CloudSaveGroup>();
-
-    for (const artifact of artifacts) {
-      const key = `${artifact.shop}:${artifact.objectId}`;
-      const libraryGame = library.find(
-        (game) =>
-          game.shop === artifact.shop && game.objectId === artifact.objectId
-      );
-
-      let group = byGame.get(key);
-      if (!group) {
-        group = {
-          key,
-          title: libraryGame?.title ?? artifact.gameName ?? artifact.objectId,
-          iconUrl:
-            libraryGame?.customIconUrl ??
-            libraryGame?.iconUrl ??
-            artifact.gameCoverUrl ??
-            null,
-          artifacts: [],
-          totalSizeInBytes: 0,
-        };
-        byGame.set(key, group);
-      }
-
-      group.artifacts.push(artifact);
-      group.totalSizeInBytes += artifact.artifactLengthInBytes;
-    }
-
-    return [...byGame.values()].sort((a, b) => a.title.localeCompare(b.title));
-  }, [artifacts, library]);
-
-  const totalSizeInBytes = useMemo(
-    () =>
-      artifacts.reduce(
-        (total, artifact) => total + artifact.artifactLengthInBytes,
-        0
-      ),
-    [artifacts]
+  const entries = useMemo(
+    () => buildCloudSaveManagerEntries(artifacts, snapshots),
+    [artifacts, snapshots]
   );
 
-  const handleDeleteArtifact = async () => {
-    if (!artifactToDelete) return;
+  const groups = useMemo(
+    () => groupCloudSaveManagerEntries(entries, library),
+    [entries, library]
+  );
 
-    setDeletingArtifact(true);
+  const totalSizeInBytes = useMemo(
+    () => sumCloudSaveManagerSizes(entries),
+    [entries]
+  );
+
+  const deletesSnapshot = entryToDelete?.kind === "snapshot";
+
+  const handleDeleteEntry = async () => {
+    if (!entryToDelete) return;
+
+    setDeletingEntry(true);
     try {
-      await window.electron.hydraApi.delete(
-        `/profile/games/artifacts/${artifactToDelete.id}`
+      if (entryToDelete.kind === "artifact") {
+        await window.electron.hydraApi.delete(
+          `/profile/games/artifacts/${entryToDelete.artifact.id}`
+        );
+        setArtifacts((prev) =>
+          prev.filter((artifact) => artifact.id !== entryToDelete.artifact.id)
+        );
+      } else {
+        await window.electron.deleteRemoteGameCloudSaveSnapshots(
+          entryToDelete.objectId,
+          entryToDelete.shop
+        );
+        setSnapshots((prev) =>
+          prev.filter((snapshot) => snapshot.id !== entryToDelete.snapshot.id)
+        );
+      }
+      showSuccessToast(
+        deletesSnapshot ? t("cloud_save_deleted") : t("backup_deleted")
       );
-      setArtifacts((prev) =>
-        prev.filter((artifact) => artifact.id !== artifactToDelete.id)
-      );
-      showSuccessToast(t("backup_deleted"));
     } catch (_err) {
-      showErrorToast(t("backup_deletion_failed"));
+      showErrorToast(
+        deletesSnapshot
+          ? t("cloud_save_deletion_failed")
+          : t("backup_deletion_failed")
+      );
     } finally {
-      setDeletingArtifact(false);
-      setArtifactToDelete(null);
+      setDeletingEntry(false);
+      setEntryToDelete(null);
     }
+  };
+
+  const renderEntry = (entry: CloudSaveManagerEntry) => {
+    if (entry.kind === "snapshot") {
+      const { snapshot } = entry;
+
+      return (
+        <li key={entry.key} className="settings-cloud-saves__artifact">
+          <div className="settings-cloud-saves__artifact-info">
+            <div className="settings-cloud-saves__artifact-title">
+              <span>{t("cloud_save_v2_entry")}</span>
+              <Badge>{t("cloud_save_v2_badge")}</Badge>
+            </div>
+
+            <div className="settings-cloud-saves__artifact-meta">
+              <span>{formatBytes(snapshot.totalSizeBytes)}</span>
+              <span>
+                <FileIcon size={14} />
+                {t("cloud_save_v2_file_count", {
+                  count: snapshot.fileCount,
+                })}
+              </span>
+              {snapshot.hostname && (
+                <span>
+                  <DeviceDesktopIcon size={14} />
+                  {snapshot.hostname}
+                </span>
+              )}
+              <span>
+                <ClockIcon size={14} />
+                {formatDateTime(snapshot.updatedAt)}
+              </span>
+              {entry.retainedVersionCount > 0 && (
+                <span>
+                  <VersionsIcon size={14} />
+                  {t("cloud_save_v2_retained_versions", {
+                    count: entry.retainedVersionCount,
+                    size: formatBytes(entry.retainedSizeInBytes),
+                  })}
+                </span>
+              )}
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            theme="outline"
+            onClick={() => setEntryToDelete(entry)}
+            disabled={deletingEntry}
+          >
+            <TrashIcon />
+            {t("delete_cloud_save")}
+          </Button>
+        </li>
+      );
+    }
+
+    const { artifact } = entry;
+
+    return (
+      <li key={entry.key} className="settings-cloud-saves__artifact">
+        <div className="settings-cloud-saves__artifact-info">
+          <div className="settings-cloud-saves__artifact-title">
+            <span>
+              {artifact.label ??
+                t("backup_from", {
+                  date: formatDate(artifact.createdAt),
+                })}
+            </span>
+            <Badge>{t("legacy_backup_badge")}</Badge>
+            {artifact.isFrozen && (
+              <Badge>
+                <PinIcon size={12} /> {t("frozen_backup")}
+              </Badge>
+            )}
+          </div>
+
+          <div className="settings-cloud-saves__artifact-meta">
+            <span>{formatBytes(artifact.artifactLengthInBytes)}</span>
+            <span>
+              <DeviceDesktopIcon size={14} />
+              {artifact.hostname}
+            </span>
+            <span>
+              <ClockIcon size={14} />
+              {formatDateTime(artifact.createdAt)}
+            </span>
+          </div>
+        </div>
+
+        <Button
+          type="button"
+          theme="outline"
+          onClick={() => setEntryToDelete(entry)}
+          disabled={deletingEntry || artifact.isFrozen}
+          tooltip={
+            artifact.isFrozen ? t("cannot_delete_frozen_backup") : undefined
+          }
+        >
+          <TrashIcon />
+          {t("delete_backup")}
+        </Button>
+      </li>
+    );
   };
 
   return (
     <div className="settings-context-panel">
       <ConfirmationModal
-        visible={!!artifactToDelete}
-        title={t("delete_backup")}
-        descriptionText={t("delete_backup_confirmation")}
-        confirmButtonLabel={t("delete_backup")}
+        visible={!!entryToDelete}
+        title={deletesSnapshot ? t("delete_cloud_save") : t("delete_backup")}
+        descriptionText={
+          deletesSnapshot
+            ? t("delete_cloud_save_confirmation")
+            : t("delete_backup_confirmation")
+        }
+        confirmButtonLabel={
+          deletesSnapshot ? t("delete_cloud_save") : t("delete_backup")
+        }
         cancelButtonLabel={t("cancel_delete_backup")}
-        buttonsIsDisabled={deletingArtifact}
-        onConfirm={handleDeleteArtifact}
-        onClose={() => setArtifactToDelete(null)}
+        buttonsIsDisabled={deletingEntry}
+        onConfirm={handleDeleteEntry}
+        onClose={() => setEntryToDelete(null)}
       />
 
       <div className="settings-context-panel__group">
@@ -248,7 +436,7 @@ export function SettingsContextCloudSaves() {
             <Button
               type="button"
               theme="outline"
-              onClick={refreshArtifacts}
+              onClick={refreshCloudSaves}
               disabled={loading}
             >
               <SyncIcon
@@ -270,22 +458,22 @@ export function SettingsContextCloudSaves() {
           </div>
         ) : (
           <>
-            {artifacts.length > 0 && (
+            {entries.length > 0 && (
               <small className="settings-cloud-saves__summary">
                 {t("cloud_saves_summary", {
-                  count: artifacts.length,
+                  count: entries.length,
                   size: formatBytes(totalSizeInBytes),
                 })}
               </small>
             )}
 
-            {loading && artifacts.length === 0 && (
+            {loading && entries.length === 0 && (
               <p className="settings-cloud-saves__state">
                 {t("loading_cloud_saves")}
               </p>
             )}
 
-            {!loading && artifacts.length === 0 && (
+            {!loading && entries.length === 0 && (
               <p className="settings-cloud-saves__state">
                 {t("no_cloud_saves_found")}
               </p>
@@ -303,63 +491,13 @@ export function SettingsContextCloudSaves() {
                   )}
                   <h4>{group.title}</h4>
                   <span className="settings-cloud-saves__game-meta">
-                    {formatNumber(group.artifacts.length)} ·{" "}
+                    {formatNumber(group.entries.length)} ·{" "}
                     {formatBytes(group.totalSizeInBytes)}
                   </span>
                 </div>
 
                 <ul className="settings-cloud-saves__artifacts">
-                  {group.artifacts.map((artifact) => (
-                    <li
-                      key={artifact.id}
-                      className="settings-cloud-saves__artifact"
-                    >
-                      <div className="settings-cloud-saves__artifact-info">
-                        <div className="settings-cloud-saves__artifact-title">
-                          <span>
-                            {artifact.label ??
-                              t("backup_from", {
-                                date: formatDate(artifact.createdAt),
-                              })}
-                          </span>
-                          {artifact.isFrozen && (
-                            <Badge>
-                              <PinIcon size={12} /> {t("frozen_backup")}
-                            </Badge>
-                          )}
-                        </div>
-
-                        <div className="settings-cloud-saves__artifact-meta">
-                          <span>
-                            {formatBytes(artifact.artifactLengthInBytes)}
-                          </span>
-                          <span>
-                            <DeviceDesktopIcon size={14} />
-                            {artifact.hostname}
-                          </span>
-                          <span>
-                            <ClockIcon size={14} />
-                            {formatDateTime(artifact.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <Button
-                        type="button"
-                        theme="outline"
-                        onClick={() => setArtifactToDelete(artifact)}
-                        disabled={deletingArtifact || artifact.isFrozen}
-                        tooltip={
-                          artifact.isFrozen
-                            ? t("cannot_delete_frozen_backup")
-                            : undefined
-                        }
-                      >
-                        <TrashIcon />
-                        {t("delete_backup")}
-                      </Button>
-                    </li>
-                  ))}
+                  {group.entries.map(renderEntry)}
                 </ul>
               </div>
             ))}

@@ -5,6 +5,7 @@ import { CloudSaveOperationCoordinator } from "./operation-coordinator.ts";
 import {
   buildDeleteGameCloudSaveSnapshotsUrl,
   executeDeleteGameCloudSaveData,
+  executeDeleteRemoteGameCloudSaveSnapshots,
 } from "./delete-game-cloud-save-data-policy.ts";
 
 type Dependencies = Parameters<typeof executeDeleteGameCloudSaveData>[0];
@@ -454,5 +455,50 @@ describe("delete all game cloud save data", () => {
 
     assert.equal(localDeleted, true);
     assert.equal(localStateCleared, true);
+  });
+});
+
+describe("delete only the remote game cloud save", () => {
+  it("drops the local sync state after the remote save is gone", async () => {
+    const calls: string[] = [];
+
+    await executeDeleteRemoteGameCloudSaveSnapshots({
+      deleteRemoteSnapshots: async () => {
+        calls.push("delete-remote");
+      },
+      markCustomPathsPending: async () => {
+        calls.push("mark-custom-paths-pending");
+      },
+      clearSyncAnchors: async () => {
+        calls.push("clear-sync-anchors");
+      },
+    });
+
+    assert.deepEqual(calls, [
+      "delete-remote",
+      "mark-custom-paths-pending",
+      "clear-sync-anchors",
+    ]);
+  });
+
+  it("keeps the local sync state when the remote deletion fails", async () => {
+    let touchedLocalState = false;
+
+    await assert.rejects(
+      executeDeleteRemoteGameCloudSaveSnapshots({
+        deleteRemoteSnapshots: async () => {
+          throw new Error("remote-delete-failed");
+        },
+        markCustomPathsPending: async () => {
+          touchedLocalState = true;
+        },
+        clearSyncAnchors: async () => {
+          touchedLocalState = true;
+        },
+      }),
+      /remote-delete-failed/
+    );
+
+    assert.equal(touchedLocalState, false);
   });
 });

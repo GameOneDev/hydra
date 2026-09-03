@@ -15,6 +15,7 @@ export * from "./custom-path-selection";
 export * from "./custom-path-store";
 export * from "./create-remote-snapshot-from-local-state";
 export * from "./delete-game-cloud-save-data";
+export * from "./delete-remote-game-cloud-save-snapshots";
 export * from "./download-remote-snapshot-to-temp";
 export * from "./get-cloud-save-overview";
 export * from "./get-cloud-save-v2-file-details";

@@ -188,6 +188,12 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<void>,
+  deleteRemoteGameCloudSaveSnapshots: (objectId: string, shop: GameShop) =>
+    ipcRenderer.invoke(
+      "deleteRemoteGameCloudSaveSnapshots",
+      objectId,
+      shop
+    ) as Promise<void>,
   selectCloudSaveCustomPath: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "selectCloudSaveCustomPath",

@@ -298,6 +298,28 @@ export interface RemoteSnapshotSummary {
   aggregateHash: string;
 }
 
+/**
+ * A remote snapshot as the Cloud Save Manager lists it: the sync summary plus
+ * the game it belongs to. A server that can list every snapshot at once also
+ * fills in the cached game metadata; the per-game fallback only knows the
+ * identity it asked for.
+ */
+export interface LibraryCloudSaveSnapshot extends RemoteSnapshotSummary {
+  shop: GameShop;
+  objectId: string;
+  hostname?: string | null;
+  platform?: string | null;
+  gameName?: string | null;
+  gameCoverUrl?: string | null;
+  /**
+   * Older versions of the same save that a sync replaced but the server kept,
+   * for a user who turned automatic deletion off. They never take part in a
+   * sync, still cost cloud storage, and go away with the save itself.
+   */
+  retainedVersionCount?: number;
+  retainedSizeBytes?: number;
+}
+
 export type CloudSaveState =
   | "synced"
   | "partial"

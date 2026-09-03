@@ -5,6 +5,7 @@ import "./get-cloud-save-v2-file-details";
 import "./get-cloud-save-v2-supported";
 import "./get-game-backup-preview";
 import "./delete-game-cloud-save-data";
+import "./delete-remote-game-cloud-save-snapshots";
 import "./sync-game-cloud-save";
 import "./sync-game-cloud-save-from-modal";
 import "./sync-cloud-save-after-custom-path-rebind";

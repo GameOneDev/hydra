@@ -162,6 +162,10 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<void>;
+    deleteRemoteGameCloudSaveSnapshots: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<void>;
     selectCloudSaveCustomPath: (
       objectId: string,
       shop: GameShop

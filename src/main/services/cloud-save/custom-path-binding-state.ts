@@ -116,6 +116,16 @@ export const reconcileStoredCloudSaveCustomPaths = (
     return entry.syncState === "pending" ? [entry] : [];
   });
 
+/**
+ * Turns every tracked path back into a pending one, which is how a save whose
+ * remote snapshot was deleted keeps its custom paths: reconciliation against
+ * an empty remote drops confirmed entries and keeps pending ones, so the next
+ * upload carries the user's paths again instead of losing them.
+ */
+export const markStoredCloudSaveCustomPathsPending = (
+  entries: StoredCloudSaveCustomPath[]
+) => entries.map((entry) => ({ ...entry, syncState: "pending" as const }));
+
 export const confirmStoredCloudSaveCustomPaths = (
   entries: StoredCloudSaveCustomPath[],
   remoteRawPaths: ReadonlySet<string>
