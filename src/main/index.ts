@@ -205,14 +205,17 @@ const initializeApp = async () => {
 
   /* The rest of startup — the self-hosted probe, the session refresh, the
      download subsystem — settles behind the window now that one is up. */
-  const state = loadState(userPreferences).catch((error) => {
+  const startupSettled = loadState(userPreferences).catch((error) => {
     logger.error("Failed to load app state during startup", error);
   });
 
-  /* A "run" deep link launches a game, which needs the download subsystem the
-     line above is still starting. */
+  /* A "run" deep link launches a game through the download subsystem
+     loadState() starts, so it waits for startup to SETTLE — failure included.
+     A shortcut that silently does nothing is worse than one that tries and
+     reports itself: handleRunGame() opens the window when a launch fails, and
+     every other deep link only redirects a window that already exists. */
   if (deepLinkArg) {
-    void state.then(() => handleDeepLinkPath(deepLinkArg));
+    void startupSettled.then(() => handleDeepLinkPath(deepLinkArg));
   }
 };
 

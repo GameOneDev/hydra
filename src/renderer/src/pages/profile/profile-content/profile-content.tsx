@@ -134,11 +134,17 @@ export function ProfileContent() {
     )
   );
   useEffect(() => {
+    let cancelled = false;
+
     const refresh = () =>
       window.electron
         .getAchievementSouvenirsSupported()
-        .then(setSouvenirsSupported)
-        .catch(() => setSouvenirsSupported(true));
+        .then((supported) => {
+          if (!cancelled) setSouvenirsSupported(supported);
+        })
+        .catch(() => {
+          if (!cancelled) setSouvenirsSupported(true);
+        });
 
     refresh();
 
@@ -147,6 +153,7 @@ export function ProfileContent() {
     const unsubscribe = window.electron.onSelfHostedStatusUpdated(refresh);
 
     return () => {
+      cancelled = true;
       unsubscribe();
     };
   }, []);
