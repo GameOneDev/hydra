@@ -14,18 +14,10 @@ import {
 import { clearCloudSaveSyncAnchors } from "./sync-anchor";
 
 /**
- * Frees the cloud copy of a game's V2 save and leaves the files on disk
- * untouched — what the Cloud Save Manager offers, as opposed to
- * `deleteGameCloudSaveData`, which also wipes the local save.
- *
- * The local sync state has to follow the snapshot, or the next sync misreads
- * the deletion:
- * - the anchors describe the snapshot that just went away, and a merge that
- *   still trusts them reads "present locally, gone remotely, unchanged since
- *   the base" as a remote deletion and removes the local file;
- * - tracked custom paths are dropped when reconciliation finds them missing
- *   from the remote snapshot, so they go back to pending and ride along with
- *   the next upload instead of being forgotten.
+ * Frees the cloud copy and leaves the local save alone, unlike
+ * `deleteGameCloudSaveData`. The local sync state goes with the snapshot: a
+ * stale anchor would make the next sync delete the local files, and custom
+ * paths go back to pending so the next upload still carries them.
  */
 export const deleteRemoteGameCloudSaveSnapshots = async (
   objectId: string,

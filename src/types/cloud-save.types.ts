@@ -298,12 +298,8 @@ export interface RemoteSnapshotSummary {
   aggregateHash: string;
 }
 
-/**
- * A remote snapshot as the Cloud Save Manager lists it: the sync summary plus
- * the game it belongs to. A server that can list every snapshot at once also
- * fills in the cached game metadata; the per-game fallback only knows the
- * identity it asked for.
- */
+/** A remote snapshot as the Cloud Save Manager lists it: the sync summary
+ *  plus the game it belongs to. */
 export interface LibraryCloudSaveSnapshot extends RemoteSnapshotSummary {
   shop: GameShop;
   objectId: string;
@@ -311,12 +307,8 @@ export interface LibraryCloudSaveSnapshot extends RemoteSnapshotSummary {
   platform?: string | null;
   gameName?: string | null;
   gameCoverUrl?: string | null;
-  /**
-   * `retained` marks a version a sync replaced but the server kept, for a user
-   * who turned automatic deletion off: it never takes part in a sync and still
-   * costs cloud storage, so the manager lists it to be deleted on its own. A
-   * server that only answers with the save in use leaves this out.
-   */
+  /** `retained` marks a kept older version. Absent on servers that only
+   *  answer with the save in use. */
   status?: "current" | "retained";
 }
 
@@ -425,11 +417,8 @@ export interface CloudSaveV2FileDetails {
   unresolvedRemoteVariantCount: number;
 }
 
-/**
- * What became of the local save after a kept version was put back in use in
- * the cloud. The rollback itself has already happened when this is returned;
- * only the local half can come up short.
- */
+/** What became of the local save after a rollback. The cloud half has
+ *  already succeeded when this is returned. */
 export type CloudSaveVersionRestoreLocalOutcome =
   | "applied"
   | "conflict"

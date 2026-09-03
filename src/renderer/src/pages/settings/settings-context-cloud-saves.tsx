@@ -87,8 +87,7 @@ export function SettingsContextCloudSaves() {
     [library]
   );
 
-  /* Only these shops ever hold a V2 snapshot, so the per-game fallback below
-     doesn't ask about the rest. */
+  /* Only these shops hold V2 snapshots, so the fallback skips the rest. */
   const cloudSaveV2Games = useMemo(
     () =>
       syncableGames.filter(
@@ -163,8 +162,7 @@ export function SettingsContextCloudSaves() {
   > => {
     if (!(await window.electron.getCloudSaveV2Supported())) return [];
 
-    /* Same shape as the artifacts listing: one request against a server that
-       can list every snapshot, per-game requests against one that can't. */
+    /* One request where the server lists every snapshot, per-game if not. */
     try {
       const results = await window.electron.hydraApi.get<
         LibraryCloudSaveSnapshot[]
@@ -274,9 +272,8 @@ export function SettingsContextCloudSaves() {
           prev.filter((artifact) => artifact.id !== entryToDelete.artifact.id)
         );
       } else {
-        /* A kept version has no local sync state pointing at it, so it goes
-           straight to the API; the save in use needs the main process to drop
-           that state along with it. */
+        /* Nothing local points at a kept version, so it goes straight to the
+           API; the save in use needs the main process to clear its state. */
         if (entryToDelete.isRetained) {
           await window.electron.hydraApi.delete(
             `/profile/cloud-saves/snapshots/${entryToDelete.snapshot.id}`
@@ -326,8 +323,7 @@ export function SettingsContextCloudSaves() {
       if (result.local === "applied") {
         showSuccessToast(t("kept_version_restored"));
       } else {
-        /* The cloud is rolled back either way; only this device came up
-           short, and it will catch up on its next sync. */
+        /* The cloud is rolled back; only this device is behind. */
         showSuccessToast(
           t("kept_version_restored_in_cloud"),
           t(

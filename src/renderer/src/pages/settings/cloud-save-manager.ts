@@ -8,11 +8,8 @@ export type ManagedArtifact = GameArtifact & {
 
 export type ManagedSnapshot = LibraryCloudSaveSnapshot;
 
-/**
- * One stored save, whichever generation produced it: the V2 snapshot a game
- * syncs today, a version of it the server kept after a sync replaced it, or a
- * legacy V1 backup.
- */
+/** One stored save: a V2 snapshot, a kept older version of one, or a V1
+ *  backup. */
 interface CloudSaveManagerEntryBase {
   key: string;
   shop: GameShop;
@@ -24,7 +21,7 @@ interface CloudSaveManagerEntryBase {
 export type CloudSaveManagerEntry =
   | (CloudSaveManagerEntryBase & {
       kind: "snapshot";
-      /** A version the launcher no longer syncs, deletable on its own. */
+      /** An older version, deletable and restorable on its own. */
       isRetained: boolean;
       snapshot: ManagedSnapshot;
     })
@@ -43,7 +40,7 @@ export interface CloudSaveManagerGroup {
   totalSizeInBytes: number;
 }
 
-/** The bits of a library game the manager needs to label a group. */
+/** What the manager needs to label a group. */
 export interface CloudSaveManagerLibraryGame {
   shop: GameShop;
   objectId: string;
@@ -83,17 +80,13 @@ export const buildCloudSaveManagerEntries = (
 export const sumCloudSaveManagerSizes = (entries: CloudSaveManagerEntry[]) =>
   entries.reduce((total, entry) => total + entry.sizeInBytes, 0);
 
-/** Where an entry sits within its game: the save in use, then the versions
- *  kept behind it, then the legacy backups. */
+/** Order within a game: save in use, kept versions, legacy backups. */
 const entryRank = (entry: CloudSaveManagerEntry) => {
   if (entry.kind === "artifact") return 2;
   return entry.isRetained ? 1 : 0;
 };
 
-/**
- * Groups every stored save by game, ranked as above and newest first within a
- * rank.
- */
+/** Groups saves by game, ranked as above and newest first within a rank. */
 export const groupCloudSaveManagerEntries = (
   entries: CloudSaveManagerEntry[],
   library: CloudSaveManagerLibraryGame[]

@@ -28,13 +28,8 @@ interface DeleteRemoteGameCloudSaveSnapshotsDependencies {
   clearSyncAnchors: () => Promise<void>;
 }
 
-/**
- * Remote-only deletion: the cloud copy goes, the local save stays.
- *
- * The local bookkeeping runs after the remote call, and only if it succeeded —
- * dropping the anchors while the snapshot is still there would make the next
- * sync re-upload from scratch for nothing.
- */
+/** Deletes the cloud copy and keeps the local save. Local bookkeeping only
+ *  runs once the remote call succeeded. */
 export const executeDeleteRemoteGameCloudSaveSnapshots = async ({
   deleteRemoteSnapshots,
   markCustomPathsPending,
