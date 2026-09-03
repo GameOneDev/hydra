@@ -9,27 +9,23 @@ export type ManagedArtifact = GameArtifact & {
 export type ManagedSnapshot = LibraryCloudSaveSnapshot;
 
 /**
- * One stored save, whichever generation produced it: a V2 snapshot (one per
- * game, the save the launcher syncs today) or a legacy V1 backup.
+ * One stored save, whichever generation produced it: the V2 snapshot a game
+ * syncs today, a version of it the server kept after a sync replaced it, or a
+ * legacy V1 backup.
  */
 interface CloudSaveManagerEntryBase {
   key: string;
   shop: GameShop;
   objectId: string;
   sizeInBytes: number;
-  /**
-   * Cloud storage held by older versions of the same save that the server
-   * kept, which the entry's own size doesn't cover. Always zero for a legacy
-   * backup, and for a server that doesn't retain replaced versions.
-   */
-  retainedSizeInBytes: number;
-  retainedVersionCount: number;
   updatedAt: string;
 }
 
 export type CloudSaveManagerEntry =
   | (CloudSaveManagerEntryBase & {
       kind: "snapshot";
+      /** A version the launcher no longer syncs, deletable on its own. */
+      isRetained: boolean;
       snapshot: ManagedSnapshot;
     })
   | (CloudSaveManagerEntryBase & {
@@ -69,9 +65,8 @@ export const buildCloudSaveManagerEntries = (
     shop: snapshot.shop,
     objectId: snapshot.objectId,
     sizeInBytes: snapshot.totalSizeBytes,
-    retainedSizeInBytes: snapshot.retainedSizeBytes ?? 0,
-    retainedVersionCount: snapshot.retainedVersionCount ?? 0,
     updatedAt: snapshot.updatedAt,
+    isRetained: snapshot.status === "retained",
     snapshot,
   })),
   ...artifacts.map<CloudSaveManagerEntry>((artifact) => ({
@@ -80,22 +75,24 @@ export const buildCloudSaveManagerEntries = (
     shop: artifact.shop,
     objectId: artifact.objectId,
     sizeInBytes: artifact.artifactLengthInBytes,
-    retainedSizeInBytes: 0,
-    retainedVersionCount: 0,
     updatedAt: artifact.createdAt,
     artifact,
   })),
 ];
 
 export const sumCloudSaveManagerSizes = (entries: CloudSaveManagerEntry[]) =>
-  entries.reduce(
-    (total, entry) => total + entry.sizeInBytes + entry.retainedSizeInBytes,
-    0
-  );
+  entries.reduce((total, entry) => total + entry.sizeInBytes, 0);
+
+/** Where an entry sits within its game: the save in use, then the versions
+ *  kept behind it, then the legacy backups. */
+const entryRank = (entry: CloudSaveManagerEntry) => {
+  if (entry.kind === "artifact") return 2;
+  return entry.isRetained ? 1 : 0;
+};
 
 /**
- * Groups every stored save by game, newest first within a game and the V2
- * snapshot — the save actually in use — ahead of the legacy backups.
+ * Groups every stored save by game, ranked as above and newest first within a
+ * rank.
  */
 export const groupCloudSaveManagerEntries = (
   entries: CloudSaveManagerEntry[],
@@ -136,12 +133,13 @@ export const groupCloudSaveManagerEntries = (
     }
 
     group.entries.push(entry);
-    group.totalSizeInBytes += entry.sizeInBytes + entry.retainedSizeInBytes;
+    group.totalSizeInBytes += entry.sizeInBytes;
   }
 
   for (const group of byGame.values()) {
     group.entries.sort((left, right) => {
-      if (left.kind !== right.kind) return left.kind === "snapshot" ? -1 : 1;
+      const rank = entryRank(left) - entryRank(right);
+      if (rank !== 0) return rank;
       return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
     });
   }

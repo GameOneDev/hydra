@@ -250,6 +250,12 @@ export function SettingsContextCloudSaves() {
   );
 
   const deletesSnapshot = entryToDelete?.kind === "snapshot";
+  const deletesRetainedVersion = deletesSnapshot && entryToDelete.isRetained;
+  const deleteTitle = deletesRetainedVersion
+    ? t("delete_kept_version")
+    : deletesSnapshot
+      ? t("delete_cloud_save")
+      : t("delete_backup");
 
   const handleDeleteEntry = async () => {
     if (!entryToDelete) return;
@@ -264,22 +270,37 @@ export function SettingsContextCloudSaves() {
           prev.filter((artifact) => artifact.id !== entryToDelete.artifact.id)
         );
       } else {
-        await window.electron.deleteRemoteGameCloudSaveSnapshots(
-          entryToDelete.objectId,
-          entryToDelete.shop
-        );
+        /* A kept version has no local sync state pointing at it, so it goes
+           straight to the API; the save in use needs the main process to drop
+           that state along with it. */
+        if (entryToDelete.isRetained) {
+          await window.electron.hydraApi.delete(
+            `/profile/cloud-saves/snapshots/${entryToDelete.snapshot.id}`
+          );
+        } else {
+          await window.electron.deleteRemoteGameCloudSaveSnapshots(
+            entryToDelete.objectId,
+            entryToDelete.shop
+          );
+        }
         setSnapshots((prev) =>
           prev.filter((snapshot) => snapshot.id !== entryToDelete.snapshot.id)
         );
       }
       showSuccessToast(
-        deletesSnapshot ? t("cloud_save_deleted") : t("backup_deleted")
+        deletesRetainedVersion
+          ? t("kept_version_deleted")
+          : deletesSnapshot
+            ? t("cloud_save_deleted")
+            : t("backup_deleted")
       );
     } catch (_err) {
       showErrorToast(
-        deletesSnapshot
-          ? t("cloud_save_deletion_failed")
-          : t("backup_deletion_failed")
+        deletesRetainedVersion
+          ? t("kept_version_deletion_failed")
+          : deletesSnapshot
+            ? t("cloud_save_deletion_failed")
+            : t("backup_deletion_failed")
       );
     } finally {
       setDeletingEntry(false);
@@ -292,11 +313,32 @@ export function SettingsContextCloudSaves() {
       const { snapshot } = entry;
 
       return (
-        <li key={entry.key} className="settings-cloud-saves__artifact">
+        <li
+          key={entry.key}
+          className={
+            entry.isRetained
+              ? "settings-cloud-saves__artifact settings-cloud-saves__artifact--kept"
+              : "settings-cloud-saves__artifact"
+          }
+        >
           <div className="settings-cloud-saves__artifact-info">
             <div className="settings-cloud-saves__artifact-title">
-              <span>{t("cloud_save_v2_entry")}</span>
-              <Badge>{t("cloud_save_v2_badge")}</Badge>
+              <span>
+                {entry.isRetained
+                  ? t("cloud_save_v2_retained_entry", {
+                      version: snapshot.version,
+                    })
+                  : t("cloud_save_v2_entry")}
+              </span>
+              <Badge>
+                {entry.isRetained ? (
+                  <>
+                    <VersionsIcon size={12} /> {t("cloud_save_v2_kept_badge")}
+                  </>
+                ) : (
+                  t("cloud_save_v2_badge")
+                )}
+              </Badge>
             </div>
 
             <div className="settings-cloud-saves__artifact-meta">
@@ -317,15 +359,6 @@ export function SettingsContextCloudSaves() {
                 <ClockIcon size={14} />
                 {formatDateTime(snapshot.updatedAt)}
               </span>
-              {entry.retainedVersionCount > 0 && (
-                <span>
-                  <VersionsIcon size={14} />
-                  {t("cloud_save_v2_retained_versions", {
-                    count: entry.retainedVersionCount,
-                    size: formatBytes(entry.retainedSizeInBytes),
-                  })}
-                </span>
-              )}
             </div>
           </div>
 
@@ -336,7 +369,9 @@ export function SettingsContextCloudSaves() {
             disabled={deletingEntry}
           >
             <TrashIcon />
-            {t("delete_cloud_save")}
+            {entry.isRetained
+              ? t("delete_kept_version")
+              : t("delete_cloud_save")}
           </Button>
         </li>
       );
@@ -395,15 +430,15 @@ export function SettingsContextCloudSaves() {
     <div className="settings-context-panel">
       <ConfirmationModal
         visible={!!entryToDelete}
-        title={deletesSnapshot ? t("delete_cloud_save") : t("delete_backup")}
+        title={deleteTitle}
         descriptionText={
-          deletesSnapshot
-            ? t("delete_cloud_save_confirmation")
-            : t("delete_backup_confirmation")
+          deletesRetainedVersion
+            ? t("delete_kept_version_confirmation")
+            : deletesSnapshot
+              ? t("delete_cloud_save_confirmation")
+              : t("delete_backup_confirmation")
         }
-        confirmButtonLabel={
-          deletesSnapshot ? t("delete_cloud_save") : t("delete_backup")
-        }
+        confirmButtonLabel={deleteTitle}
         cancelButtonLabel={t("cancel_delete_backup")}
         buttonsIsDisabled={deletingEntry}
         onConfirm={handleDeleteEntry}

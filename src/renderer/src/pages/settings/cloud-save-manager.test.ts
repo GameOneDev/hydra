@@ -53,17 +53,35 @@ describe("cloud save manager listing", () => {
     assert.equal(sumCloudSaveManagerSizes(entries), 400);
   });
 
-  it("counts storage held by versions the server kept", () => {
+  it("lists a version the server kept under the save in use", () => {
     const entries = buildCloudSaveManagerEntries(
-      [],
-      [snapshot({ retainedVersionCount: 2, retainedSizeBytes: 500 })]
+      [artifact({ id: "backup" })],
+      [
+        snapshot({
+          id: "kept",
+          version: 2,
+          status: "retained",
+          totalSizeBytes: 250,
+          updatedAt: "2026-01-01T09:00:00Z",
+        }),
+        snapshot({ id: "in-use", status: "current" }),
+      ]
     );
 
-    assert.equal(entries[0].retainedVersionCount, 2);
-    assert.equal(sumCloudSaveManagerSizes(entries), 750);
-    assert.equal(
-      groupCloudSaveManagerEntries(entries, [])[0].totalSizeInBytes,
-      750
+    assert.equal(sumCloudSaveManagerSizes(entries), 600);
+
+    const [group] = groupCloudSaveManagerEntries(entries, []);
+
+    assert.equal(group.totalSizeInBytes, 600);
+    assert.deepEqual(
+      group.entries.map((entry) => entry.key),
+      ["snapshot:in-use", "snapshot:kept", "artifact:backup"]
+    );
+    assert.deepEqual(
+      group.entries.map(
+        (entry) => entry.kind === "snapshot" && entry.isRetained
+      ),
+      [false, true, false]
     );
   });
 

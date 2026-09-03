@@ -88,6 +88,12 @@
     border-radius: 6px;
   }
 
+  /* A version kept behind the save in use, sitting under it. */
+  &__artifact--kept {
+    margin-left: calc(globals.$spacing-unit * 2);
+    border-style: dashed;
+  }
+
   &__artifact-info {
     display: flex;
     flex-direction: column;

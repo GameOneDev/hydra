@@ -312,12 +312,12 @@ export interface LibraryCloudSaveSnapshot extends RemoteSnapshotSummary {
   gameName?: string | null;
   gameCoverUrl?: string | null;
   /**
-   * Older versions of the same save that a sync replaced but the server kept,
-   * for a user who turned automatic deletion off. They never take part in a
-   * sync, still cost cloud storage, and go away with the save itself.
+   * `retained` marks a version a sync replaced but the server kept, for a user
+   * who turned automatic deletion off: it never takes part in a sync and still
+   * costs cloud storage, so the manager lists it to be deleted on its own. A
+   * server that only answers with the save in use leaves this out.
    */
-  retainedVersionCount?: number;
-  retainedSizeBytes?: number;
+  status?: "current" | "retained";
 }
 
 export type CloudSaveState =
