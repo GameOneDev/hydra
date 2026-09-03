@@ -53,6 +53,7 @@ import type {
   CloudSaveConflictResolution,
   CloudSaveOverview,
   CloudSaveV2FileDetails,
+  RestoreCloudSaveVersionResult,
   CloudSaveSyncIpcProgressPayload,
   CloudSaveSyncProgressPayload,
   SyncCloudSaveOnGamePageResult,
@@ -194,6 +195,17 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<void>,
+  restoreRemoteGameCloudSaveVersion: (
+    objectId: string,
+    shop: GameShop,
+    snapshotId: string
+  ) =>
+    ipcRenderer.invoke(
+      "restoreRemoteGameCloudSaveVersion",
+      objectId,
+      shop,
+      snapshotId
+    ) as Promise<RestoreCloudSaveVersionResult>,
   selectCloudSaveCustomPath: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "selectCloudSaveCustomPath",

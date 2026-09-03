@@ -24,6 +24,7 @@ export * from "./launch-guard";
 export * from "./operation-gate";
 export * from "./replace-restore-targets";
 export * from "./resolve-remote-snapshot-targets";
+export * from "./restore-remote-game-cloud-save-version";
 export * from "./restore-remote-snapshot";
 export * from "./should-skip-restore-file";
 export * from "./sync-game-cloud-save";

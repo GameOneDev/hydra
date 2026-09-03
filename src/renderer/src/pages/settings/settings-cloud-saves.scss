@@ -94,6 +94,13 @@
     border-style: dashed;
   }
 
+  &__artifact-actions {
+    display: flex;
+    align-items: center;
+    gap: globals.$spacing-unit;
+    flex-shrink: 0;
+  }
+
   &__artifact-info {
     display: flex;
     flex-direction: column;

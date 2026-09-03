@@ -11,6 +11,7 @@ import "./sync-game-cloud-save-from-modal";
 import "./sync-cloud-save-after-custom-path-rebind";
 import "./sync-cloud-save-on-game-page";
 import "./resolve-cloud-save-conflict";
+import "./restore-remote-game-cloud-save-version";
 import "./select-game-backup-path";
 import "./set-cloud-save-automatic-sync-enabled";
 import "./upload-save-game";

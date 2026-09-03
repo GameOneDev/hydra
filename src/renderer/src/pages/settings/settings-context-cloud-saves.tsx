@@ -22,6 +22,7 @@ import {
   ClockIcon,
   DeviceDesktopIcon,
   FileIcon,
+  HistoryIcon,
   PinIcon,
   SyncIcon,
   TrashIcon,
@@ -65,6 +66,9 @@ export function SettingsContextCloudSaves() {
   const [entryToDelete, setEntryToDelete] =
     useState<CloudSaveManagerEntry | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
+  const [versionToRestore, setVersionToRestore] =
+    useState<CloudSaveManagerEntry | null>(null);
+  const [restoringVersion, setRestoringVersion] = useState(false);
 
   useEffect(() => {
     setEnableCloudSavesByDefault(
@@ -308,6 +312,41 @@ export function SettingsContextCloudSaves() {
     }
   };
 
+  const handleRestoreVersion = async () => {
+    if (!versionToRestore || versionToRestore.kind !== "snapshot") return;
+
+    setRestoringVersion(true);
+    try {
+      const result = await window.electron.restoreRemoteGameCloudSaveVersion(
+        versionToRestore.objectId,
+        versionToRestore.shop,
+        versionToRestore.snapshot.id
+      );
+
+      if (result.local === "applied") {
+        showSuccessToast(t("kept_version_restored"));
+      } else {
+        /* The cloud is rolled back either way; only this device came up
+           short, and it will catch up on its next sync. */
+        showSuccessToast(
+          t("kept_version_restored_in_cloud"),
+          t(
+            result.local === "conflict"
+              ? "kept_version_restored_conflict_description"
+              : "kept_version_restored_pending_description"
+          )
+        );
+      }
+
+      await refreshCloudSaves();
+    } catch (_err) {
+      showErrorToast(t("kept_version_restore_failed"));
+    } finally {
+      setRestoringVersion(false);
+      setVersionToRestore(null);
+    }
+  };
+
   const renderEntry = (entry: CloudSaveManagerEntry) => {
     if (entry.kind === "snapshot") {
       const { snapshot } = entry;
@@ -362,17 +401,31 @@ export function SettingsContextCloudSaves() {
             </div>
           </div>
 
-          <Button
-            type="button"
-            theme="outline"
-            onClick={() => setEntryToDelete(entry)}
-            disabled={deletingEntry}
-          >
-            <TrashIcon />
-            {entry.isRetained
-              ? t("delete_kept_version")
-              : t("delete_cloud_save")}
-          </Button>
+          <div className="settings-cloud-saves__artifact-actions">
+            {entry.isRetained && (
+              <Button
+                type="button"
+                theme="outline"
+                onClick={() => setVersionToRestore(entry)}
+                disabled={deletingEntry || restoringVersion}
+              >
+                <HistoryIcon />
+                {t("restore_kept_version")}
+              </Button>
+            )}
+
+            <Button
+              type="button"
+              theme="outline"
+              onClick={() => setEntryToDelete(entry)}
+              disabled={deletingEntry || restoringVersion}
+            >
+              <TrashIcon />
+              {entry.isRetained
+                ? t("delete_kept_version")
+                : t("delete_cloud_save")}
+            </Button>
+          </div>
         </li>
       );
     }
@@ -414,7 +467,7 @@ export function SettingsContextCloudSaves() {
           type="button"
           theme="outline"
           onClick={() => setEntryToDelete(entry)}
-          disabled={deletingEntry || artifact.isFrozen}
+          disabled={deletingEntry || restoringVersion || artifact.isFrozen}
           tooltip={
             artifact.isFrozen ? t("cannot_delete_frozen_backup") : undefined
           }
@@ -443,6 +496,17 @@ export function SettingsContextCloudSaves() {
         buttonsIsDisabled={deletingEntry}
         onConfirm={handleDeleteEntry}
         onClose={() => setEntryToDelete(null)}
+      />
+
+      <ConfirmationModal
+        visible={!!versionToRestore}
+        title={t("restore_kept_version")}
+        descriptionText={t("restore_kept_version_confirmation")}
+        confirmButtonLabel={t("restore_kept_version")}
+        cancelButtonLabel={t("cancel_delete_backup")}
+        buttonsIsDisabled={restoringVersion}
+        onConfirm={handleRestoreVersion}
+        onClose={() => setVersionToRestore(null)}
       />
 
       <div className="settings-context-panel__group">
