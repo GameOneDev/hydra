@@ -13,7 +13,10 @@ import { randomUUID } from "node:crypto";
 import { WindowManager } from "../window-manager";
 import { HydraApi } from "../hydra-api";
 import { getUnlockedAchievements } from "@main/events/user/get-unlocked-achievements";
-import { publishNewAchievementNotification } from "../notifications";
+import {
+  publishCombinedNewAchievementNotification,
+  publishNewAchievementNotification,
+} from "../notifications";
 import { achievementsLogger } from "../logger";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
@@ -27,6 +30,8 @@ import { groupedSouvenirWorker } from "./grouped-souvenir-worker";
 import { launchedGamePids } from "../launched-game-pids";
 import { Wine } from "../wine";
 import { createGame } from "../library-sync/create-game";
+
+const MAX_INDIVIDUAL_ACHIEVEMENT_NOTIFICATIONS = 10;
 
 const isRareAchievement = (points: number) => {
   const rawPercentage = (50 - Math.sqrt(points)) * 2;
@@ -234,6 +239,30 @@ const publishAchievementUnlockNotifications = ({
   const position =
     userPreferences.achievementCustomNotificationPosition ?? "top-left";
 
+  if (achievementsInfo.length > MAX_INDIVIDUAL_ACHIEVEMENT_NOTIFICATIONS) {
+    achievementsLogger.log(
+      "Collapsing oversized achievement batch into a combined notification",
+      game.objectId,
+      achievementsInfo.length
+    );
+
+    const publishCombinedOsNotification = () =>
+      publishCombinedNewAchievementNotification(achievementsInfo.length, 1);
+
+    if (customEnabled && process.platform !== "linux") {
+      achievementNotificationPresenter.enqueueCombined(
+        position,
+        1,
+        achievementsInfo.length,
+        publishCombinedOsNotification
+      );
+    } else {
+      publishCombinedOsNotification();
+    }
+
+    return;
+  }
+
   const publishOsNotification = () =>
     publishNewAchievementNotification({
       achievements: achievementsInfo,
@@ -268,6 +297,20 @@ export const mergeAchievements = async (
   publishNotification: boolean
 ) => {
   const gameKey = levelKeys.game(game.shop, game.objectId);
+
+  const isBaselineMerge = !AchievementMemoryStore.isHydrated(
+    game.shop,
+    game.objectId
+  );
+  const shouldPublish = publishNotification && !isBaselineMerge;
+
+  if (isBaselineMerge && publishNotification) {
+    achievementsLogger.log(
+      "Establishing achievement baseline, suppressing notifications",
+      game.objectId,
+      game.title
+    );
+  }
 
   let localGameAchievement = AchievementMemoryStore.get(
     game.shop,
@@ -323,10 +366,10 @@ export const mergeAchievements = async (
     newAchievements,
     achievementsData,
     userPreferences,
-    publishNotification
+    shouldPublish
   );
 
-  if (publishNotification) {
+  if (shouldPublish) {
     publishAchievementUnlockNotifications({
       game,
       newAchievements,
@@ -446,5 +489,7 @@ export const mergeAchievements = async (
 
   if (pendingGroupedSouvenir) void groupedSouvenirWorker.trigger();
 
-  return newAchievements.length;
+  AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+
+  return isBaselineMerge ? 0 : newAchievements.length;
 };
