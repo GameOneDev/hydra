@@ -4,8 +4,9 @@
 
 /** Trims and drops trailing slashes; blank becomes `null` ("no server"). */
 export const normalizeSelfHostedUrl = (url?: string | null) => {
-  const trimmed = url?.trim().replace(/\/+$/, "");
-  return trimmed ? trimmed : null;
+  const trimmed = url?.trim();
+  const normalized = trimmed?.replace(/\/+$/, "");
+  return normalized ? normalized : null;
 };
 
 /** Whether a normalized URL is something a request can actually be sent to. */
