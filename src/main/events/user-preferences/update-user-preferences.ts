@@ -9,6 +9,7 @@ import { patchUserProfile } from "../profile/update-profile";
 import { DownloadManager, HydraApi, Wine } from "@main/services";
 import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
+import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { getDownloadDirectoryPreferences } from "@shared";
 import {
   restoreDuckStationFileLogging,
@@ -154,6 +155,14 @@ const updateUserPreferences = async (
       valueEncoding: "json",
     }
   );
+
+  if (
+    Object.hasOwn(preferences, "enableSteamAchievements") &&
+    preferences.enableSteamAchievements === true &&
+    userPreferences?.enableSteamAchievements !== true
+  ) {
+    AchievementWatcherManager.rebaselineAchievementFiles();
+  }
 
   Wine.syncUserPreferences(updatedPreferences);
 

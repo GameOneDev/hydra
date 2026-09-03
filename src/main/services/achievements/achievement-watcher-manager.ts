@@ -195,6 +195,16 @@ export class AchievementWatcherManager {
   public static resetSessionState() {
     this.alreadySyncedGames.clear();
     AchievementMemoryStore.clear();
+
+    fileStats.clear();
+    fltFiles.clear();
+  }
+
+  public static rebaselineAchievementFiles() {
+    AchievementMemoryStore.clearHydration();
+
+    fileStats.clear();
+    fltFiles.clear();
   }
 
   public static forgetAchievementFiles(gameKey: string, filePaths: string[]) {
@@ -308,7 +318,12 @@ export class AchievementWatcherManager {
       }
     }
 
-    if (!unlockedAchievements.length) return 0;
+    if (!unlockedAchievements.length) {
+      if (gameAchievementFiles.length > 0) {
+        AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+      }
+      return 0;
+    }
 
     await mergeAchievements(game, unlockedAchievements, false);
 
@@ -389,11 +404,24 @@ export class AchievementWatcherManager {
     try {
       const gameAchievementFiles = await this.getGameAchievementFiles();
 
-      const newAchievementsCount = await Promise.all(
+      const settledCounts = await Promise.allSettled(
         gameAchievementFiles.map(({ game, achievementFiles }) => {
           return this.preProcessGameAchievementFiles(game, achievementFiles);
         })
       );
+
+      const newAchievementsCount = settledCounts.map((result, index) => {
+        if (result.status === "fulfilled") return result.value;
+
+        achievementsLogger.error(
+          "Failed to pre-process achievements for",
+          gameAchievementFiles[index].game.objectId,
+          gameAchievementFiles[index].game.title,
+          result.reason
+        );
+
+        return 0;
+      });
 
       const gamesWithNewAchievements = gameAchievementFiles.filter(
         (_, index) => newAchievementsCount[index] > 0
@@ -419,9 +447,9 @@ export class AchievementWatcherManager {
       }
     } catch (err) {
       achievementsLogger.error("Error on preSearchAchievements", err);
+    } finally {
+      this._hasFinishedPreSearch = true;
     }
-
-    this._hasFinishedPreSearch = true;
   }
 
   private static async uploadPreSearchAchievements(
