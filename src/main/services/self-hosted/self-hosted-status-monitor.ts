@@ -4,9 +4,9 @@ import { networkLogger as logger } from "../logger";
 /**
  * Keeps the self-hosted server status the launcher displays fresh.
  *
- * A single unauthenticated `/capabilities` request per interval, and only
- * while a server is actually configured — with none, the tick is a no-op and
- * nothing leaves the machine.
+ * One unauthenticated probe per interval — `/health` and `/capabilities`, read
+ * in parallel — and only while a server is actually configured: with none, the
+ * tick is a no-op and nothing leaves the machine.
  */
 export class SelfHostedStatusMonitor {
   public static readonly REFRESH_INTERVAL_IN_MS = 600_000;

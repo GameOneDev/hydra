@@ -10,23 +10,11 @@ import { Button, TextField } from "@renderer/components";
 import { settingsContext } from "@renderer/context";
 import { useAppSelector, useSelfHostedStatus, useToast } from "@renderer/hooks";
 import type { SelfHostedServerProbe, SelfHostedServerStatus } from "@types";
+import { isValidSelfHostedUrl, normalizeSelfHostedUrl } from "@shared";
 
 import "./settings-self-hosted.scss";
 
 const STATUS_ICON_SIZE = 14;
-
-const isValidServerUrl = (value: string) => {
-  if (!value) return true;
-
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-};
-
-const normalizeServerUrl = (value: string) => value.trim().replace(/\/+$/, "");
 
 /* The server answered, and answered with capabilities — anything less leaves
    the features routed to it disabled, so it is not a working connection. */
@@ -67,7 +55,7 @@ export function SettingsSelfHosted() {
     setCloudUrl(savedUrl);
   }, [savedUrl]);
 
-  const normalizedUrl = normalizeServerUrl(cloudUrl);
+  const normalizedUrl = normalizeSelfHostedUrl(cloudUrl) ?? "";
   const hasChanges = normalizedUrl !== savedUrl;
 
   const describeVersion = useCallback(
@@ -136,7 +124,7 @@ export function SettingsSelfHosted() {
    * launcher's own view of the server (and the status below) refreshes too.
    */
   const handleTest = async () => {
-    if (!normalizedUrl || !isValidServerUrl(normalizedUrl)) {
+    if (!isValidSelfHostedUrl(normalizedUrl)) {
       showErrorToast(t("self_hosted_invalid_url"));
       return;
     }
@@ -180,7 +168,7 @@ export function SettingsSelfHosted() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!isValidServerUrl(normalizedUrl)) {
+    if (normalizedUrl && !isValidSelfHostedUrl(normalizedUrl)) {
       showErrorToast(t("self_hosted_invalid_url"));
       return;
     }
@@ -190,9 +178,12 @@ export function SettingsSelfHosted() {
     try {
       /* Ping before committing so a typo is reported here, instead of turning
          into features that silently stay off. */
-      const probe = normalizedUrl
-        ? await runTest(normalizedUrl).catch(() => null)
-        : null;
+      const probe =
+        normalizedUrl && testResult?.url === normalizedUrl
+          ? testResult.probe
+          : normalizedUrl
+            ? await runTest(normalizedUrl).catch(() => null)
+            : null;
 
       await updateUserPreferences({
         selfHostedCloudUrl: normalizedUrl || null,

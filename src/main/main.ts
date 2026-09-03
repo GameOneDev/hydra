@@ -58,10 +58,20 @@ const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
   return currentSize < expectedSize;
 };
 
-export const loadState = async () => {
+/**
+ * The part of startup a window cannot open without: the lock, the IPC handlers
+ * its renderer invokes the moment it mounts, and the API client those handlers
+ * reach for. Everything here reads local state and returns in milliseconds.
+ *
+ * Anything that talks to the network — the self-hosted probe, the session
+ * refresh, the download sources — belongs in loadState(), which runs behind
+ * the window rather than in front of it. A configured cloud server that is
+ * unreachable used to hold the launcher closed for the probe's full ten-second
+ * timeout before anything was drawn.
+ */
+export const prepareForWindows = async () => {
   await Lock.acquireLock();
   await clearLegacyAchievementPersistence();
-  await migrateCloudSaveAutomaticSyncDefaults();
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,
@@ -72,6 +82,8 @@ export const loadState = async () => {
 
   Wine.syncUserPreferences(userPreferences);
 
+  /* Registers every IPC handler. A window opened before this can only answer
+     its own mount with "no handler registered". */
   await import("./events");
 
   if (userPreferences?.realDebridApiToken) {
@@ -92,6 +104,14 @@ export const loadState = async () => {
 
   GofileApi.initialize();
 
+  /* Creates the API clients and restores the session from disk; the
+     self-hosted probe it starts is deliberately left running. */
+  await HydraApi.setupApi();
+
+  return userPreferences ?? null;
+};
+
+export const loadState = async (userPreferences: UserPreferences | null) => {
   if (
     userPreferences?.appendGlobalTrackersUrl &&
     userPreferences?.globalTrackersUrl
@@ -108,25 +128,33 @@ export const loadState = async () => {
     DeckyPlugin.checkAndUpdateIfOutdated();
   }
 
-  await HydraApi.setupApi().then(async () => {
-    SelfHostedStatusMonitor.start();
+  SelfHostedStatusMonitor.start();
 
-    uploadGamesBatch();
-    void migrateDownloadSources();
+  /* Both of these read what the self-hosted server can do, so they wait for
+     the probe the launcher no longer waits for. The migration in particular
+     used to run before setupApi() had even read the configured URL, so its
+     "skip when the server can't serve V2" guard never saw a server at all. */
+  await HydraApi.whenSelfHostedCapabilitiesSettled();
+  await HydraApi.refreshSession().catch((err) =>
+    logger.error("Failed to refresh the session on startup", err)
+  );
+  await migrateCloudSaveAutomaticSyncDefaults().catch((err) =>
+    logger.error("Failed to migrate cloud save defaults", err)
+  );
 
-    const { syncDownloadSourcesFromApi } = await import("./services/user");
-    void syncDownloadSourcesFromApi();
+  uploadGamesBatch();
+  void migrateDownloadSources();
 
-    // Check for new download options on startup (if enabled)
-    (async () => {
-      await DownloadSourcesChecker.checkForChanges();
-    })();
+  const { syncDownloadSourcesFromApi } = await import("./services/user");
+  void syncDownloadSourcesFromApi();
 
-    if (HydraApi.isLoggedIn()) {
-      SSEClient.connect();
-      void groupedSouvenirWorker.trigger();
-    }
-  });
+  // Check for new download options on startup (if enabled)
+  void DownloadSourcesChecker.checkForChanges();
+
+  if (HydraApi.isLoggedIn()) {
+    SSEClient.connect();
+    void groupedSouvenirWorker.trigger();
+  }
 
   const downloadToResume =
     await DownloadOrchestrator.bootstrapDownloadsOnStartup();

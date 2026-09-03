@@ -29,6 +29,10 @@ export function useHiddenGamesEnabled() {
       /* The preferences broadcast lands before the new server's capabilities
          are known, so the answer computed from it can still be the old one. */
       window.electron.onCloudServerChanged(refresh),
+      /* A server that was unreachable at launch, or that gained the endpoints
+         since, only becomes known through a probe — the status broadcast is
+         the one signal that the answer may have changed. */
+      window.electron.onSelfHostedStatusUpdated(refresh),
       window.electron.onSignIn(refresh),
       window.electron.onSignOut(refresh),
     ];

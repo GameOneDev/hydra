@@ -170,17 +170,26 @@ export function CloudSaveV2Provider({
   useEffect(() => {
     let cancelled = false;
 
-    window.electron
-      .getCloudSaveV2Supported()
-      .then((supported) => {
-        if (!cancelled) setIsV2Supported(supported);
-      })
-      .catch(() => {
-        if (!cancelled) setIsV2Supported(false);
-      });
+    const refresh = () =>
+      window.electron
+        .getCloudSaveV2Supported()
+        .then((supported) => {
+          if (!cancelled) setIsV2Supported(supported);
+        })
+        .catch(() => {
+          if (!cancelled) setIsV2Supported(false);
+        });
+
+    refresh();
+
+    /* Support hangs off the configured server's capabilities, which are only
+       ever learned from a probe — a server that was down at launch, or that
+       has since been upgraded, changes this answer mid-session. */
+    const unsubscribe = window.electron.onSelfHostedStatusUpdated(refresh);
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 

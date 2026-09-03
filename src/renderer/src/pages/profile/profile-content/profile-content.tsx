@@ -134,10 +134,28 @@ export function ProfileContent() {
     )
   );
   useEffect(() => {
-    window.electron
-      .getAchievementSouvenirsSupported()
-      .then(setSouvenirsSupported)
-      .catch(() => setSouvenirsSupported(true));
+    let cancelled = false;
+
+    const refresh = () =>
+      window.electron
+        .getAchievementSouvenirsSupported()
+        .then((supported) => {
+          if (!cancelled) setSouvenirsSupported(supported);
+        })
+        .catch(() => {
+          if (!cancelled) setSouvenirsSupported(true);
+        });
+
+    refresh();
+
+    /* Only a probe can tell whether a self-hosted server serves souvenirs, so
+       the answer changes when one lands — not just when the URL does. */
+    const unsubscribe = window.electron.onSelfHostedStatusUpdated(refresh);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, []);
 
   const disableNsfwAlert = useAppSelector(

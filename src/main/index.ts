@@ -28,7 +28,7 @@ import { GameShop, UserPreferences } from "@types";
 import { launchGame, openClassicsGame } from "./helpers";
 import { refreshPortableShortcutLauncher } from "./helpers/shortcut-launch";
 import { lookupCachedPlatform } from "./events/library/get-library";
-import { loadState } from "./main";
+import { loadState, prepareForWindows } from "./main";
 
 crashReporter.start({
   uploadToServer: false,
@@ -164,10 +164,13 @@ const initializeApp = async () => {
     });
   });
 
+  /* Only the part a window cannot open without is awaited here. */
+  let userPreferences: UserPreferences | null = null;
+
   try {
-    await loadState();
+    userPreferences = await prepareForWindows();
   } catch (error) {
-    logger.error("Failed to load app state during startup", error);
+    logger.error("Failed to prepare the app during startup", error);
   }
 
   // Suspend can outlive the 60s stall watchdog; reconnect right away instead
@@ -200,8 +203,19 @@ const initializeApp = async () => {
 
   WindowManager.createSystemTray(language || "en");
 
+  /* The rest of startup — the self-hosted probe, the session refresh, the
+     download subsystem — settles behind the window now that one is up. */
+  const startupSettled = loadState(userPreferences).catch((error) => {
+    logger.error("Failed to load app state during startup", error);
+  });
+
+  /* A "run" deep link launches a game through the download subsystem
+     loadState() starts, so it waits for startup to SETTLE — failure included.
+     A shortcut that silently does nothing is worse than one that tries and
+     reports itself: handleRunGame() opens the window when a launch fails, and
+     every other deep link only redirects a window that already exists. */
   if (deepLinkArg) {
-    handleDeepLinkPath(deepLinkArg);
+    void startupSettled.then(() => handleDeepLinkPath(deepLinkArg));
   }
 };
 
