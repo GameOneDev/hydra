@@ -319,7 +319,9 @@ export class AchievementWatcherManager {
     }
 
     if (!unlockedAchievements.length) {
-      AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+      if (gameAchievementFiles.length > 0) {
+        AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+      }
       return 0;
     }
 
