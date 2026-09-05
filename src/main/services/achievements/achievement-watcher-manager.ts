@@ -322,7 +322,7 @@ export class AchievementWatcherManager {
       if (gameAchievementFiles.length > 0) {
         AchievementMemoryStore.markHydrated(game.shop, game.objectId);
       }
-      return 0;
+      return { newAchievements: 0, isRemoteBehind: false };
     }
 
     await mergeAchievements(game, unlockedAchievements, false);
@@ -331,10 +331,50 @@ export class AchievementWatcherManager {
       AchievementMemoryStore.get(game.shop, game.objectId)?.unlockedAchievements
         .length ?? 0;
 
-    return Math.max(
-      0,
-      mergedAchievementCount - (game.unlockedAchievementCount ?? 0)
+    const remoteAchievementCount = game.unlockedAchievementCount ?? 0;
+    const alreadyReportedCount = Math.max(
+      remoteAchievementCount,
+      game.reportedUnlockedAchievementCount ?? 0
     );
+
+    await this.persistReportedAchievementCount(game, mergedAchievementCount);
+
+    return {
+      newAchievements: Math.max(
+        0,
+        mergedAchievementCount - alreadyReportedCount
+      ),
+      isRemoteBehind: mergedAchievementCount > remoteAchievementCount,
+    };
+  }
+
+  private static async persistReportedAchievementCount(
+    game: Game,
+    unlockedAchievementCount: number
+  ) {
+    const gameKey = levelKeys.game(game.shop, game.objectId);
+    const currentGame = await gamesSublevel.get(gameKey).catch(() => null);
+
+    if (
+      !currentGame ||
+      currentGame.reportedUnlockedAchievementCount === unlockedAchievementCount
+    ) {
+      return;
+    }
+
+    await gamesSublevel
+      .put(gameKey, {
+        ...currentGame,
+        reportedUnlockedAchievementCount: unlockedAchievementCount,
+      })
+      .catch((err) =>
+        achievementsLogger.error(
+          "Failed to persist reported achievement count",
+          game.objectId,
+          game.title,
+          err
+        )
+      );
   }
 
   private static async getGameAchievementFiles() {
@@ -385,12 +425,7 @@ export class AchievementWatcherManager {
       achievementNotificationPresenter.enqueueCombined(
         userPreferences.achievementCustomNotificationPosition ?? "top-left",
         totalNewGamesWithAchievements,
-        totalNewAchievements,
-        () =>
-          publishCombinedNewAchievementNotification(
-            totalNewAchievements,
-            totalNewGamesWithAchievements
-          )
+        totalNewAchievements
       );
     } else {
       publishCombinedNewAchievementNotification(
@@ -404,13 +439,13 @@ export class AchievementWatcherManager {
     try {
       const gameAchievementFiles = await this.getGameAchievementFiles();
 
-      const settledCounts = await Promise.allSettled(
+      const settledResults = await Promise.allSettled(
         gameAchievementFiles.map(({ game, achievementFiles }) => {
           return this.preProcessGameAchievementFiles(game, achievementFiles);
         })
       );
 
-      const newAchievementsCount = settledCounts.map((result, index) => {
+      const preProcessResults = settledResults.map((result, index) => {
         if (result.status === "fulfilled") return result.value;
 
         achievementsLogger.error(
@@ -420,23 +455,25 @@ export class AchievementWatcherManager {
           result.reason
         );
 
-        return 0;
+        return { newAchievements: 0, isRemoteBehind: false };
       });
 
-      const gamesWithNewAchievements = gameAchievementFiles.filter(
-        (_, index) => newAchievementsCount[index] > 0
-      );
+      const totalNewGamesWithAchievements = preProcessResults.filter(
+        (result) => result.newAchievements > 0
+      ).length;
 
-      const totalNewGamesWithAchievements = gamesWithNewAchievements.length;
-
-      const totalNewAchievements = newAchievementsCount.reduce(
-        (acc, val) => acc + val,
+      const totalNewAchievements = preProcessResults.reduce(
+        (acc, result) => acc + result.newAchievements,
         0
       );
 
       this._hasFinishedPreSearch = true;
 
-      await this.uploadPreSearchAchievements(gamesWithNewAchievements);
+      await this.uploadPreSearchAchievements(
+        gameAchievementFiles.filter(
+          (_, index) => preProcessResults[index].isRemoteBehind
+        )
+      );
 
       if (totalNewAchievements > 0) {
         await setTimeout(4000);

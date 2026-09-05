@@ -1,12 +1,24 @@
-import type { Game, ShopAssets } from "@types";
+import type {
+  ArtworkAssetType,
+  Game,
+  GameArtworkSelection,
+  SelectedArtwork,
+  ShopAssets,
+} from "@types";
+import { chunk } from "lodash-es";
 import { HydraApi } from "../hydra-api";
+import { saveSteamGridDbArtwork } from "../game-artwork-cloud";
 import {
   gamesArtworkSelectionSublevel,
   gamesShopAssetsSublevel,
   gamesSublevel,
   levelKeys,
+  markArtworkSelectionSynced,
 } from "@main/level";
-import { reconcileRemoteArtworkSelection } from "./reconcile-remote-artwork-selection";
+import {
+  CUSTOM_ASSET_FIELD_BY_TYPE,
+  reconcileRemoteArtworkSelection,
+} from "./reconcile-remote-artwork-selection";
 import type { CustomArtworkUrls } from "./reconcile-remote-artwork-selection";
 import {
   artworkKey,
@@ -15,6 +27,10 @@ import {
 } from "./self-hosted-artwork";
 import { buildSteamCoverImageUrl } from "./steam-assets";
 import { syncHiddenGames } from "./sync-hidden-games";
+import {
+  mergeImportedProfileGame,
+  type ImportedProfileGame,
+} from "./merge-imported-profile-game";
 
 type ProfileGame = {
   id: string;
@@ -80,6 +96,36 @@ const getRemoteCustomAssets = (
   };
 };
 
+const uploadUnsyncedArtworkSelection = async (
+  gameKey: string,
+  selection: GameArtworkSelection,
+  localGame: Game | undefined,
+  remoteAssets: CustomArtworkUrls
+) => {
+  const entries = Object.entries(selection.selected) as Array<
+    [ArtworkAssetType, SelectedArtwork]
+  >;
+
+  for (const [type, selected] of entries) {
+    if (selected.syncedAt) continue;
+
+    const field = CUSTOM_ASSET_FIELD_BY_TYPE[type];
+    if (localGame?.[field]?.startsWith("local:")) continue;
+    if (remoteAssets[field] === selected.url) continue;
+
+    const synced = await saveSteamGridDbArtwork(
+      selection.shop,
+      selection.objectId,
+      type,
+      selected.url
+    );
+
+    if (synced) {
+      await markArtworkSelectionSynced(gameKey, type, selected.url);
+    }
+  }
+};
+
 const syncArtworkSelectionWithRemote = async (
   gameKey: string,
   localGame: Game | undefined,
@@ -93,17 +139,25 @@ const syncArtworkSelectionWithRemote = async (
     localGame ?? {},
     remoteCustomAssets
   );
-  if (!changed) return;
 
-  if (Object.keys(selected).length) {
-    await gamesArtworkSelectionSublevel.put(gameKey, {
-      ...selection,
-      selected,
-      updatedAt: Date.now(),
-    });
-  } else {
-    await gamesArtworkSelectionSublevel.del(gameKey);
+  let current = selection;
+
+  if (changed) {
+    if (!Object.keys(selected).length) {
+      await gamesArtworkSelectionSublevel.del(gameKey);
+      return;
+    }
+
+    current = { ...selection, selected, updatedAt: Date.now() };
+    await gamesArtworkSelectionSublevel.put(gameKey, current);
   }
+
+  await uploadUnsyncedArtworkSelection(
+    gameKey,
+    current,
+    localGame,
+    remoteCustomAssets
+  );
 };
 
 interface CollectionSource {
@@ -141,6 +195,7 @@ const getRemoteCoverImageUrl = (game: ProfileGame): string | null => {
 };
 
 const PAGE_SIZE = 100;
+const TARGETED_MERGE_CONCURRENCY = 10;
 
 const fetchAllGamesForShop = async (
   params: Record<string, unknown> = {}
@@ -336,5 +391,48 @@ export const mergeWithRemoteGames = async () => {
     await syncHiddenGames().catch(() => {});
   } catch {
     // Keep local library available when remote sync fails.
+  }
+};
+
+// Emulator imports already have catalogue assets and ROM metadata locally.
+// Fetch only the profile-owned fields for the games touched by the import.
+export const mergeImportedProfileGames = async (
+  shop: Game["shop"],
+  objectIds: string[]
+) => {
+  const uniqueObjectIds = Array.from(new Set(objectIds));
+
+  for (const objectIdChunk of chunk(
+    uniqueObjectIds,
+    TARGETED_MERGE_CONCURRENCY
+  )) {
+    const remoteGames = await Promise.all(
+      objectIdChunk.map(async (objectId) => {
+        try {
+          const remoteGame = await HydraApi.get<ImportedProfileGame>(
+            `/profile/games/${encodeURIComponent(shop)}/${encodeURIComponent(objectId)}`
+          );
+
+          if (remoteGame.shop !== shop || remoteGame.objectId !== objectId) {
+            return null;
+          }
+
+          return remoteGame;
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    for (const remoteGame of remoteGames) {
+      if (!remoteGame) continue;
+      const gameKey = levelKeys.game(remoteGame.shop, remoteGame.objectId);
+      const localGame = await gamesSublevel.get(gameKey);
+      if (!localGame) continue;
+      await gamesSublevel.put(
+        gameKey,
+        mergeImportedProfileGame(localGame, remoteGame)
+      );
+    }
   }
 };

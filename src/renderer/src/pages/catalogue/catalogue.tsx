@@ -28,6 +28,7 @@ import { useTranslation } from "react-i18next";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import cn from "classnames";
 import { CatalogueModeToggle } from "./catalogue-mode-toggle";
+import { getClassicsPlatformGroup } from "./classics-platform-group";
 import { FilterItem } from "./filter-item";
 import { FilterSection } from "./filter-section";
 import { GameItem } from "./game-item";
@@ -68,6 +69,12 @@ const filterCategoryColors = {
   releaseYear: "hsl(38deg 50% 40%)",
   platforms: "hsl(170deg 50% 36%)",
 };
+
+const classicsPlatformGroups = [
+  { label: "Sony", value: "sony" },
+  { label: "Nintendo", value: "nintendo" },
+  { label: "Other", value: "other" },
+] as const;
 
 const PAGE_SIZE = 30;
 
@@ -307,6 +314,7 @@ export default function Catalogue() {
           label: platform.name,
           value: platform.key,
           checked: classicsPlatforms.includes(platform.key),
+          group: getClassicsPlatformGroup(platform.name),
         })),
       },
       {
@@ -891,6 +899,11 @@ export default function Catalogue() {
                       dispatch(setFilters({ [section.key]: next }));
                     }}
                     items={section.items}
+                    groups={
+                      section.key === "platforms"
+                        ? classicsPlatformGroups
+                        : undefined
+                    }
                   />
                 );
               })}
