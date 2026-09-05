@@ -80,6 +80,7 @@ import type {
   CloudSaveConflictResolution,
   CloudSaveOverview,
   CloudSaveV2FileDetails,
+  RestoreCloudSaveVersionResult,
   AchievementSouvenirSyncCleanupResult,
   AchievementSouvenirSyncDetails,
   AchievementSouvenirSyncRetryResult,
@@ -162,6 +163,15 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<void>;
+    deleteRemoteGameCloudSaveSnapshots: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<void>;
+    restoreRemoteGameCloudSaveVersion: (
+      objectId: string,
+      shop: GameShop,
+      snapshotId: string
+    ) => Promise<RestoreCloudSaveVersionResult>;
     selectCloudSaveCustomPath: (
       objectId: string,
       shop: GameShop

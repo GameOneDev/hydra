@@ -14,7 +14,11 @@ export const hasRemoteChangedSinceBase = (
 export const getSyncDirection = (
   trigger: CloudSaveSyncTrigger
 ): SyncDirection => {
-  if (trigger === "pre-launch" || trigger === "custom-path-rebind") {
+  if (
+    trigger === "pre-launch" ||
+    trigger === "custom-path-rebind" ||
+    trigger === "version-restore"
+  ) {
     return "restore-only";
   }
   if (trigger === "post-exit") return "upload-only";

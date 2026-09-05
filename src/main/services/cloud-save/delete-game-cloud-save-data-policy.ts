@@ -22,6 +22,24 @@ export const buildDeleteGameCloudSaveSnapshotsUrl = (
   return `/profile/cloud-saves/snapshots?${params.toString()}`;
 };
 
+interface DeleteRemoteGameCloudSaveSnapshotsDependencies {
+  deleteRemoteSnapshots: () => Promise<void>;
+  markCustomPathsPending: () => Promise<void>;
+  clearSyncAnchors: () => Promise<void>;
+}
+
+/** Deletes the cloud copy and keeps the local save. Local bookkeeping only
+ *  runs once the remote call succeeded. */
+export const executeDeleteRemoteGameCloudSaveSnapshots = async ({
+  deleteRemoteSnapshots,
+  markCustomPathsPending,
+  clearSyncAnchors,
+}: DeleteRemoteGameCloudSaveSnapshotsDependencies) => {
+  await deleteRemoteSnapshots();
+  await markCustomPathsPending();
+  await clearSyncAnchors();
+};
+
 export const executeDeleteGameCloudSaveData = async ({
   beginPendingDeletion,
   markRemoteDeletionStarted,
