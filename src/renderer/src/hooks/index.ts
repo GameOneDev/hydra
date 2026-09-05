@@ -19,3 +19,4 @@ export * from "./game-artwork-utils";
 export * from "./use-cover-poster";
 export * from "./use-hidden-games-enabled";
 export * from "./use-self-hosted-status";
+export * from "./use-processed-image";

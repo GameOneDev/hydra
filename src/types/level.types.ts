@@ -66,6 +66,7 @@ export interface Game {
   isPinned?: boolean;
   achievementCount?: number;
   unlockedAchievementCount?: number;
+  reportedUnlockedAchievementCount?: number;
   pinnedDate?: Date | null;
   automaticCloudSync?: boolean;
   hasManuallyUpdatedPlaytime?: boolean;
@@ -153,6 +154,7 @@ export interface UserPreferences {
   runAtStartup?: boolean;
   startMinimized?: boolean;
   launchToLibraryPage?: boolean;
+  bigPictureLaunchToLibraryPage?: boolean;
   launchInBigPicture?: boolean;
   disableNsfwAlert?: boolean;
   enableAutoInstall?: boolean;
@@ -200,6 +202,10 @@ export interface UserPreferences {
      to this server while accounts, friends and everything else keep using the
      official Hydra servers. */
   selfHostedCloudUrl?: string | null;
+  hideLibraryGameBadges?: boolean;
+  hideLibraryClassicsBadges?: boolean;
+  hideLibraryAchievementProgress?: boolean;
+  autoplayAnimatedArtwork?: boolean;
 }
 
 export interface NetworkInterface {
