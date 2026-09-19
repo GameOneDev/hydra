@@ -23,6 +23,7 @@ import {
 } from "../../hooks";
 import {
   isBuiltinLibraryTab,
+  getGameCollectionIds,
   type LibraryViewMode,
   LibraryFocusGrid,
   LibraryFilters,
@@ -33,6 +34,7 @@ import {
   VerticalFocusGroup,
   LIBRARY_SECONDARY_FILTER_STORAGE_KEY,
   LIBRARY_SORT_BY_STORAGE_KEY,
+  LIBRARY_TAB_STORAGE_KEY,
   LIBRARY_VIEW_MODE_STORAGE_KEY,
   type LibrarySecondaryFilter,
   isLibraryViewMode,
@@ -89,6 +91,14 @@ function getInitialLibrarySecondaryFilter(): LibrarySecondaryFilter {
   );
 }
 
+function getInitialLibraryFilterTab(): LibraryFilterTab {
+  return getInitialLibraryStoredValue(
+    LIBRARY_TAB_STORAGE_KEY,
+    (value): value is LibraryFilterTab => Boolean(value),
+    "all"
+  );
+}
+
 function getInitialLibraryStoredValue<TValue extends string>(
   storageKey: string,
   validator: (value: string | null | undefined) => value is TValue,
@@ -115,9 +125,15 @@ export default function LibraryPage() {
   const { setFocus } = useNavigation();
   const { showSuccessToast } = useBigPictureToast();
   const { library, updateLibrary } = useLibrary();
-  const { collections, loadCollections } = useGameCollections();
-  const [selectedFilterTab, setSelectedFilterTab] =
-    useState<LibraryFilterTab>("all");
+  const {
+    collections,
+    hasLoadedCollections,
+    hasFailedToLoadCollections,
+    loadCollections,
+  } = useGameCollections();
+  const [selectedFilterTab, setSelectedFilterTab] = useState<LibraryFilterTab>(
+    getInitialLibraryFilterTab
+  );
   const [viewMode, setViewMode] = useState<LibraryViewMode>(
     getInitialLibraryViewMode
   );
@@ -160,6 +176,13 @@ export default function LibraryPage() {
     });
   const { favoriteLoadingGameId, toggleFavorite } =
     useLibraryFavorite(updateLibrary);
+  const isSelectedFilterTabAvailable =
+    isBuiltinLibraryTab(selectedFilterTab) ||
+    collections.some((collection) => collection.id === selectedFilterTab);
+  const activeFilterTab =
+    isSelectedFilterTabAvailable || !hasFailedToLoadCollections
+      ? selectedFilterTab
+      : "all";
   const {
     filteredLibrary,
     filterCounts,
@@ -168,7 +191,7 @@ export default function LibraryPage() {
     lastPlayedGames,
   } = useLibraryPageData(
     combinedLibrary,
-    selectedFilterTab,
+    activeFilterTab,
     search,
     sortBy,
     filterBy
@@ -179,7 +202,7 @@ export default function LibraryPage() {
 
   const firstContentItemId =
     viewMode === "list" ? firstListItemId : firstGridItemId;
-  const contentTransitionKey = `${selectedFilterTab}:${viewMode}:${sortBy}:${filterBy}:${deferredSearchTransition}`;
+  const contentTransitionKey = `${activeFilterTab}:${viewMode}:${sortBy}:${filterBy}:${deferredSearchTransition}`;
   const previousContentTransitionKeyRef = useRef(contentTransitionKey);
   const shouldAnimateContentChange =
     hasMountedContentRef.current &&
@@ -363,15 +386,40 @@ export default function LibraryPage() {
   }, [sortBy]);
 
   useEffect(() => {
-    if (
-      isBuiltinLibraryTab(selectedFilterTab) ||
-      collections.some((c) => c.id === selectedFilterTab)
-    ) {
+    try {
+      globalThis.window.localStorage.setItem(
+        LIBRARY_TAB_STORAGE_KEY,
+        selectedFilterTab
+      );
+    } catch {
+      return;
+    }
+  }, [selectedFilterTab]);
+
+  useEffect(() => {
+    if (isSelectedFilterTabAvailable) return;
+
+    if (hasLoadedCollections) {
+      setSelectedFilterTab("all");
       return;
     }
 
-    setSelectedFilterTab("all");
-  }, [collections, selectedFilterTab]);
+    if (!hasFailedToLoadCollections || library.length === 0) return;
+
+    const isCollectionInLibrary = library.some((game) =>
+      getGameCollectionIds(game).includes(selectedFilterTab)
+    );
+
+    if (!isCollectionInLibrary) {
+      setSelectedFilterTab("all");
+    }
+  }, [
+    hasFailedToLoadCollections,
+    hasLoadedCollections,
+    isSelectedFilterTabAvailable,
+    library,
+    selectedFilterTab,
+  ]);
 
   useEffect(() => {
     try {
@@ -417,7 +465,7 @@ export default function LibraryPage() {
           />
 
           <LibraryFilters
-            selectedTab={selectedFilterTab}
+            selectedTab={activeFilterTab}
             onSelectedTabChange={setSelectedFilterTab}
             viewMode={viewMode}
             onViewModeChange={setViewMode}

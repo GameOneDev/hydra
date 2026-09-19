@@ -58,6 +58,7 @@ const addGameToLibrary = async (
 
     game.isDeleted = false;
     game.addedToLibraryAt ??= new Date();
+    game.source = "hydra";
     if (resolvedPlatform && !game.platform) game.platform = resolvedPlatform;
     game.automaticCloudSync ??= automaticCloudSyncDefault;
     if (isHidden !== undefined) game.isHidden = isHidden;
@@ -79,6 +80,7 @@ const addGameToLibrary = async (
       addedToLibraryAt: new Date(),
       platform: resolvedPlatform ?? null,
       automaticCloudSync: automaticCloudSyncDefault,
+      source: "hydra",
     };
 
     await gamesSublevel.put(gameKey, game);

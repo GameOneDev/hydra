@@ -1,6 +1,6 @@
 import { userProfileContext } from "@renderer/context";
 import {
-  getShopsForProfilePlatform,
+  getProfileLibraryFilter,
   readStoredProfilePlatform,
   readStoredProfileSort,
   readStoredSouvenirSort,
@@ -197,8 +197,8 @@ export function ProfileContent() {
     effectiveSortBy !== prefetchedSortBy &&
     loadedLibrarySortBy !== effectiveSortBy;
 
-  const shops = useMemo<string[]>(
-    () => getShopsForProfilePlatform(platform),
+  const libraryFilter = useMemo(
+    () => getProfileLibraryFilter(platform),
     [platform]
   );
 
@@ -319,15 +319,15 @@ export function ProfileContent() {
 
   useEffect(() => {
     if (userProfile) {
-      getUserLibraryGames(effectiveSortBy, true, shops);
+      getUserLibraryGames(effectiveSortBy, true, libraryFilter);
     }
-  }, [effectiveSortBy, shops, getUserLibraryGames, userProfile]);
+  }, [effectiveSortBy, libraryFilter, getUserLibraryGames, userProfile]);
 
   useEffect(() => {
     if (userProfile) {
-      getUserStats(shops);
+      getUserStats(libraryFilter);
     }
-  }, [shops, getUserStats, userProfile]);
+  }, [libraryFilter, getUserStats, userProfile]);
 
   const handleLoadMore = useCallback(() => {
     if (
@@ -335,7 +335,7 @@ export function ProfileContent() {
       hasMoreLibraryGames &&
       !isLoadingLibraryGames
     ) {
-      loadMoreLibraryGames(effectiveSortBy, shops);
+      loadMoreLibraryGames(effectiveSortBy, libraryFilter);
     }
   }, [
     activeTab,
@@ -343,13 +343,13 @@ export function ProfileContent() {
     isLoadingLibraryGames,
     loadMoreLibraryGames,
     effectiveSortBy,
-    shops,
+    libraryFilter,
   ]);
 
   useEffect(() => {
     const handlePinToggled = () => {
       if (userProfile) {
-        getUserLibraryGames(effectiveSortBy, true, shops);
+        getUserLibraryGames(effectiveSortBy, true, libraryFilter);
       }
     };
 
@@ -357,7 +357,7 @@ export function ProfileContent() {
     return () => {
       window.removeEventListener("hydra:game-pin-toggled", handlePinToggled);
     };
-  }, [getUserLibraryGames, effectiveSortBy, shops, userProfile]);
+  }, [getUserLibraryGames, effectiveSortBy, libraryFilter, userProfile]);
 
   // Clear reviews state and reset tab when switching users
   useEffect(() => {

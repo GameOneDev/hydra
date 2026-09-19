@@ -25,7 +25,7 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 
 - **🖥️ Self-hosted cloud storage** — point Hydra at your own [`hydra-server`](https://github.com/GameOneDev/hydra-server) instance from **Settings → Integrations → Self-hosted cloud storage**.
 - **☁️ Self-hosted cloud saves** — back up and restore game saves to your own server instead of Hydra Cloud.
-- **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library.
+- **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library. Unlocks imported by the Steam integration are mirrored to your server too, since Steam uploads them through endpoints only official Hydra serves.
 - **🖼️ Custom game images** — read and share your own covers, icons, logos and banners from your server, just like Hydra Cloud does for subscribers. Custom images are visible to anyone who views your profile.
 - **📸 Self-hosted achievement souvenirs** — the screenshot Hydra takes when an achievement pops is stored on your server and shown on your profile, with per-souvenir privacy, likes and reports. Achievement names, icons and points are joined from the public catalogue, since your server only stores the picture.
 - **🔄 Download-source sync** — keep your download sources synced through your own server.
@@ -37,7 +37,7 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 3. Paste your server URL (`http://` or `https://`) and save.
 4. That's it — cloud saves, achievements, souvenirs, custom artwork and download-source sync now route to your server. Clear the field at any time to switch back to the official Hydra Cloud subscription.
 
-Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later.
+Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later. A profile's achievement total follows the platform tab you pick with hydra-server 4.1.4 or later; older servers answer for the whole library, whichever tab is open.
 
 ## Features (from upstream Hydra)
 
@@ -50,17 +50,17 @@ Each feature is enabled only when your server says it has the endpoints for it (
 
 ## Build from source and contributing
 
-Hydra is written in Node.js (Electron, React, TypeScript), Python, and Rust. For general architecture and setup, refer to the upstream documentation: [docs.hydralauncher.gg](https://docs.hydralauncher.gg/getting-started).
+Hydra is written in Node.js (Electron, React, TypeScript) and Rust, with libtorrent providing the torrent engine. For general architecture and setup, refer to the upstream documentation: [docs.hydralauncher.gg](https://docs.hydralauncher.gg/getting-started).
 
 ### Local development requirements
 
 - Node.js + Yarn
-- Python 3.9+ with `pip install -r requirements.txt`
 - Rust toolchain (for `hydra-native`)
+- Git and a C++ toolchain (Visual Studio C++ Build Tools on Windows, GCC/Clang on Linux, Xcode command-line tools on macOS). The native build obtains CMake and CTest automatically through vcpkg.
 
 Install dependencies with `yarn`. After install, `postinstall` builds the Rust native addon automatically (`hydra-native/hydra-native.node`).
 
-Packaging scripts (`yarn build:win`, `yarn build:mac`, `yarn build:linux`, `yarn build:unpack`) run `yarn build:python-rpc` automatically.
+The native build includes a Rust wrapper around pinned libtorrent. Torrenting no longer needs Python, in development or in a packaged build.
 
 ### Environment variables
 

@@ -10,9 +10,9 @@ import {
 import { Link } from "@renderer/components";
 import { gameDetailsContext } from "@renderer/context";
 import { MAX_MINUTES_TO_SHOW_IN_PLAYTIME } from "@renderer/constants";
+import { getDisplayedPlayTimeInMilliseconds } from "@shared";
 import { AlertFillIcon } from "@primer/octicons-react";
 import { Tooltip } from "react-tooltip";
-import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 import "./hero-panel-playtime.scss";
 
 export function HeroPanelPlaytime() {
@@ -52,39 +52,35 @@ export function HeroPanelPlaytime() {
       .catch(() => {});
   }, [isSteamManagedGame, game?.objectId, updateGame]);
 
-  const formatPlaytimeAmount = useMemo(() => {
-    return (milliseconds: number) => {
-      const minutes = milliseconds / 1000 / 60;
+  const formattedPlayTime = useMemo(() => {
+    const milliseconds = getDisplayedPlayTimeInMilliseconds({
+      playTimeInMilliseconds: game?.playTimeInMilliseconds || 0,
+      steamPlayTimeInMilliseconds: game?.steamPlayTimeInMilliseconds,
+    });
+    const seconds = milliseconds / 1000;
+    const minutes = seconds / 60;
 
-      if (minutes < MAX_MINUTES_TO_SHOW_IN_PLAYTIME) {
-        return t("amount_minutes", {
-          amount: minutes.toFixed(0),
-        });
-      }
+    if (minutes < MAX_MINUTES_TO_SHOW_IN_PLAYTIME) {
+      return t("amount_minutes", {
+        amount: minutes.toFixed(0),
+      });
+    }
 
-      const hours = minutes / 60;
-      return t("amount_hours", { amount: numberFormatter.format(hours) });
-    };
-  }, [numberFormatter, t]);
-
-  const formattedPlayTime = useMemo(
-    () => formatPlaytimeAmount(game?.playTimeInMilliseconds || 0),
-    [game?.playTimeInMilliseconds, formatPlaytimeAmount]
-  );
-
-  const steamPlaytime = game?.steamPlayTimeInMilliseconds ?? 0;
-
-  const steamPlaytimeInfo =
-    steamPlaytime > 0 ? (
-      <p className="hero-panel-playtime__steam-playtime">
-        <SteamLogo width={16} height={16} />
-        {t("steam_play_time", {
-          amount: formatPlaytimeAmount(steamPlaytime),
-        })}
-      </p>
-    ) : null;
+    const hours = minutes / 60;
+    return t("amount_hours", { amount: numberFormatter.format(hours) });
+  }, [
+    game?.playTimeInMilliseconds,
+    game?.steamPlayTimeInMilliseconds,
+    numberFormatter,
+    t,
+  ]);
 
   if (!game) return null;
+
+  const displayedPlayTimeInMilliseconds = getDisplayedPlayTimeInMilliseconds({
+    playTimeInMilliseconds: game.playTimeInMilliseconds || 0,
+    steamPlayTimeInMilliseconds: game.steamPlayTimeInMilliseconds,
+  });
 
   const hasDownload =
     ["active", "paused"].includes(game.download?.status as string) &&
@@ -119,11 +115,10 @@ export function HeroPanelPlaytime() {
     </div>
   );
 
-  if (!game.lastTimePlayed) {
+  if (!game.lastTimePlayed && displayedPlayTimeInMilliseconds <= 0) {
     return (
       <>
         <p>{t("not_played_yet", { title: game?.title })}</p>
-        {steamPlaytimeInfo}
         {isExtracting && extractionInProgressInfo}
         {!isExtracting && hasDownload && downloadInProgressInfo}
       </>
@@ -134,7 +129,6 @@ export function HeroPanelPlaytime() {
     return (
       <>
         <p>{t("playing_now")}</p>
-        {steamPlaytimeInfo}
         {isExtracting && extractionInProgressInfo}
         {!isExtracting && hasDownload && downloadInProgressInfo}
       </>
@@ -167,8 +161,6 @@ export function HeroPanelPlaytime() {
           amount: formattedPlayTime,
         })}
       </p>
-
-      {steamPlaytimeInfo}
 
       {isExtracting && extractionInProgressInfo}
       {!isExtracting && hasDownload && downloadInProgressInfo}

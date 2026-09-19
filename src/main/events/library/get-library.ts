@@ -11,7 +11,10 @@ import {
   gamesSublevel,
 } from "@main/level";
 import { composeAssetsWithArtwork } from "@shared";
-import { AchievementMemoryStore } from "@main/services/achievements/achievement-memory-store";
+import {
+  resolveAchievementCount,
+  resolveUnlockedAchievementCount,
+} from "@main/services/achievements/achievement-memory-store";
 
 export const lookupCachedPlatform = async (
   gameKey: string
@@ -47,20 +50,11 @@ const buildLibraryGame = async ([
     gameAssets ?? null,
     artworkSelection
   );
-  const achievements = AchievementMemoryStore.get(game.shop, game.objectId);
-
-  const validAchievementNames = new Set(
-    achievements?.achievements?.map((a) => (a.name ?? "").toUpperCase()) || []
+  const unlockedAchievementCount = resolveUnlockedAchievementCount(
+    game.shop,
+    game.objectId,
+    game.unlockedAchievementCount
   );
-
-  const unlockedAchievementCount =
-    achievements?.unlockedAchievements?.filter(
-      (unlocked) =>
-        validAchievementNames.has((unlocked.name ?? "").toUpperCase()) &&
-        unlocked.unlockTime > 0
-    ).length ??
-    game.unlockedAchievementCount ??
-    0;
 
   // Verify installer still exists, clear if deleted externally
   let installerSizeInBytes = game.installerSizeInBytes;
@@ -103,7 +97,11 @@ const buildLibraryGame = async ([
     installedSizeInBytes,
     download: download ?? null,
     unlockedAchievementCount,
-    achievementCount: game.achievementCount ?? 0,
+    achievementCount: resolveAchievementCount(
+      game.shop,
+      game.objectId,
+      game.achievementCount
+    ),
     isHidden: game.isHidden ?? false,
     // Spread composed assets last to ensure all image URLs are properly set
     ...composedAssets,

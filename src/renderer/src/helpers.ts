@@ -12,6 +12,7 @@ import type {
 import {
   platformToRetroArchPlatform,
   RETROARCH_PLATFORM_LABELS,
+  getDisplayedPlayTimeInMilliseconds,
 } from "@shared";
 
 import Color from "color";
@@ -20,9 +21,17 @@ import { v4 as uuidv4 } from "uuid";
 import { THEME_WEB_STORE_URL } from "./constants";
 import { levelDBService } from "./services/leveldb.service";
 import { logger } from "./logger";
-import type { LibraryCategory } from "./pages/library/category-filter";
 import type { SortOption } from "./pages/library/filter-options";
 import type { SkuRegion } from "./helpers/sku-region";
+import {
+  appendProfileLibraryFilterParams,
+  filterLibraryGamesByCategory,
+  getProfileLibraryFilter,
+  shouldShowProfileSteamLibraryBadge,
+  shouldShowSteamLibraryBadge,
+  type LibraryCategory,
+  type ProfileLibraryFilter,
+} from "./pages/library/library-category";
 
 export {
   getRegionsFromSkus,
@@ -450,7 +459,7 @@ const getPlayTimeDifference = (a: LibraryGame, b: LibraryGame): number => {
 };
 
 const getMostPlayedDifference = (a: LibraryGame, b: LibraryGame): number =>
-  b.playTimeInMilliseconds - a.playTimeInMilliseconds;
+  getDisplayedPlayTimeInMilliseconds(b) - getDisplayedPlayTimeInMilliseconds(a);
 
 export const isGameInstalled = (game: LibraryGame): boolean =>
   Boolean(game.executablePath) ||
@@ -567,19 +576,13 @@ export const getGameCollectionIds = (game: {
   return legacyCollectionId ? [legacyCollectionId] : [];
 };
 
-export const filterLibraryGamesByCategory = (
-  games: LibraryGame[],
-  category: LibraryCategory
-): LibraryGame[] => {
-  if (category === "pc") {
-    return games.filter((game) => game.shop !== "launchbox");
-  }
-
-  if (category === "classics") {
-    return games.filter((game) => game.shop === "launchbox");
-  }
-
-  return games;
+export {
+  appendProfileLibraryFilterParams,
+  filterLibraryGamesByCategory,
+  getProfileLibraryFilter,
+  shouldShowProfileSteamLibraryBadge,
+  shouldShowSteamLibraryBadge,
+  type ProfileLibraryFilter,
 };
 
 export const resolveImageSource = (
@@ -619,7 +622,7 @@ export type ProfileSortOption =
   | "achievementCount"
   | "playedRecently";
 
-export type ProfilePlatformFilter = "all" | "pc" | "classics";
+export type ProfilePlatformFilter = LibraryCategory;
 
 export const readStoredProfileSort = (): ProfileSortOption => {
   const saved = localStorage.getItem("profile-sort-by");
@@ -632,7 +635,10 @@ export const readStoredProfileSort = (): ProfileSortOption => {
 
 export const readStoredProfilePlatform = (): ProfilePlatformFilter => {
   const saved = localStorage.getItem("profile-platform");
-  return saved === "pc" || saved === "classics" || saved === "all"
+  return saved === "pc" ||
+    saved === "steam_library" ||
+    saved === "classics" ||
+    saved === "all"
     ? saved
     : "all";
 };
@@ -653,8 +659,4 @@ export const readStoredSouvenirGrouping = (): SouvenirGrouping => {
 
 export const getShopsForProfilePlatform = (
   platform: ProfilePlatformFilter
-): string[] => {
-  if (platform === "pc") return ["steam"];
-  if (platform === "classics") return ["launchbox"];
-  return ["steam", "launchbox"];
-};
+): string[] => getProfileLibraryFilter(platform).shops;

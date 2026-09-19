@@ -45,12 +45,16 @@ export interface Game {
   customOriginalHeroPath?: string | null;
   customOriginalCoverPath?: string | null;
   playTimeInMilliseconds: number;
+  steamPlayTimeInMilliseconds?: number | null;
+  hasActiveSteamImport?: boolean;
+  enableHydraPlaytimeTracking?: boolean;
   unsyncedDeltaPlayTimeInMilliseconds?: number;
   lastTimePlayed: Date | null;
   addedToLibraryAt?: Date | null;
   objectId: string;
   shop: GameShop;
   remoteId: string | null;
+  source?: "hydra" | "steam";
   collectionIds?: string[];
   isDeleted: boolean;
   winePrefixPath?: string | null;
@@ -75,7 +79,6 @@ export interface Game {
   installerSizeInBytes?: number | null;
   steamShortcutAppId?: number;
   launchThroughSteam?: boolean;
-  steamPlayTimeInMilliseconds?: number | null;
   steamPlaytimeLastSyncedAt?: Date | null;
   platform?: string | null;
   discs?: ClassicsDisc[];
@@ -203,9 +206,12 @@ export interface UserPreferences {
      official Hydra servers. */
   selfHostedCloudUrl?: string | null;
   hideLibraryGameBadges?: boolean;
+  hideLibraryReadySizeBadges?: boolean;
   hideLibraryClassicsBadges?: boolean;
+  hideSteamLibraryBadges?: boolean;
   hideLibraryAchievementProgress?: boolean;
   autoplayAnimatedArtwork?: boolean;
+  persistFiltersAndSorting?: boolean;
 }
 
 export interface NetworkInterface {

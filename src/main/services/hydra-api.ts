@@ -544,6 +544,11 @@ export class HydraApi {
     );
     void groupedSouvenirWorker.trigger();
 
+    const { startSteamSyncOnStartup } = await import(
+      "./steam-integration/steam-startup-sync"
+    );
+    void startSteamSyncOnStartup();
+
     if (WindowManager.mainWindow) {
       WindowManager.mainWindow.webContents.send("on-signin");
       await clearGamesRemoteIds();
@@ -619,6 +624,11 @@ export class HydraApi {
       "./achievements/grouped-souvenir-worker"
     );
     groupedSouvenirWorker.stop();
+
+    const { resetSteamStartupSync } = await import(
+      "./steam-integration/steam-startup-sync"
+    );
+    resetSteamStartupSync();
 
     this.sendSignOutEvent();
     this.post("/auth/logout", {}, { needsAuth: false }).catch(() => {});
@@ -914,7 +924,9 @@ export class HydraApi {
         params,
         ...this.getAxiosConfig(),
         headers,
-        validateStatus: options?.validateStatus,
+        ...(options?.validateStatus
+          ? { validateStatus: options.validateStatus }
+          : {}),
         signal: options?.signal,
       })
       .then((response) => response.data)
@@ -939,7 +951,9 @@ export class HydraApi {
         params,
         ...this.getAxiosConfig(),
         headers,
-        validateStatus: options?.validateStatus,
+        ...(options?.validateStatus
+          ? { validateStatus: options.validateStatus }
+          : {}),
         signal: options?.signal,
       })
       .then((response) => ({
@@ -976,7 +990,9 @@ export class HydraApi {
     return this.instance
       .post<T>(url, data, {
         ...this.getAxiosConfig(),
-        validateStatus: options?.validateStatus,
+        ...(options?.validateStatus
+          ? { validateStatus: options.validateStatus }
+          : {}),
         signal: options?.signal,
       })
       .then((response) => ({

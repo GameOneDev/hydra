@@ -100,6 +100,11 @@ import type {
   LegacySaveExportResult,
   SouvenirSort,
   SouvenirsResponse,
+  SteamSyncState,
+  SteamSyncFinishedPayload,
+  SteamSyncRunStatus,
+  SteamConnectErrorCode,
+  ExtractionFailure,
 } from "@types";
 import type { AxiosProgressEvent } from "axios";
 
@@ -318,6 +323,11 @@ declare global {
       shop: GameShop,
       objectId: string,
       automaticCloudSync: boolean
+    ) => Promise<void>;
+    setGameHydraPlaytimeEnabled: (
+      shop: GameShop,
+      objectId: string,
+      enabled: boolean
     ) => Promise<void>;
     toggleGameMangohud: (
       shop: GameShop,
@@ -918,10 +928,17 @@ declare global {
       cb: (shop: GameShop, objectId: string, progress: number) => void
     ) => () => Electron.IpcRenderer;
     onExtractionFailed: (
-      cb: (shop: GameShop, objectId: string) => void
+      cb: (
+        shop: GameShop,
+        objectId: string,
+        failure: ExtractionFailure | null
+      ) => void
     ) => () => Electron.IpcRenderer;
     onDownloadHalted: (
       cb: (gameTitle: string) => void
+    ) => () => Electron.IpcRenderer;
+    onGameExecutableNotFound: (
+      cb: (shop: GameShop, objectId: string) => void
     ) => () => Electron.IpcRenderer;
     onArchiveDeletionPrompt: (
       cb: (archivePaths: string[]) => void
@@ -1139,6 +1156,10 @@ declare global {
     getSessionHash: () => Promise<string | null>;
     onSignIn: (cb: () => void) => () => Electron.IpcRenderer;
     onAccountUpdated: (cb: () => void) => () => Electron.IpcRenderer;
+    onSteamConnected: (cb: () => void) => () => Electron.IpcRenderer;
+    onSteamConnectError: (
+      cb: (code: SteamConnectErrorCode) => void
+    ) => () => Electron.IpcRenderer;
     onSignOut: (cb: () => void) => () => Electron.IpcRenderer;
 
     /* User */
@@ -1162,6 +1183,28 @@ declare global {
     resetRetroAchievementsAchievements: (
       pendingSouvenirsOnly?: boolean
     ) => Promise<void>;
+    openRetroAchievementsConnectionWindow: () => Promise<void>;
+    minimizeRetroAchievementsConnectionWindow: () => Promise<void>;
+    closeRetroAchievementsConnectionWindow: () => Promise<void>;
+    completeRetroAchievementsConnectionWindow: () => Promise<void>;
+    onRetroAchievementsConnected: (
+      cb: () => void
+    ) => () => Electron.IpcRenderer;
+    startSteamOAuth: (lng: string) => Promise<void>;
+    disconnectSteam: (deleteImportedData: boolean) => Promise<void>;
+    startSteamSync: () => Promise<SteamSyncState>;
+    cancelSteamSync: () => Promise<void>;
+    getSteamSyncState: () => Promise<SteamSyncState>;
+    syncSteamGameOnGamePage: (steamAppId: string) => Promise<boolean>;
+    reconcileSteamSyncRun: (
+      latestSyncRunStatus: SteamSyncRunStatus | null
+    ) => Promise<void>;
+    onSteamSyncProgress: (
+      cb: (state: SteamSyncState) => void
+    ) => () => Electron.IpcRenderer;
+    onSteamSyncFinished: (
+      cb: (payload: SteamSyncFinishedPayload) => void
+    ) => () => Electron.IpcRenderer;
 
     /* Profile */
     getMe: () => Promise<UserDetails | null>;
