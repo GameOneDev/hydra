@@ -10,6 +10,7 @@ import {
 import { steamSyncLogger } from "../logger";
 import { WindowManager } from "../window-manager";
 import { createSteamGameExitSyncScheduler } from "./steam-game-exit-sync-scheduler";
+import { mirrorSteamAchievementsToSelfHostedCloud } from "./steam-achievements-cloud-mirror";
 import { createSteamGamePageSync } from "./steam-game-page-sync-core";
 import { steamSyncOrchestrator } from "./steam-sync-orchestrator";
 import { chunkSteamGameSyncPayload } from "./steam-sync-snapshot";
@@ -46,6 +47,10 @@ const publishGame = async (
     mergeImportedProfileGame(localGame, remoteGame)
   );
   if (!updatedGame || signal.aborted) return;
+
+  /* The upload above only reached official Hydra; a self-hosted server keeps
+     its achievements from the regular sync. */
+  await mirrorSteamAchievementsToSelfHostedCloud([steamAppId]);
 
   WindowManager.sendToAppWindows("on-library-batch-complete");
 };

@@ -3,6 +3,10 @@ import { isSteamReconnectRequired } from "@shared";
 import { updateGameRecord } from "../game-record-updater";
 import { HydraApi } from "../hydra-api";
 import { mergeWithRemoteGames } from "../library-sync";
+import {
+  mirrorSteamAchievementsToSelfHostedCloud,
+  syncedSteamAppIds,
+} from "./steam-achievements-cloud-mirror";
 import { steamSyncLogger } from "../logger";
 import { WindowManager } from "../window-manager";
 import type {
@@ -1014,6 +1018,19 @@ class SteamSyncOrchestrator {
         linkedExecutableCount,
       });
       WindowManager.sendToAppWindows("on-library-batch-complete");
+
+      /* The snapshot above only reached official Hydra, and the merge has
+         just linked the games it created, so their ids are known now. */
+      const mirroredGames = await mirrorSteamAchievementsToSelfHostedCloud(
+        syncedSteamAppIds(achievementsByAppId)
+      );
+
+      if (mirroredGames > 0) {
+        steamSyncLogger.log(
+          "Mirrored Steam achievements to the self-hosted cloud",
+          { mirroredGames }
+        );
+      }
 
       const status =
         await HydraApi.get<SteamIntegrationStatus>(INTEGRATION_ENDPOINT);

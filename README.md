@@ -25,7 +25,7 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 
 - **🖥️ Self-hosted cloud storage** — point Hydra at your own [`hydra-server`](https://github.com/GameOneDev/hydra-server) instance from **Settings → Integrations → Self-hosted cloud storage**.
 - **☁️ Self-hosted cloud saves** — back up and restore game saves to your own server instead of Hydra Cloud.
-- **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library.
+- **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library. Unlocks imported by the Steam integration are mirrored to your server too, since Steam uploads them through endpoints only official Hydra serves.
 - **🖼️ Custom game images** — read and share your own covers, icons, logos and banners from your server, just like Hydra Cloud does for subscribers. Custom images are visible to anyone who views your profile.
 - **📸 Self-hosted achievement souvenirs** — the screenshot Hydra takes when an achievement pops is stored on your server and shown on your profile, with per-souvenir privacy, likes and reports. Achievement names, icons and points are joined from the public catalogue, since your server only stores the picture.
 - **🔄 Download-source sync** — keep your download sources synced through your own server.
