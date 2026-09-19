@@ -246,7 +246,11 @@ const synchronizeAchievements = async (
     "/profile/games/achievements",
     {
       ...payload,
-      ...(game && { objectId: game.objectId, shop: game.shop }),
+      ...(game && {
+        objectId: game.objectId,
+        shop: game.shop,
+        hasActiveSteamImport: game.hasActiveSteamImport === true,
+      }),
     },
     { needsSubscription: true }
   );

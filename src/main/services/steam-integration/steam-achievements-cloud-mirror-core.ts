@@ -20,7 +20,7 @@ export const syncedSteamAppIds = <T>(
  */
 export const buildSteamAchievementMirrorPayload = (
   steamAppId: string,
-  game: Pick<Game, "remoteId"> | undefined,
+  game: Pick<Game, "remoteId" | "hasActiveSteamImport"> | undefined,
   unlockedAchievements: UnlockedAchievement[] | undefined
 ) => {
   if (!game?.remoteId) return null;
@@ -30,6 +30,10 @@ export const buildSteamAchievementMirrorPayload = (
     id: game.remoteId,
     objectId: steamAppId,
     shop: "steam" as const,
+    /* Lets that server answer a profile filtered to the Steam library: it
+       stores achievements per game and has no other way to know which games
+       the Steam integration brought in. */
+    hasActiveSteamImport: game.hasActiveSteamImport === true,
     achievements: unlockedAchievements,
   };
 };

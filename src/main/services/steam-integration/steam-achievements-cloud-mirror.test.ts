@@ -39,15 +39,27 @@ describe("buildSteamAchievementMirrorPayload", () => {
     assert.deepEqual(
       buildSteamAchievementMirrorPayload(
         "620",
-        { remoteId: "remote-1" },
+        { remoteId: "remote-1", hasActiveSteamImport: true },
         unlocked
       ),
       {
         id: "remote-1",
         objectId: "620",
         shop: "steam",
+        hasActiveSteamImport: true,
         achievements: unlocked,
       }
+    );
+  });
+
+  it("reports a game the Steam integration no longer imports", () => {
+    assert.equal(
+      buildSteamAchievementMirrorPayload(
+        "620",
+        { remoteId: "remote-1" },
+        unlocked
+      )?.hasActiveSteamImport,
+      false
     );
   });
 

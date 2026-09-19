@@ -37,7 +37,7 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 3. Paste your server URL (`http://` or `https://`) and save.
 4. That's it — cloud saves, achievements, souvenirs, custom artwork and download-source sync now route to your server. Clear the field at any time to switch back to the official Hydra Cloud subscription.
 
-Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later.
+Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later. A profile's achievement total follows the platform tab you pick with hydra-server 4.1.4 or later; older servers answer for the whole library, whichever tab is open.
 
 ## Features (from upstream Hydra)
 

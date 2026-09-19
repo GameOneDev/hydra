@@ -438,6 +438,10 @@ export const mergeAchievements = async (
           id: syncGame.remoteId,
           objectId: game.objectId,
           shop: game.shop,
+          /* Lets that server answer a profile filtered to the Steam library:
+             it stores achievements per game and has no other way to know
+             which games the Steam integration brought in. */
+          hasActiveSteamImport: syncGame.hasActiveSteamImport === true,
           achievements: achievementsToSync,
         },
         { needsSubscription: true }

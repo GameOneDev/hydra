@@ -219,7 +219,10 @@ export function UserProfileContextProvider({
 
           /* The official API only computes achievement totals for
              subscribers; the self-hosted server knows them from achievement
-             sync, so fill the gap from there. */
+             sync, so fill the gap from there. It reads the same filter, so
+             the total follows the tab the profile is showing — a server
+             predating the parameters ignores them and answers for the whole
+             library, which is what this fallback did before. */
           if (
             merged.unlockedAchievementSum === undefined &&
             selfHostedCloudUrl
@@ -227,7 +230,7 @@ export function UserProfileContextProvider({
             try {
               const fallback = await window.electron.hydraApi.get<{
                 unlockedAchievementSum: number | null;
-              }>(`/profile/stats/${userId}`);
+              }>(`/profile/stats/${userId}?${params.toString()}`);
 
               if (typeof fallback?.unlockedAchievementSum === "number") {
                 merged = {
