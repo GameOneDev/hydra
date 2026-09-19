@@ -34,6 +34,10 @@ export interface LudusaviConfig {
       enable: boolean;
     }[];
   };
+  roots?: {
+    path: string;
+    store: string;
+  }[];
   customGames: {
     name: string;
     files: string[];

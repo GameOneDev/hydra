@@ -1,0 +1,58 @@
+@use "../../scss/globals.scss";
+
+.self-hosted-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: calc(globals.$spacing-unit / 1.5);
+  color: globals.$body-color;
+  border-bottom: solid 1px transparent;
+  flex-shrink: 0;
+
+  &:hover:not(:disabled) {
+    border-bottom: solid 1px globals.$body-color;
+    cursor: pointer;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  small {
+    white-space: nowrap;
+  }
+
+  &__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: globals.$body-color;
+    flex-shrink: 0;
+  }
+
+  &--online &__dot {
+    background-color: globals.$success-color;
+  }
+
+  &--degraded &__dot {
+    background-color: globals.$warning-color;
+  }
+
+  &--offline &__dot {
+    background-color: globals.$error-color;
+  }
+
+  &--checking &__dot {
+    animation: self-hosted-status-indicator-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes self-hosted-status-indicator-pulse {
+  0%,
+  100% {
+    opacity: globals.$disabled-opacity;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}

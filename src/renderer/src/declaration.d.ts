@@ -39,6 +39,8 @@ import type {
   AchievementNotificationRequest,
   Game,
   DiskUsage,
+  SelfHostedServerProbe,
+  SelfHostedServerStatus,
   NetworkInterface,
   DownloadSource,
   LocalNotification,
@@ -80,6 +82,7 @@ import type {
   CloudSaveConflictResolution,
   CloudSaveOverview,
   CloudSaveV2FileDetails,
+  RestoreCloudSaveVersionResult,
   AchievementSouvenirSyncCleanupResult,
   AchievementSouvenirSyncDetails,
   AchievementSouvenirSyncRetryResult,
@@ -95,6 +98,8 @@ import type {
   ConfirmCloudSaveCustomPathRebindApprovalResult,
   LegacySaveExportProgress,
   LegacySaveExportResult,
+  SouvenirSort,
+  SouvenirsResponse,
   SteamSyncState,
   SteamSyncFinishedPayload,
   SteamSyncRunStatus,
@@ -142,6 +147,21 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<CloudSaveOverview>;
+    /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
+    getCloudSaveV2Supported: () => Promise<boolean>;
+    /** False when a self-hosted cloud server has no souvenir endpoints. */
+    getAchievementSouvenirsSupported: () => Promise<boolean>;
+    /**
+     * A profile's souvenirs, from whichever server its owner captured them on
+     * — the self-hosted one, or official Hydra for everyone else.
+     */
+    getProfileSouvenirs: (payload: {
+      userId: string;
+      take?: number;
+      skip?: number;
+      sortBy?: SouvenirSort;
+      language?: string;
+    }) => Promise<SouvenirsResponse | null>;
     getCloudSaveV2FileDetails: (
       objectId: string,
       shop: GameShop
@@ -150,6 +170,15 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<void>;
+    deleteRemoteGameCloudSaveSnapshots: (
+      objectId: string,
+      shop: GameShop
+    ) => Promise<void>;
+    restoreRemoteGameCloudSaveVersion: (
+      objectId: string,
+      shop: GameShop,
+      snapshotId: string
+    ) => Promise<RestoreCloudSaveVersionResult>;
     selectCloudSaveCustomPath: (
       objectId: string,
       shop: GameShop
@@ -317,7 +346,8 @@ declare global {
       shop: GameShop,
       objectId: string,
       title: string,
-      platform?: string | null
+      platform?: string | null,
+      isHidden?: boolean
     ) => Promise<void>;
     addCustomGameToLibrary: (
       title: string,
@@ -438,6 +468,10 @@ declare global {
     ) => Promise<string | null>;
     verifyExecutablePathInUse: (executablePath: string) => Promise<Game>;
     getLibrary: () => Promise<LibraryGame[]>;
+    getHiddenLibrary: () => Promise<LibraryGame[]>;
+    getHiddenGamesEnabled: () => Promise<boolean>;
+    hideGame: (shop: GameShop, objectId: string) => Promise<boolean>;
+    unhideGame: (shop: GameShop, objectId: string) => Promise<boolean>;
     refreshLibraryAssets: () => Promise<void>;
     openGameInstaller: (shop: GameShop, objectId: string) => Promise<boolean>;
     getGameInstallerActionType: (
@@ -833,6 +867,15 @@ declare global {
       saveId: string,
       label: string
     ) => Promise<EmulationCloudSave>;
+    getSelfHostedStatus: () => Promise<SelfHostedServerStatus>;
+    refreshSelfHostedStatus: () => Promise<SelfHostedServerStatus>;
+    testSelfHostedServer: (url: string) => Promise<SelfHostedServerProbe>;
+    onSelfHostedStatusUpdated: (
+      cb: (status: SelfHostedServerStatus) => void
+    ) => () => Electron.IpcRenderer;
+    onCloudServerChanged: (
+      cb: (status: SelfHostedServerStatus) => void
+    ) => () => Electron.IpcRenderer;
     onUserPreferencesUpdated: (
       cb: (preferences: UserPreferences | null) => void
     ) => () => Electron.IpcRenderer;
@@ -872,6 +915,12 @@ declare global {
       executablePath: string;
       iconUrl: string | null;
     } | null>;
+    importSteamGames: () => Promise<{
+      importedGames: { title: string; objectId: string }[];
+      totalInstalled: number;
+    }>;
+    openSteamGame: (shop: GameShop, objectId: string) => Promise<void>;
+    syncSteamPlaytime: () => Promise<number>;
     onExtractionComplete: (
       cb: (shop: GameShop, objectId: string) => void
     ) => () => Electron.IpcRenderer;

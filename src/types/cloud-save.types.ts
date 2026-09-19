@@ -298,6 +298,20 @@ export interface RemoteSnapshotSummary {
   aggregateHash: string;
 }
 
+/** A remote snapshot as the Cloud Save Manager lists it: the sync summary
+ *  plus the game it belongs to. */
+export interface LibraryCloudSaveSnapshot extends RemoteSnapshotSummary {
+  shop: GameShop;
+  objectId: string;
+  hostname?: string | null;
+  platform?: string | null;
+  gameName?: string | null;
+  gameCoverUrl?: string | null;
+  /** `retained` marks a kept older version. Absent on servers that only
+   *  answer with the save in use. */
+  status?: "current" | "retained";
+}
+
 export type CloudSaveState =
   | "synced"
   | "partial"
@@ -403,13 +417,29 @@ export interface CloudSaveV2FileDetails {
   unresolvedRemoteVariantCount: number;
 }
 
+/** What became of the local save after a rollback. The cloud half has
+ *  already succeeded when this is returned. */
+export type CloudSaveVersionRestoreLocalOutcome =
+  | "applied"
+  | "conflict"
+  | "unavailable"
+  | "failed";
+
+export interface RestoreCloudSaveVersionResult {
+  snapshotId: string;
+  version: number;
+  local: CloudSaveVersionRestoreLocalOutcome;
+}
+
 export type CloudSaveSyncTrigger =
   | "manual"
   | "environment-changed"
   | "game-page-open"
   | "custom-path-rebind"
   | "pre-launch"
-  | "post-exit";
+  | "post-exit"
+  /** Bringing this device in line with a version restored in the cloud. */
+  | "version-restore";
 
 export type CloudSaveSyncAction =
   | "none"
@@ -441,7 +471,7 @@ export type SyncCloudSaveOnGamePageResult =
 
 export type CloudSaveAutomaticSyncTrigger = Exclude<
   CloudSaveSyncTrigger,
-  "manual" | "custom-path-rebind"
+  "manual" | "custom-path-rebind" | "version-restore"
 >;
 
 export type CloudSaveAutomaticSyncEvent =

@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 import {
   applyCloudSaveCustomPathLocalPathMigrations,
   classifyCloudSaveCustomPathResolutionError,
+  markStoredCloudSaveCustomPathsPending,
   normalizeStoredCloudSaveCustomPathEntries,
   reconcileStoredCloudSaveCustomPaths,
   removeStoredCloudSaveCustomPath,
@@ -204,6 +205,21 @@ describe("cloud save custom path binding state", () => {
           localPath: "D:/Saves/Game",
         },
       ]
+    );
+  });
+
+  it("survives a deleted remote snapshot by pending every tracked path", () => {
+    const rawPath = "<custom><windows><winDocuments>/Game";
+    const pending = markStoredCloudSaveCustomPathsPending([
+      { rawPath, syncState: "confirmed", localPath: "D:/Saves/Game" },
+    ]);
+
+    assert.deepEqual(pending, [
+      { rawPath, syncState: "pending", localPath: "D:/Saves/Game" },
+    ]);
+    assert.deepEqual(
+      reconcileStoredCloudSaveCustomPaths(pending, new Set()),
+      pending
     );
   });
 

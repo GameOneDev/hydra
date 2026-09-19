@@ -1,6 +1,7 @@
 name: Build
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches:
@@ -14,7 +15,24 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [windows-2022, ubuntu-latest]
+        include:
+          - os: windows-2022
+            build-script: build:win
+            artifact-suffix: windows
+          - os: windows-11-arm
+            build-script: build:win-arm64
+            artifact-suffix: windows-arm64
+          - os: ubuntu-latest
+            build-script: build:linux
+            artifact-suffix: linux
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            build-script: build:mac
+            artifact-suffix: macos
+          # macOS x64 (Intel)
+          - os: macos-15-intel
+            build-script: build:mac
+            artifact-suffix: macos-intel
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -78,59 +96,38 @@ jobs:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build
+        run: yarn ${{ matrix.build-script }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_STAGING_API_URL }}
+          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_STAGING_AUTH_URL }}
+          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_STAGING_CHECKOUT_URL }}
+          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
+          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
+          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
+          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Rename builder debug file per platform
+        shell: bash
         run: |
-          yarn build:linux
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_STAGING_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_STAGING_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_STAGING_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-
-      - name: Build Windows
-        if: matrix.os == 'windows-2022'
-        run: yarn build:win
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_STAGING_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_STAGING_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_STAGING_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-
-      - name: Upload build
-        env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          S3_BUILDS_BUCKET_NAME: ${{ secrets.S3_BUILDS_BUCKET_NAME }}
-          BUILDS_URL: ${{ secrets.BUILDS_URL }}
-          BUILD_WEBHOOK_URL: ${{ secrets.BUILD_WEBHOOK_URL }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_ACTOR_ID: ${{ github.actor_id }}
-          BUILD_FLAVOR: staging
-        run: node scripts/upload-build.cjs
+          if [[ -f dist/builder-debug.yml ]]; then
+            cp dist/builder-debug.yml dist/builder-debug-${{ matrix.artifact-suffix }}.yml
+          fi
 
       - name: Create artifact
         uses: actions/upload-artifact@v4
         with:
           name: Build-staging-${{ matrix.os }}
           path: |
-            dist/*-portable.exe
+            dist/*-portable*.exe
+            dist/*-setup*.exe
             dist/*.zip
             dist/*.dmg
             dist/*.deb
@@ -145,7 +142,24 @@ jobs:
 
     strategy:
       matrix:
-        os: [windows-2022, ubuntu-latest]
+        include:
+          - os: windows-2022
+            build-script: build:win
+            artifact-suffix: windows
+          - os: windows-11-arm
+            build-script: build:win-arm64
+            artifact-suffix: windows-arm64
+          - os: ubuntu-latest
+            build-script: build:linux
+            artifact-suffix: linux
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            build-script: build:mac
+            artifact-suffix: macos
+          # macOS x64 (Intel)
+          - os: macos-15-intel
+            build-script: build:mac
+            artifact-suffix: macos-intel
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -209,59 +223,38 @@ jobs:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
+      - name: Build
+        run: yarn ${{ matrix.build-script }}
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
+          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
+          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
+          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
+          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
+          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
+          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Rename builder debug file per platform
+        shell: bash
         run: |
-          yarn build:linux
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-
-      - name: Build Windows
-        if: matrix.os == 'windows-2022'
-        run: yarn build:win
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-
-      - name: Upload build
-        env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          S3_BUILDS_BUCKET_NAME: ${{ secrets.S3_BUILDS_BUCKET_NAME }}
-          BUILDS_URL: ${{ secrets.BUILDS_URL }}
-          BUILD_WEBHOOK_URL: ${{ secrets.BUILD_WEBHOOK_URL }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_ACTOR_ID: ${{ github.actor_id }}
-          BUILD_FLAVOR: production
-        run: node scripts/upload-build.cjs
+          if [[ -f dist/builder-debug.yml ]]; then
+            cp dist/builder-debug.yml dist/builder-debug-${{ matrix.artifact-suffix }}.yml
+          fi
 
       - name: Create artifact
         uses: actions/upload-artifact@v4
         with:
           name: Build-production-${{ matrix.os }}
           path: |
-            dist/*-portable.exe
+            dist/*-portable*.exe
+            dist/*-setup*.exe
             dist/*.zip
             dist/*.dmg
             dist/*.deb

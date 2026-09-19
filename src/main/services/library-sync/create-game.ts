@@ -7,6 +7,13 @@ export const createGame = async (game: Game) => {
     return;
   }
 
+  if (game.isHidden) {
+    return HydraApi.post("/profile/hidden-games", {
+      shop: game.shop,
+      objectId: game.objectId,
+    });
+  }
+
   return HydraApi.post(`/profile/games`, {
     objectId: game.objectId,
     playTimeInMilliseconds: Math.trunc(game.playTimeInMilliseconds ?? 0),

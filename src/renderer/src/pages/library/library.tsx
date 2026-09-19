@@ -14,6 +14,7 @@ import {
   useAppSelector,
   useGameCollections,
   useUserDetails,
+  useHiddenGamesEnabled,
 } from "@renderer/hooks";
 import { setHeaderTitle } from "@renderer/features";
 import {
@@ -22,6 +23,8 @@ import {
   FileDirectoryIcon,
   SearchIcon,
   SyncIcon,
+  EyeIcon,
+  EyeClosedIcon,
 } from "@primer/octicons-react";
 import { useTranslation } from "react-i18next";
 import { AuthPage, removeDiacritics } from "@shared";
@@ -94,8 +97,17 @@ const SORT_OPTIONS: SortOption[] = [
 ];
 
 export default function Library() {
-  const { library, updateLibrary } = useLibrary();
+  const { library, hiddenLibrary, updateLibrary } = useLibrary();
+  const [showHidden, setShowHidden] = useState(() => {
+    return localStorage.getItem("library-show-hidden") === "true";
+  });
+
+  const combinedLibrary = useMemo(() => {
+    return showHidden ? [...library, ...hiddenLibrary] : library;
+  }, [library, hiddenLibrary, showHidden]);
+
   const { userDetails } = useUserDetails();
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
   const {
     collections,
     loadCollections,
@@ -381,8 +393,8 @@ export default function Library() {
   ]);
 
   const sortedLibrary = useMemo(
-    () => sortLibraryGames(library, sortBy),
-    [library, sortBy]
+    () => sortLibraryGames(combinedLibrary, sortBy),
+    [combinedLibrary, sortBy]
   );
 
   const filteredLibrary = useMemo(() => {
@@ -451,7 +463,7 @@ export default function Library() {
 
   const uniquePlatforms = useMemo(() => {
     const set = new Set<string>();
-    for (const game of library) {
+    for (const game of combinedLibrary) {
       if (game.shop === "launchbox" && game.platform) {
         set.add(game.platform);
       }
@@ -459,7 +471,7 @@ export default function Library() {
     return Array.from(set).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
-  }, [library]);
+  }, [combinedLibrary]);
 
   useEffect(() => {
     if (uniquePlatforms.length === 0 || selectedPlatforms.length === 0) return;
@@ -475,8 +487,8 @@ export default function Library() {
   }, [uniquePlatforms, selectedPlatforms, handlePlatformsChange]);
 
   const favoritesCount = useMemo(() => {
-    return library.filter((game) => game.favorite).length;
-  }, [library]);
+    return combinedLibrary.filter((game) => game.favorite).length;
+  }, [combinedLibrary]);
 
   const libraryCollections = useMemo<GameCollection[]>(() => {
     return [
@@ -534,7 +546,7 @@ export default function Library() {
     setHeaderHidden,
   ]);
 
-  const hasGames = library.length > 0;
+  const hasGames = combinedLibrary.length > 0;
   const hasNoFilteredGames = filteredLibrary.length === 0;
   const isFavoritesCollectionSelected =
     selectedCollectionId === FAVORITES_COLLECTION_ID;
@@ -599,6 +611,29 @@ export default function Library() {
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
               />
+              {hiddenGamesEnabled && (
+                <button
+                  type="button"
+                  className={`library-view-options__option view-options__button ${showHidden ? "active view-options__button--active" : ""}`}
+                  onClick={() => {
+                    const next = !showHidden;
+                    setShowHidden(next);
+                    localStorage.setItem(
+                      "library-show-hidden",
+                      next.toString()
+                    );
+                  }}
+                  title={
+                    showHidden ? t("hide_hidden_games") : t("show_hidden_games")
+                  }
+                >
+                  {showHidden ? (
+                    <EyeIcon size={16} />
+                  ) : (
+                    <EyeClosedIcon size={16} />
+                  )}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -689,7 +724,27 @@ export default function Library() {
                   }}
                 >
                   {rows[virtualRow.index].map((game) =>
-                    viewMode === "large" ? (
+                    game.isHidden ? (
+                      <div
+                        key={`${game.shop}-${game.objectId}`}
+                        className="library__hidden-game"
+                      >
+                        <span className="library__hidden-game-badge">
+                          <EyeClosedIcon size={16} />
+                        </span>
+                        {viewMode === "large" ? (
+                          <LibraryGameCardLarge
+                            game={game}
+                            onContextMenu={handleOpenContextMenu}
+                          />
+                        ) : (
+                          <LibraryGameCard
+                            game={game}
+                            onContextMenu={handleOpenContextMenu}
+                          />
+                        )}
+                      </div>
+                    ) : viewMode === "large" ? (
                       <LibraryGameCardLarge
                         key={`${game.shop}-${game.objectId}`}
                         game={game}

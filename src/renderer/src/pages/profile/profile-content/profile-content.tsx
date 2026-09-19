@@ -35,6 +35,7 @@ import { BadgesBox } from "./badges-box";
 import { FriendsBox, FriendsBoxAddButton } from "./friends-box";
 import { RecentGamesBox } from "./recent-games-box";
 import { UserStatsBox } from "./user-stats-box";
+import { PlaytimeHeatmapBox } from "./playtime-heatmap-box";
 import { ProfileSection } from "../profile-section/profile-section";
 import { DeleteReviewModal } from "@renderer/pages/game-details/modals/delete-review-modal";
 import { GAME_STATS_ANIMATION_DURATION_IN_MS } from "./profile-animations";
@@ -125,7 +126,10 @@ export function ProfileContent() {
     removeSouvenir,
     loadedLibrarySortBy,
   } = useContext(userProfileContext);
-  const { userDetails } = useUserDetails();
+  const { userDetails, hasActiveSubscription } = useUserDetails();
+  /* Optimistic until the answer is in: only a self-hosted server can say it
+     has no souvenirs. */
+  const [souvenirsSupported, setSouvenirsSupported] = useState(true);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
@@ -137,6 +141,31 @@ export function ProfileContent() {
       window.electron.platform
     )
   );
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = () =>
+      window.electron
+        .getAchievementSouvenirsSupported()
+        .then((supported) => {
+          if (!cancelled) setSouvenirsSupported(supported);
+        })
+        .catch(() => {
+          if (!cancelled) setSouvenirsSupported(true);
+        });
+
+    refresh();
+
+    /* Only a probe can tell whether a self-hosted server serves souvenirs, so
+       the answer changes when one lands — not just when the URL does. */
+    const unsubscribe = window.electron.onSelfHostedStatusUpdated(refresh);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
   const disableNsfwAlert = useAppSelector(
     (state) => state.userPreferences.value?.disableNsfwAlert === true
   );
@@ -589,9 +618,15 @@ export function ProfileContent() {
                   isMe={isMe}
                   userId={userProfile.id}
                   visibility={userProfile.souvenirsVisibility}
-                  hasActiveSubscription={Boolean(
-                    userProfile.hasActiveSubscription
-                  )}
+                  /* On your own profile this asks "can I capture souvenirs",
+                     which a self-hosted server answers, not the subscription
+                     flag on the official profile. */
+                  hasActiveSubscription={
+                    isMe
+                      ? hasActiveSubscription
+                      : Boolean(userProfile.hasActiveSubscription)
+                  }
+                  isSupported={souvenirsSupported}
                   disableNsfwAlert={disableNsfwAlert}
                   likingKeys={likingKeys}
                   onSouvenirClick={requestOpenSouvenir}
@@ -616,6 +651,7 @@ export function ProfileContent() {
                 <UserStatsBox />
               </ProfileSection>
             )}
+            <PlaytimeHeatmapBox userId={userProfile.id} isMe={isMe} />
             {userProfile?.badges.length > 0 && (
               <ProfileSection
                 title={t("badges")}

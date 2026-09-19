@@ -39,6 +39,8 @@ import type {
   EmulationCloudSave,
   EmulationSaveMetadata,
   EmulationSavePlatform,
+  SelfHostedServerProbe,
+  SelfHostedServerStatus,
   MemcardFormatState,
   MemcardRestoreResult,
   MemcardRestoreTarget,
@@ -52,6 +54,7 @@ import type {
   CloudSaveConflictResolution,
   CloudSaveOverview,
   CloudSaveV2FileDetails,
+  RestoreCloudSaveVersionResult,
   CloudSaveSyncIpcProgressPayload,
   CloudSaveSyncProgressPayload,
   SyncCloudSaveOnGamePageResult,
@@ -67,6 +70,8 @@ import type {
   LegacySaveExportResult,
   OpenCheckoutOptions,
   AchievementSouvenirSyncStatus,
+  SouvenirSort,
+  SouvenirsResponse,
   SteamSyncState,
   SteamSyncFinishedPayload,
   SteamSyncRunStatus,
@@ -164,6 +169,21 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<CloudSaveOverview>,
+  getCloudSaveV2Supported: () =>
+    ipcRenderer.invoke("getCloudSaveV2Supported") as Promise<boolean>,
+  getAchievementSouvenirsSupported: () =>
+    ipcRenderer.invoke("getAchievementSouvenirsSupported") as Promise<boolean>,
+  getProfileSouvenirs: (payload: {
+    userId: string;
+    take?: number;
+    skip?: number;
+    sortBy?: SouvenirSort;
+    language?: string;
+  }) =>
+    ipcRenderer.invoke(
+      "getProfileSouvenirs",
+      payload
+    ) as Promise<SouvenirsResponse | null>,
   getCloudSaveV2FileDetails: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "getCloudSaveV2FileDetails",
@@ -176,6 +196,23 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<void>,
+  deleteRemoteGameCloudSaveSnapshots: (objectId: string, shop: GameShop) =>
+    ipcRenderer.invoke(
+      "deleteRemoteGameCloudSaveSnapshots",
+      objectId,
+      shop
+    ) as Promise<void>,
+  restoreRemoteGameCloudSaveVersion: (
+    objectId: string,
+    shop: GameShop,
+    snapshotId: string
+  ) =>
+    ipcRenderer.invoke(
+      "restoreRemoteGameCloudSaveVersion",
+      objectId,
+      shop,
+      snapshotId
+    ) as Promise<RestoreCloudSaveVersionResult>,
   selectCloudSaveCustomPath: (objectId: string, shop: GameShop) =>
     ipcRenderer.invoke(
       "selectCloudSaveCustomPath",
@@ -816,6 +853,37 @@ contextBridge.exposeInMainWorld("electron", {
   getUserPreferences: () => ipcRenderer.invoke("getUserPreferences"),
   updateUserPreferences: (preferences: Partial<UserPreferences>) =>
     ipcRenderer.invoke("updateUserPreferences", preferences),
+  getSelfHostedStatus: () =>
+    ipcRenderer.invoke(
+      "getSelfHostedStatus"
+    ) as Promise<SelfHostedServerStatus>,
+  refreshSelfHostedStatus: () =>
+    ipcRenderer.invoke(
+      "refreshSelfHostedStatus"
+    ) as Promise<SelfHostedServerStatus>,
+  testSelfHostedServer: (url: string) =>
+    ipcRenderer.invoke(
+      "testSelfHostedServer",
+      url
+    ) as Promise<SelfHostedServerProbe>,
+  onSelfHostedStatusUpdated: (cb: (status: SelfHostedServerStatus) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      status: SelfHostedServerStatus
+    ) => cb(status);
+    ipcRenderer.on("on-self-hosted-status-updated", listener);
+    return () =>
+      ipcRenderer.removeListener("on-self-hosted-status-updated", listener);
+  },
+  onCloudServerChanged: (cb: (status: SelfHostedServerStatus) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      status: SelfHostedServerStatus
+    ) => cb(status);
+    ipcRenderer.on("on-cloud-server-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("on-cloud-server-changed", listener);
+  },
   onUserPreferencesUpdated: (
     cb: (preferences: UserPreferences | null) => void
   ) => {
@@ -887,8 +955,17 @@ contextBridge.exposeInMainWorld("electron", {
     shop: GameShop,
     objectId: string,
     title: string,
-    platform?: string | null
-  ) => ipcRenderer.invoke("addGameToLibrary", shop, objectId, title, platform),
+    platform?: string | null,
+    isHidden?: boolean
+  ) =>
+    ipcRenderer.invoke(
+      "addGameToLibrary",
+      shop,
+      objectId,
+      title,
+      platform,
+      isHidden
+    ),
   addCustomGameToLibrary: (
     title: string,
     executablePath: string,
@@ -1028,6 +1105,12 @@ contextBridge.exposeInMainWorld("electron", {
   verifyExecutablePathInUse: (executablePath: string) =>
     ipcRenderer.invoke("verifyExecutablePathInUse", executablePath),
   getLibrary: () => ipcRenderer.invoke("getLibrary"),
+  getHiddenLibrary: () => ipcRenderer.invoke("getHiddenLibrary"),
+  getHiddenGamesEnabled: () => ipcRenderer.invoke("getHiddenGamesEnabled"),
+  hideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("hideGame", shop, objectId),
+  unhideGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("unhideGame", shop, objectId),
   refreshLibraryAssets: () => ipcRenderer.invoke("refreshLibraryAssets"),
   getClassicsImportStatus: (): Promise<boolean> =>
     ipcRenderer.invoke("getClassicsImportStatus"),
@@ -1128,6 +1211,10 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("cancelScanInstalledGames", requestId),
   addScannedGame: (objectId: string, executablePath: string) =>
     ipcRenderer.invoke("addScannedGame", objectId, executablePath),
+  importSteamGames: () => ipcRenderer.invoke("importSteamGames"),
+  openSteamGame: (shop: GameShop, objectId: string) =>
+    ipcRenderer.invoke("openSteamGame", shop, objectId),
+  syncSteamPlaytime: () => ipcRenderer.invoke("syncSteamPlaytime"),
   getDefaultWinePrefixSelectionPath: () =>
     ipcRenderer.invoke("getDefaultWinePrefixSelectionPath"),
   createSteamShortcut: (

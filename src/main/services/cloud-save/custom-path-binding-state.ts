@@ -116,6 +116,12 @@ export const reconcileStoredCloudSaveCustomPaths = (
     return entry.syncState === "pending" ? [entry] : [];
   });
 
+/** Pending paths survive reconciliation against an empty remote; confirmed
+ *  ones don't. This keeps custom paths after the snapshot is deleted. */
+export const markStoredCloudSaveCustomPathsPending = (
+  entries: StoredCloudSaveCustomPath[]
+) => entries.map((entry) => ({ ...entry, syncState: "pending" as const }));
+
 export const confirmStoredCloudSaveCustomPaths = (
   entries: StoredCloudSaveCustomPath[],
   remoteRawPaths: ReadonlySet<string>

@@ -56,6 +56,7 @@ import {
   useHeaderTitle,
   useNavigationScreenActions,
 } from "../../hooks";
+import { useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   BIG_PICTURE_SIDEBAR_ITEM_IDS,
   BIG_PICTURE_SIDEBAR_REGION_ID,
@@ -493,6 +494,7 @@ function SimilarGamesEmptyState({
 }
 
 export default function Game() {
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
   const { t } = useTranslation("big_picture");
   const { showErrorToast, showSuccessToast } = useBigPictureToast();
   const { shop, objectId } = useParams<{ shop: GameShop; objectId: string }>();
@@ -856,50 +858,54 @@ export default function Game() {
     setIsDownloadModalOpen(false);
   }, []);
 
-  const handleAddToLibrary = useCallback(async () => {
-    if (
-      !shop ||
-      !objectId ||
-      !canAddToLibrary ||
-      game ||
-      isAddingToLibrary ||
-      !shopDetails
-    ) {
-      return;
-    }
+  const handleAddToLibrary = useCallback(
+    async (isHidden = false) => {
+      if (
+        !shop ||
+        !objectId ||
+        !canAddToLibrary ||
+        game ||
+        isAddingToLibrary ||
+        !shopDetails
+      ) {
+        return;
+      }
 
-    setIsAddingToLibrary(true);
+      setIsAddingToLibrary(true);
 
-    try {
-      await globalThis.window.electron.addGameToLibrary(
-        shop,
-        objectId,
-        resolvedGameTitle,
-        shopDetails.platform ?? null
-      );
-      await updateGame();
-      globalThis.window.dispatchEvent(new Event("library-update"));
+      try {
+        await globalThis.window.electron.addGameToLibrary(
+          shop,
+          objectId,
+          resolvedGameTitle,
+          shopDetails.platform ?? null,
+          isHidden
+        );
+        await updateGame();
+        globalThis.window.dispatchEvent(new Event("library-update"));
 
-      const { title, ...toastOptions } = await buildLibraryToastOptions(
-        gameToastSource,
-        "added"
-      );
-      showSuccessToast(title, toastOptions);
-    } finally {
-      setIsAddingToLibrary(false);
-    }
-  }, [
-    canAddToLibrary,
-    game,
-    gameToastSource,
-    isAddingToLibrary,
-    objectId,
-    resolvedGameTitle,
-    shop,
-    showSuccessToast,
-    shopDetails,
-    updateGame,
-  ]);
+        const { title, ...toastOptions } = await buildLibraryToastOptions(
+          gameToastSource,
+          "added"
+        );
+        showSuccessToast(title, toastOptions);
+      } finally {
+        setIsAddingToLibrary(false);
+      }
+    },
+    [
+      canAddToLibrary,
+      game,
+      gameToastSource,
+      isAddingToLibrary,
+      objectId,
+      resolvedGameTitle,
+      shop,
+      shopDetails,
+      showSuccessToast,
+      updateGame,
+    ]
+  );
 
   const launchClassicsWithErrorHandling = useCallback(
     async (discPath?: string, force?: boolean) => {
@@ -1462,6 +1468,7 @@ export default function Game() {
             onClose={closeGame}
             isAddingToLibrary={isAddingToLibrary}
             canAddToLibrary={canAddToLibrary}
+            canAddAsHidden={!game && hiddenGamesEnabled}
             downNavigationTarget={contentBelowHeroTarget}
             sidebarEntryTarget={sidebarEntryTarget}
           />

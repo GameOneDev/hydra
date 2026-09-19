@@ -6,8 +6,10 @@ import i18next from "i18next";
 import { defaultDownloadsPath } from "@main/constants";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { patchUserProfile } from "../profile/update-profile";
-import { DownloadManager, Wine } from "@main/services";
+import { DownloadManager, HydraApi, Wine } from "@main/services";
+import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
+import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { getDownloadDirectoryPreferences } from "@shared";
 import {
   restoreDuckStationFileLogging,
@@ -154,6 +156,14 @@ const updateUserPreferences = async (
     }
   );
 
+  if (
+    Object.hasOwn(preferences, "enableSteamAchievements") &&
+    preferences.enableSteamAchievements === true &&
+    userPreferences?.enableSteamAchievements !== true
+  ) {
+    AchievementWatcherManager.rebaselineAchievementFiles();
+  }
+
   Wine.syncUserPreferences(updatedPreferences);
 
   await updateAchievementSouvenirPreference(preferences);
@@ -164,6 +174,17 @@ const updateUserPreferences = async (
   );
 
   await applyDownloadManagerPreferences(preferences);
+
+  const cloudServerChanged =
+    Object.hasOwn(preferences, "selfHostedCloudUrl") &&
+    (preferences.selfHostedCloudUrl ?? null) !==
+      (userPreferences?.selfHostedCloudUrl ?? null);
+
+  if (cloudServerChanged) {
+    // A different server has never been told the souvenir privacy setting.
+    resetSouvenirsVisibilityMirror();
+    await HydraApi.handleCloudServerChange();
+  }
 };
 
 registerEvent("updateUserPreferences", updateUserPreferences);

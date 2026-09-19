@@ -9,6 +9,8 @@ type AchievementMemoryEntry = {
 
 const entries = new Map<string, AchievementMemoryEntry>();
 
+const hydratedGames = new Set<string>();
+
 const gameKey = (shop: GameShop, objectId: string) => `${shop}:${objectId}`;
 
 export const AchievementMemoryStore = {
@@ -24,8 +26,21 @@ export const AchievementMemoryStore = {
     entries.set(gameKey(shop, objectId), achievementEntry);
   },
 
+  isHydrated(shop: GameShop, objectId: string) {
+    return hydratedGames.has(gameKey(shop, objectId));
+  },
+
+  markHydrated(shop: GameShop, objectId: string) {
+    hydratedGames.add(gameKey(shop, objectId));
+  },
+
+  clearHydration() {
+    hydratedGames.clear();
+  },
+
   delete(shop: GameShop, objectId: string) {
     entries.delete(gameKey(shop, objectId));
+    hydratedGames.delete(gameKey(shop, objectId));
   },
 
   all() {
@@ -34,6 +49,7 @@ export const AchievementMemoryStore = {
 
   clear() {
     entries.clear();
+    hydratedGames.clear();
   },
 };
 

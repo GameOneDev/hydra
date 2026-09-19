@@ -21,6 +21,13 @@ import {
 } from "./reconcile-remote-artwork-selection";
 import type { CustomArtworkUrls } from "./reconcile-remote-artwork-selection";
 import {
+  artworkKey,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "./self-hosted-artwork";
+import { buildSteamCoverImageUrl } from "./steam-assets";
+import { syncHiddenGames } from "./sync-hidden-games";
+import {
   mergeImportedProfileGame,
   type ImportedProfileGame,
 } from "./merge-imported-profile-game";
@@ -66,12 +73,39 @@ const reconcileCustomAsset = (
   return remoteValue;
 };
 
-const getRemoteCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
+const getOfficialCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
   customIconUrl: game.customIconUrl,
   customLogoImageUrl: game.customLogoImageUrl,
   customHeroImageUrl: game.customLibraryHeroImageUrl,
   customCoverImageUrl: game.customLibraryImageUrl,
 });
+
+/**
+ * Which custom images this game should end up with.
+ *
+ * With a self-hosted server the images it holds win, since that is where
+ * this launcher uploads them. The official values stay as the fallback so a
+ * real Hydra Cloud subscriber keeps seeing images synced before the server
+ * was configured. When neither side has an image the field resolves to
+ * `null` rather than being left undefined — that is how removing an image on
+ * another device reaches this one.
+ */
+const getRemoteCustomAssets = (
+  game: ProfileGame,
+  selfHostedArtwork: SelfHostedArtworkMap | null
+): CustomArtworkUrls => {
+  const official = getOfficialCustomAssets(game);
+  if (!selfHostedArtwork) return official;
+
+  const artwork = selfHostedArtwork.get(artworkKey(game.shop, game.objectId));
+
+  return {
+    customIconUrl: artwork?.icons ?? official.customIconUrl ?? null,
+    customLogoImageUrl: artwork?.logos ?? official.customLogoImageUrl ?? null,
+    customHeroImageUrl: artwork?.heroes ?? official.customHeroImageUrl ?? null,
+    customCoverImageUrl: artwork?.grids ?? official.customCoverImageUrl ?? null,
+  };
+};
 
 const uploadUnsyncedArtworkSelection = async (
   gameKey: string,
@@ -106,16 +140,15 @@ const uploadUnsyncedArtworkSelection = async (
 const syncArtworkSelectionWithRemote = async (
   gameKey: string,
   localGame: Game | undefined,
-  remoteGame: ProfileGame
+  remoteCustomAssets: CustomArtworkUrls
 ) => {
   const selection = await gamesArtworkSelectionSublevel.get(gameKey);
   if (!selection) return;
 
-  const remoteAssets = getRemoteCustomAssets(remoteGame);
   const { selected, changed } = reconcileRemoteArtworkSelection(
     selection.selected,
     localGame ?? {},
-    remoteAssets
+    remoteCustomAssets
   );
 
   let current = selection;
@@ -134,7 +167,7 @@ const syncArtworkSelectionWithRemote = async (
     gameKey,
     current,
     localGame,
-    remoteAssets
+    remoteCustomAssets
   );
 };
 
@@ -169,7 +202,7 @@ const getRemoteCoverImageUrl = (game: ProfileGame): string | null => {
   if (game.coverImageUrl) return game.coverImageUrl;
   if (game.shop !== "steam") return null;
 
-  return `https://shared.steamstatic.com/store_item_assets/steam/apps/${game.objectId}/library_600x900_2x.jpg`;
+  return buildSteamCoverImageUrl(game.objectId);
 };
 
 const PAGE_SIZE = 100;
@@ -215,7 +248,8 @@ const mergeExistingGame = (
   remoteGame: ProfileGame,
   collectionIds: string[],
   remoteAddedToLibraryAt: Date | null,
-  canReconcileCustomArtwork: boolean
+  /** `null` when custom artwork must not be reconciled for this sync. */
+  remoteCustomAssets: CustomArtworkUrls | null
 ): Game => ({
   ...localGame,
   remoteId: remoteGame.id,
@@ -239,23 +273,23 @@ const mergeExistingGame = (
     remoteGame.source,
     remoteGame.hasActiveSteamImport === true
   ),
-  ...(canReconcileCustomArtwork
+  ...(remoteCustomAssets
     ? {
         customIconUrl: reconcileCustomAsset(
           localGame.customIconUrl,
-          remoteGame.customIconUrl
+          remoteCustomAssets.customIconUrl
         ),
         customLogoImageUrl: reconcileCustomAsset(
           localGame.customLogoImageUrl,
-          remoteGame.customLogoImageUrl
+          remoteCustomAssets.customLogoImageUrl
         ),
         customHeroImageUrl: reconcileCustomAsset(
           localGame.customHeroImageUrl,
-          remoteGame.customLibraryHeroImageUrl
+          remoteCustomAssets.customHeroImageUrl
         ),
         customCoverImageUrl: reconcileCustomAsset(
           localGame.customCoverImageUrl,
-          remoteGame.customLibraryImageUrl
+          remoteCustomAssets.customCoverImageUrl
         ),
       }
     : {}),
@@ -264,7 +298,8 @@ const mergeExistingGame = (
 const createLocalGame = (
   remoteGame: ProfileGame,
   collectionIds: string[],
-  addedToLibraryAt: Date | null
+  addedToLibraryAt: Date | null,
+  remoteCustomAssets: CustomArtworkUrls
 ): Game => ({
   objectId: remoteGame.objectId,
   title: remoteGame.title,
@@ -290,15 +325,16 @@ const createLocalGame = (
   platform: remoteGame.platform ?? null,
   source: resolveLibrarySource(undefined, remoteGame.source),
   hasActiveSteamImport: remoteGame.hasActiveSteamImport === true,
-  customIconUrl: remoteGame.customIconUrl ?? null,
-  customLogoImageUrl: remoteGame.customLogoImageUrl ?? null,
-  customHeroImageUrl: remoteGame.customLibraryHeroImageUrl ?? null,
-  customCoverImageUrl: remoteGame.customLibraryImageUrl ?? null,
+  customIconUrl: remoteCustomAssets.customIconUrl ?? null,
+  customLogoImageUrl: remoteCustomAssets.customLogoImageUrl ?? null,
+  customHeroImageUrl: remoteCustomAssets.customHeroImageUrl ?? null,
+  customCoverImageUrl: remoteCustomAssets.customCoverImageUrl ?? null,
 });
 
 const mergeRemoteGame = async (
   remoteGame: ProfileGame,
-  canReconcileCustomArtwork: boolean
+  selfHostedArtwork: SelfHostedArtworkMap | null,
+  canReconcileOfficialArtwork: boolean
 ) => {
   const gameKey = levelKeys.game(remoteGame.shop, remoteGame.objectId);
   const localGame = await gamesSublevel.get(gameKey);
@@ -311,20 +347,38 @@ const mergeRemoteGame = async (
   const remoteAddedToLibraryAt = remoteGame.createdAt
     ? new Date(remoteGame.createdAt)
     : null;
+  const remoteCustomAssets = getRemoteCustomAssets(
+    remoteGame,
+    selfHostedArtwork
+  );
+  /* A self-hosted server is this launcher's own artwork store, so it never
+     depends on a Hydra Cloud subscription. Without one we fall back to
+     upstream's rule and only reconcile official artwork for subscribers. */
+  const canReconcileCustomArtwork =
+    Boolean(selfHostedArtwork) || canReconcileOfficialArtwork;
   const mergedGame = localGame
     ? mergeExistingGame(
         localGame,
         remoteGame,
         collectionIds,
         remoteAddedToLibraryAt,
-        canReconcileCustomArtwork
+        canReconcileCustomArtwork ? remoteCustomAssets : null
       )
-    : createLocalGame(remoteGame, collectionIds, remoteAddedToLibraryAt);
+    : createLocalGame(
+        remoteGame,
+        collectionIds,
+        remoteAddedToLibraryAt,
+        remoteCustomAssets
+      );
 
   await gamesSublevel.put(gameKey, mergedGame);
 
   if (canReconcileCustomArtwork) {
-    await syncArtworkSelectionWithRemote(gameKey, localGame, remoteGame);
+    await syncArtworkSelectionWithRemote(
+      gameKey,
+      localGame,
+      remoteCustomAssets
+    );
   }
 
   const localGameShopAsset = await gamesShopAssetsSublevel.get(gameKey);
@@ -346,12 +400,22 @@ const mergeRemoteGame = async (
 
 export const mergeWithRemoteGames = async () => {
   try {
-    const canReconcileCustomArtwork =
+    const canReconcileOfficialArtwork =
       HydraApi.isLoggedIn() && HydraApi.hasActiveSubscription();
-    const remoteGames = await fetchRemoteGames();
+    const [remoteGames, selfHostedArtwork] = await Promise.all([
+      fetchRemoteGames(),
+      fetchSelfHostedArtwork(),
+    ]);
+
     for (const game of remoteGames) {
-      await mergeRemoteGame(game, canReconcileCustomArtwork);
+      await mergeRemoteGame(
+        game,
+        selfHostedArtwork,
+        canReconcileOfficialArtwork
+      );
     }
+
+    await syncHiddenGames().catch(() => {});
 
     // Keep installations, but hide games removed by destructive Steam cleanup.
     const remoteKeys = new Set(

@@ -73,6 +73,22 @@ describe("mergeLocalAndRemotePlayTime", () => {
     );
   });
 
+  it("keeps a locally scanned Steam playtime the profile doesn't know", () => {
+    assert.deepEqual(
+      mergeLocalAndRemotePlayTime(
+        {
+          playTimeInMilliseconds: 1_000,
+          steamPlayTimeInMilliseconds: 600_000,
+        },
+        { runtimeByPlatform: { hydra: 2, steam: 0 } }
+      ),
+      {
+        playTimeInMilliseconds: 2_000,
+        steamPlayTimeInMilliseconds: 600_000,
+      }
+    );
+  });
+
   it("falls back to the combined total when platforms are missing", () => {
     assert.deepEqual(
       mergeLocalAndRemotePlayTime(

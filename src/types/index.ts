@@ -316,6 +316,11 @@ export interface SouvenirsResponse {
   total: number;
   hasReachedLimit: boolean;
   hiddenReason: SouvenirsHiddenReason;
+  /**
+   * Self-hosted only: false when that server has never seen this profile, so
+   * the launcher knows to read its souvenirs from official Hydra instead.
+   */
+  isMember?: boolean;
 }
 
 export interface UserProfile {
@@ -515,6 +520,31 @@ export interface GameArtifact {
   downloadCount: number;
   label?: string;
   isFrozen: boolean;
+  /* Present when listing artifacts across all games (self-hosted cloud
+     server); absent on per-game responses from the official API. */
+  shop?: GameShop;
+  objectId?: string;
+  gameName?: string | null;
+  gameCoverUrl?: string | null;
+}
+
+export interface ArtifactShare {
+  id: string;
+  recipientId: string;
+  recipientDisplayName: string | null;
+  recipientProfileImageUrl: string | null;
+  createdAt: string;
+}
+
+export interface SharedGameArtifact extends GameArtifact {
+  shop: GameShop;
+  objectId: string;
+  sharedAt: string;
+  sharedBy: {
+    id: string;
+    displayName: string;
+    profileImageUrl: string | null;
+  };
 }
 
 export type LegacySaveExportResult =
@@ -550,7 +580,8 @@ export type LocalNotificationType =
   | "DOWNLOAD_COMPLETE"
   | "UPDATE_AVAILABLE"
   | "ACHIEVEMENT_UNLOCKED"
-  | "SCAN_GAMES_COMPLETE";
+  | "SCAN_GAMES_COMPLETE"
+  | "STEAM_IMPORT_COMPLETE";
 
 export interface Notification {
   id: string;
@@ -690,6 +721,7 @@ export type LibraryGame = Game &
     download: Download | null;
     unlockedAchievementCount?: number;
     achievementCount?: number;
+    isHidden?: boolean;
   };
 
 export type UserGameDetails = ShopAssets & {
@@ -721,6 +753,7 @@ export * from "./emulator.types";
 export * from "./retroarch.types";
 export * from "./artwork.types";
 export * from "./cloud-save.types";
+export * from "./self-hosted.types";
 export * from "./souvenir.types";
 
 export type ExtractionFailure =

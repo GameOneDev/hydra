@@ -1,9 +1,11 @@
 import type {
+  GameShop,
   ProfileAchievement,
   ProfileSouvenir,
   ProfileSouvenirAchievement,
   SouvenirReportValues,
   SouvenirSort,
+  SteamAchievement,
 } from "@types";
 import { SteamContentDescriptor } from "./constants.js";
 
@@ -120,6 +122,105 @@ export const getPrimarySouvenirAchievement = (
     isRare: null,
     isPlatinum: false,
   };
+
+/** Same rule the achievement notifications use: under 10% of players. */
+const isRareByPoints = (points: number | null | undefined) =>
+  typeof points === "number" && (50 - Math.sqrt(points)) * 2 < 10;
+
+type SouvenirCatalogueFetcher = (
+  shop: GameShop,
+  objectId: string
+) => Promise<SteamAchievement[] | null>;
+
+const gameKeyOf = (souvenir: ProfileSouvenir) =>
+  `${souvenir.shop}:${souvenir.objectId}`;
+
+const needsMetadata = (souvenir: ProfileSouvenir) =>
+  Boolean(souvenir.shop) &&
+  Boolean(souvenir.objectId) &&
+  souvenir.achievements.some(
+    (achievement) => achievement.achievementIcon === null
+  );
+
+const withCatalogueMetadata = (
+  achievement: ProfileSouvenirAchievement,
+  metadata: SteamAchievement | undefined
+): ProfileSouvenirAchievement => {
+  if (!metadata) return achievement;
+
+  return {
+    ...achievement,
+    displayName: metadata.displayName || achievement.displayName,
+    description: metadata.description ?? achievement.description,
+    achievementIcon: metadata.icon ?? achievement.achievementIcon,
+    points: metadata.points ?? achievement.points,
+    isRare: achievement.isRare ?? isRareByPoints(metadata.points),
+  };
+};
+
+/**
+ * Fills in the metadata a self-hosted cloud server cannot know: it only ever
+ * receives achievement *names*, so its souvenirs come back labelled
+ * `ACH_WIN_ONE_GAME`. Nothing is fetched for souvenirs that already arrived
+ * with icons, which is what official Hydra Cloud returns.
+ *
+ * Failures are swallowed per game: a souvenir keeps its raw names rather than
+ * the whole tab failing to render.
+ */
+export const enrichSouvenirAchievements = async (
+  souvenirs: ProfileSouvenir[],
+  fetchCatalogue: SouvenirCatalogueFetcher
+): Promise<ProfileSouvenir[]> => {
+  const pending = souvenirs.filter(needsMetadata);
+  if (!pending.length) return souvenirs;
+
+  const games = new Map(
+    pending.map((souvenir) => [
+      gameKeyOf(souvenir),
+      { shop: souvenir.shop, objectId: souvenir.objectId },
+    ])
+  );
+
+  const catalogues = new Map<string, Map<string, SteamAchievement>>();
+
+  await Promise.all(
+    [...games].map(async ([key, { shop, objectId }]) => {
+      const achievements = await fetchCatalogue(shop, objectId).catch(
+        () => null
+      );
+      if (!Array.isArray(achievements)) return;
+
+      /* Case-insensitive: what the launcher reads out of achievement files
+         doesn't reliably match the catalogue's casing. */
+      catalogues.set(
+        key,
+        new Map(
+          achievements.map((achievement) => [
+            achievement.name.toUpperCase(),
+            achievement,
+          ])
+        )
+      );
+    })
+  );
+
+  if (!catalogues.size) return souvenirs;
+
+  return souvenirs.map((souvenir) => {
+    const catalogue = catalogues.get(gameKeyOf(souvenir));
+    if (!catalogue) return souvenir;
+
+    return {
+      ...souvenir,
+      achievements: souvenir.achievements.map((achievement) =>
+        withCatalogueMetadata(
+          achievement,
+          catalogue.get(achievement.name.toUpperCase())
+        )
+      ),
+    };
+  });
+};
 
 export const buildUserSouvenirLikePath = (
   ownerUserId: string,

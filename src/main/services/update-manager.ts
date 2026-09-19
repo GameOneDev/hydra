@@ -42,6 +42,12 @@ export class UpdateManager {
   }
 
   public static async checkForUpdates() {
+    // Windows arm64 builds are published to a dedicated channel
+    // (latest-arm64.yml) so arm64 clients don't get x64 installers
+    if (process.platform === "win32" && process.arch === "arm64") {
+      autoUpdater.channel = "latest-arm64";
+    }
+
     autoUpdater
       .removeAllListeners()
       .on("update-available", (info: UpdateInfo) => {

@@ -208,15 +208,49 @@ const reconcileAchievementMemory = async (
   }
 };
 
-const synchronizeAchievements = (
+const synchronizeAchievements = async (
   pending: PendingAchievementSouvenir,
   achievements: PendingSouvenirAchievement[],
   includeSouvenir: boolean
-) =>
-  HydraApi.put<UpdatedUnlockedAchievements>(
-    "/profile/games/achievements",
-    buildGroupedSouvenirSyncPayload(pending, achievements, includeSouvenir)
+) => {
+  const payload = buildGroupedSouvenirSyncPayload(
+    pending,
+    achievements,
+    includeSouvenir
   );
+
+  if (!HydraApi.isSelfHostedCloudEnabled()) {
+    return HydraApi.put<UpdatedUnlockedAchievements>(
+      "/profile/games/achievements",
+      payload
+    );
+  }
+
+  /* The souvenir was uploaded to the self-hosted server, so the call filing it
+     lands there too — with the game, which that server keys its rows by. The
+     official API still gets the achievements (this fork mirrors every sync to
+     both), just not the souvenir it has no image for. */
+  const game = await gamesSublevel.get(pending.gameKey).catch(() => null);
+
+  HydraApi.put("/profile/games/achievements", {
+    id: payload.id,
+    achievements: payload.achievements,
+  }).catch((error) => {
+    achievementsLogger.error(
+      "Failed to mirror grouped souvenir achievements to the official API",
+      { clientId: pending.clientId, error }
+    );
+  });
+
+  return HydraApi.put<UpdatedUnlockedAchievements>(
+    "/profile/games/achievements",
+    {
+      ...payload,
+      ...(game && { objectId: game.objectId, shop: game.shop }),
+    },
+    { needsSubscription: true }
+  );
+};
 
 const waitForConcurrentUpdate = (attempt: number) =>
   new Promise((resolve) => {

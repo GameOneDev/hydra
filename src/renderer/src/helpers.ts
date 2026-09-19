@@ -5,6 +5,7 @@ import type {
   EmulationSavePlatform,
   GameShop,
   LibraryGame,
+  UserFriend,
   SouvenirSort,
 } from "@types";
 
@@ -276,6 +277,15 @@ export const buildGameAchievementPath = (
   return `/achievements/?${searchParams.toString()}`;
 };
 
+// Some endpoints omit isOnline, but an active game session implies online.
+export const isFriendOnline = (friend: UserFriend) =>
+  Boolean(friend.isOnline) || friend.currentGame !== null;
+
+export const sortFriendsByOnlineStatus = (friends: UserFriend[]) =>
+  [...friends].sort(
+    (a, b) => Number(isFriendOnline(b)) - Number(isFriendOnline(a))
+  );
+
 export const darkenColor = (color: string, amount: number, alpha: number = 1) =>
   new Color(color).darken(amount).alpha(alpha).toString();
 
@@ -453,6 +463,7 @@ const getMostPlayedDifference = (a: LibraryGame, b: LibraryGame): number =>
 
 export const isGameInstalled = (game: LibraryGame): boolean =>
   Boolean(game.executablePath) ||
+  Boolean(game.launchThroughSteam) ||
   game.installedSizeInBytes != null ||
   (game.shop === "launchbox" && (game.discs?.length ?? 0) > 0);
 

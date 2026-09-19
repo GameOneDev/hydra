@@ -18,7 +18,7 @@ import "./hero-panel-playtime.scss";
 export function HeroPanelPlaytime() {
   const [lastTimePlayed, setLastTimePlayed] = useState("");
 
-  const { game, isGameRunning } = useContext(gameDetailsContext);
+  const { game, isGameRunning, updateGame } = useContext(gameDetailsContext);
   const { t } = useTranslation("game_details");
   const { numberFormatter } = useFormat();
   const { progress, lastPacket } = useDownload();
@@ -36,6 +36,21 @@ export function HeroPanelPlaytime() {
       );
     }
   }, [game?.lastTimePlayed, formatDistance]);
+
+  const isSteamManagedGame = Boolean(game?.launchThroughSteam);
+
+  useEffect(() => {
+    // Steam updates its local playtime files when a game session ends, so
+    // refresh the stat whenever the details of a Steam-managed game open.
+    if (!isSteamManagedGame) return;
+
+    window.electron
+      .syncSteamPlaytime()
+      .then((updatedCount) => {
+        if (updatedCount > 0) updateGame();
+      })
+      .catch(() => {});
+  }, [isSteamManagedGame, game?.objectId, updateGame]);
 
   const formattedPlayTime = useMemo(() => {
     const milliseconds = getDisplayedPlayTimeInMilliseconds({
