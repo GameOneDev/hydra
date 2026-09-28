@@ -4,9 +4,10 @@ import { PencilIcon } from "@primer/octicons-react";
 import { Loader2, Trash } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { isVideoArtworkUrl } from "@renderer/hooks";
+import { isVideoArtworkUrl, useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   BumperBadge,
+  Checkbox,
   FileExplorerModal,
   FocusItem,
   Input,
@@ -127,6 +128,7 @@ export interface GameCustomizationSettingsProps {
     clearArtworkSelection: boolean
   ) => Promise<boolean>;
   onArtworkChanged: () => Promise<void> | void;
+  onToggleHide: () => void;
 }
 
 function getAssetPreviewState(
@@ -237,8 +239,11 @@ export function GameCustomizationSettingsTab({
   onProcessAssetPath,
   onClearAsset,
   onArtworkChanged,
+  onToggleHide,
 }: Readonly<GameCustomizationSettingsProps>) {
   const { t } = useTranslation("big_picture");
+  const hiddenGamesEnabled = useHiddenGamesEnabled();
+
   const [selectedAssetTab, setSelectedAssetTab] = useState<AssetTab>("icon");
   const [hasAssetTabsInteracted, setHasAssetTabsInteracted] = useState(false);
   const [composedAssets, setComposedAssets] = useState<ShopAssets | null>(null);
@@ -481,6 +486,24 @@ export function GameCustomizationSettingsTab({
             />
           </div>
         </SettingsSection>
+
+        {hiddenGamesEnabled && (
+          <SettingsSection
+            className="game-customization-settings-tab__section"
+            title="Visibility"
+            description="Hide this game from your library."
+          >
+            <div className="game-customization-settings-tab__section-content">
+              <Checkbox
+                block
+                focusId="game-customization-settings-hide-game"
+                label="Hide Game"
+                checked={game.isHidden === true}
+                onChange={onToggleHide}
+              />
+            </div>
+          </SettingsSection>
+        )}
 
         <SettingsSection
           className="game-customization-settings-tab__section game-customization-settings-tab__section--assets"

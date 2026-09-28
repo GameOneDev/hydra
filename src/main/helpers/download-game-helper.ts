@@ -6,6 +6,7 @@ import {
 } from "@main/level";
 import { DownloadOrchestrator } from "@main/services/download-orchestrator";
 import { canDiscardDownload, type GameShop } from "../../types";
+import { getAutomaticCloudSyncDefault } from "./cloud-saves-default";
 
 interface PrepareGameEntryParams {
   gameKey: string;
@@ -58,6 +59,7 @@ export const prepareGameEntry = async ({
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
       isDeleted: false,
+      automaticCloudSync: await getAutomaticCloudSyncDefault(),
     });
   }
 };

@@ -45,7 +45,7 @@ export interface Game {
   customOriginalHeroPath?: string | null;
   customOriginalCoverPath?: string | null;
   playTimeInMilliseconds: number;
-  steamPlayTimeInMilliseconds?: number;
+  steamPlayTimeInMilliseconds?: number | null;
   hasActiveSteamImport?: boolean;
   enableHydraPlaytimeTracking?: boolean;
   unsyncedDeltaPlayTimeInMilliseconds?: number;
@@ -78,11 +78,14 @@ export interface Game {
   installedSizeInBytes?: number | null;
   installerSizeInBytes?: number | null;
   steamShortcutAppId?: number;
+  launchThroughSteam?: boolean;
+  steamPlaytimeLastSyncedAt?: Date | null;
   platform?: string | null;
   discs?: ClassicsDisc[];
   selectedDiscPath?: string | null;
   dontAskDiscSelection?: boolean;
   romSizeBytes?: number | null;
+  isHidden?: boolean;
 }
 
 export interface Download {
@@ -194,6 +197,14 @@ export interface UserPreferences {
   autoRunGamemode?: boolean;
   hideClassicsBookmark?: boolean;
   classicsUseHeroLayout?: boolean;
+  /* New library entries get automaticCloudSync pre-enabled, instead of the
+     user turning it on game by game. */
+  enableCloudSavesByDefault?: boolean;
+  /* Self-hosted Hydra Cloud storage server. When set, subscription-gated
+     features (cloud saves, achievement sync, download source sync) are routed
+     to this server while accounts, friends and everything else keep using the
+     official Hydra servers. */
+  selfHostedCloudUrl?: string | null;
   hideLibraryGameBadges?: boolean;
   hideLibraryReadySizeBadges?: boolean;
   hideLibraryClassicsBadges?: boolean;

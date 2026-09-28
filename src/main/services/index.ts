@@ -1,6 +1,15 @@
 export * from "./logger";
 export * from "./steam";
 export * from "./steam-250";
+/* `getSteamLibraryFolders` is deliberately not re-exported here: "./steam"
+   exports a different function under the same name. Import the
+   location-taking variant straight from "./steam-library". */
+export {
+  getInstalledSteamGames,
+  getSteamPlaytimeMinutes,
+  syncSteamPlaytimeForLibrary,
+} from "./steam-library";
+export type { InstalledSteamGame } from "./steam-library";
 export * from "./window-manager";
 export * from "./download";
 export * from "./download-layout-state";
@@ -9,12 +18,15 @@ export * from "./process-watcher";
 export * from "./launched-game-pids";
 export * from "./main-loop";
 export * from "./hydra-api";
+export * from "./self-hosted";
 export * from "./ludusavi";
 export * from "./cloud-sync";
 export * from "./7zip";
 export * from "./game-files-manager";
 export * from "./game-executables";
 export * from "./common-redist-manager";
+export * from "./souvenir-routes";
+export * from "./souvenir-visibility-mirror";
 export * from "./sse";
 export * from "./screenshot";
 export * from "./system-path";

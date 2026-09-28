@@ -18,6 +18,7 @@ import {
 import {
   applyCloudSaveCustomPathLocalPathMigrations,
   confirmStoredCloudSaveCustomPaths,
+  markStoredCloudSaveCustomPathsPending,
   normalizeStoredCloudSaveCustomPathEntries,
   reconcileStoredCloudSaveCustomPaths,
   removeStoredCloudSaveCustomPath,
@@ -289,6 +290,15 @@ export const confirmCloudSaveCustomPaths = async (
   const remote = new Set(remoteRawPaths);
   await mutateStoredEntries(shop, objectId, (entries) =>
     confirmStoredCloudSaveCustomPaths(entries, remote)
+  );
+};
+
+export const markCloudSaveCustomPathsPending = async (
+  shop: GameShop,
+  objectId: string
+) => {
+  await mutateStoredEntries(shop, objectId, (entries) =>
+    markStoredCloudSaveCustomPathsPending(entries)
   );
 };
 

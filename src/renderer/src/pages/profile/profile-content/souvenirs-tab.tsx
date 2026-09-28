@@ -367,6 +367,7 @@ interface SouvenirsEmptyStateProps {
   hiddenReason: SouvenirsHiddenReason;
   isMe: boolean;
   hasActiveSubscription: boolean;
+  isSupported: boolean;
   isEnabled: boolean;
   onOpenSettings: () => void;
 }
@@ -376,6 +377,7 @@ function SouvenirsEmptyState({
   hiddenReason,
   isMe,
   hasActiveSubscription,
+  isSupported,
   isEnabled,
   onOpenSettings,
 }: Readonly<SouvenirsEmptyStateProps>) {
@@ -404,6 +406,20 @@ function SouvenirsEmptyState({
       <div className="profile-content__no-games profile-content__souvenirs-empty">
         <h2>{t("no_user_souvenirs")}</h2>
         <p>{t("no_user_souvenirs_description")}</p>
+      </div>
+    );
+  }
+
+  /* Offering Hydra Cloud would be wrong twice over: this account needs no
+     subscription, and none would fix an old self-hosted server. */
+  if (!isSupported) {
+    return (
+      <div className="profile-content__no-games profile-content__souvenirs-empty">
+        <span className="profile-content__telescope-icon">
+          <LockIcon size={24} />
+        </span>
+        <h2>{t("souvenirs_self_hosted_unsupported_title")}</h2>
+        <p>{t("souvenirs_self_hosted_unsupported_description")}</p>
       </div>
     );
   }
@@ -463,6 +479,8 @@ interface SouvenirsTabProps {
   userId: string;
   visibility: ProfileVisibility;
   hasActiveSubscription: boolean;
+  /** False when the configured self-hosted cloud server has no souvenirs. */
+  isSupported: boolean;
   likingKeys: Set<string>;
   onSouvenirClick: (achievement: ProfileSouvenir) => void;
   onLikeClick: (achievement: ProfileSouvenir) => void;
@@ -484,6 +502,7 @@ export function SouvenirsTab({
   userId,
   visibility,
   hasActiveSubscription,
+  isSupported,
   likingKeys,
   onSouvenirClick,
   onLikeClick,
@@ -809,6 +828,7 @@ export function SouvenirsTab({
           hiddenReason={hiddenReason}
           isMe={isMe}
           hasActiveSubscription={hasActiveSubscription}
+          isSupported={isSupported}
           isEnabled={isEnabled}
           onOpenSettings={onOpenSettings}
         />

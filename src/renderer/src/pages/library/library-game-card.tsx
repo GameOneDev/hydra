@@ -65,6 +65,8 @@ export const LibraryGameCard = memo(function LibraryGameCard({
   const autoplayAnimatedArtwork =
     userPreferences?.autoplayAnimatedArtwork ?? false;
 
+  const isSteamManaged =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
   const isInstalled = isGameReadyToPlay(game);
 
   const hasPickedCover = Boolean(game.selectedArtworkTypes?.includes("grid"));
@@ -275,7 +277,11 @@ export const LibraryGameCard = memo(function LibraryGameCard({
                     "library-game-card__installed-badge--classics":
                       classicsEmulatorIcon,
                   })}
-                  title={t("installed_tooltip")}
+                  title={t(
+                    isSteamManaged
+                      ? "installed_via_steam_tooltip"
+                      : "installed_tooltip"
+                  )}
                 >
                   {classicsEmulatorIcon ? (
                     <img

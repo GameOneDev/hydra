@@ -72,6 +72,48 @@ describe("cloud save automatic sync mode", () => {
     );
   });
 
+  it("falls back to legacy when the cloud server has no V2 support", () => {
+    /* A self-hosted server predating the V2 endpoints. Defaulting a Steam
+       game to V2 there would sync against routes that answer 404, so the
+       game stays on the flow the server does implement. */
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(true, undefined, false),
+      "legacy"
+    );
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(false, undefined, false),
+      "disabled"
+    );
+  });
+
+  it("does not honour a stored V2 preference the server cannot serve", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(true, true, false),
+      "legacy"
+    );
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "steam",
+        true,
+        true,
+        false
+      ),
+      "legacy"
+    );
+  });
+
+  it("still prefers V2 for Steam once the server supports it", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "steam",
+        true,
+        undefined,
+        true
+      ),
+      "v2"
+    );
+  });
+
   it("keeps non-Steam games on legacy or disabled", () => {
     assert.equal(
       resolveStoredCloudSaveAutomaticSyncModeForShop("custom", true, undefined),

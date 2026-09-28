@@ -126,6 +126,7 @@ import {
   useSouvenirContentWarning,
   getDisplayedPlayTimeInMilliseconds,
 } from "@shared";
+import { useHasSelfHostedArtwork } from "./self-hosted-profile";
 
 const SOUVENIR_REPORT_RESPONSE_STATUSES = [201, 400, 404, 429];
 
@@ -255,7 +256,13 @@ function getProfileHeroUser(
       username: userDetails.username,
       displayName: userDetails.displayName,
       profileImageUrl: userDetails.profileImageUrl,
-      backgroundImageUrl: userDetails.backgroundImageUrl,
+      /* Own banner may only exist on the self-hosted server, where the
+         profile fetch picks it up but the official account data does not. */
+      backgroundImageUrl:
+        userDetails.backgroundImageUrl ??
+        (externalProfile?.id === userDetails.id
+          ? externalProfile.backgroundImageUrl
+          : null),
       badges:
         externalProfile?.id === userDetails.id
           ? (externalProfile.badges ?? [])
@@ -1825,6 +1832,7 @@ interface ProfileSouvenirsProps {
   isLoading: boolean;
   isOwnProfile: boolean;
   hasActiveSubscription: boolean;
+  isSupported: boolean;
   canLike: boolean;
   disableNsfwAlert: boolean;
   updatingLikeKeys: Set<string>;
@@ -2317,6 +2325,8 @@ interface ProfileSouvenirEmptyStateProps {
   isLoading: boolean;
   isOwnProfile: boolean;
   hasActiveSubscription: boolean;
+  /** False when the configured self-hosted cloud server has no souvenirs. */
+  isSupported: boolean;
 }
 
 function ProfileSouvenirEmptyState({
@@ -2324,6 +2334,7 @@ function ProfileSouvenirEmptyState({
   isLoading,
   isOwnProfile,
   hasActiveSubscription,
+  isSupported,
 }: Readonly<ProfileSouvenirEmptyStateProps>) {
   const { t } = useTranslation("user_profile");
   let title = t("no_user_souvenirs");
@@ -2335,6 +2346,11 @@ function ProfileSouvenirEmptyState({
   } else if (hiddenReason) {
     title = t("locked_souvenirs");
     description = "";
+  } else if (isOwnProfile && !isSupported) {
+    /* Offering Hydra Cloud would be wrong here: no subscription fixes an old
+       self-hosted server. */
+    title = t("souvenirs_self_hosted_unsupported_title");
+    description = t("souvenirs_self_hosted_unsupported_description");
   } else if (isOwnProfile && !hasActiveSubscription) {
     title = t("souvenirs_cloud_title");
     description = t("souvenirs_cloud_description");
@@ -2367,6 +2383,7 @@ function ProfileSouvenirs({
   isLoading,
   isOwnProfile,
   hasActiveSubscription,
+  isSupported,
   canLike,
   disableNsfwAlert,
   updatingLikeKeys,
@@ -2439,6 +2456,7 @@ function ProfileSouvenirs({
           isLoading={isLoading}
           isOwnProfile={isOwnProfile}
           hasActiveSubscription={hasActiveSubscription}
+          isSupported={isSupported}
         />
       )}
     </section>
@@ -2662,6 +2680,22 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const targetHasActiveSubscription = isOwnProfileTarget
     ? hasActiveSubscription
     : Boolean(externalProfile?.hasActiveSubscription);
+  const hasSelfHostedCloud = Boolean(useUserPreferences()?.selfHostedCloudUrl);
+  /* Optimistic until the answer arrives: only a self-hosted server can say it
+     has no souvenirs. */
+  const [souvenirsSupported, setSouvenirsSupported] = useState(true);
+
+  useEffect(() => {
+    void globalThis.window.electron
+      .getAchievementSouvenirsSupported()
+      .then(setSouvenirsSupported)
+      .catch(() => setSouvenirsSupported(true));
+  }, []);
+  /* Custom images also come from a self-hosted cloud server, whose members
+     have no official subscription for the check above to find. */
+  const hasSelfHostedArtwork = useHasSelfHostedArtwork(targetUserId);
+  const preferCustomArtwork =
+    targetHasActiveSubscription || hasSelfHostedArtwork;
   const {
     userStats,
     remoteLibraryGames,
@@ -3176,7 +3210,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     useProfileGames(
       profileUser,
       isOwnProfileTarget,
-      targetHasActiveSubscription,
+      preferCustomArtwork,
       library,
       remoteLibraryGames,
       remoteFavoriteGame,
@@ -3185,8 +3219,15 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
   const totalLibraryGames = profileUser?.isOwnProfile
     ? library.length
     : (userStats?.libraryCount ?? remoteLibraryTotalCount);
+  /* On a self-hosted server achievements come from there rather than a
+     subscription, so the section stays open and resolves to its own "no
+     recent achievements" empty state. Telling these members to buy Hydra
+     Cloud would be wrong: the data is either on the server or nowhere. */
   const canViewRecentAchievements =
-    Boolean(profileUser) && targetHasActiveSubscription;
+    Boolean(profileUser) &&
+    (targetHasActiveSubscription ||
+      hasSelfHostedCloud ||
+      recentAchievementGroups.length > 0);
   const canFocusRecentAchievements =
     canViewRecentAchievements && Boolean(profileUser?.isOwnProfile);
   const {
@@ -3249,6 +3290,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
               isLoading={isLoadingSouvenirs}
               isOwnProfile={isOwnProfileTarget}
               hasActiveSubscription={targetHasActiveSubscription}
+              isSupported={souvenirsSupported}
               canLike={Boolean(userDetails)}
               disableNsfwAlert={disableNsfwAlert}
               updatingLikeKeys={updatingLikeKeys}
@@ -3268,7 +3310,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
 
             <ProfileActivity
               games={recentActivityGames}
-              preferCustomArtwork={targetHasActiveSubscription}
+              preferCustomArtwork={preferCustomArtwork}
               upFocusId={activityUpFocusId}
               downFocusId={activityDownFocusId}
               onActivate={(game) =>

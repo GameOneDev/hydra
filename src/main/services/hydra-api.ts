@@ -9,9 +9,31 @@ import { appVersion } from "@main/constants";
 import { getUserData } from "./user/get-user-data";
 import { db } from "@main/level";
 import { levelKeys } from "@main/level/sublevels";
-import type { Auth, User } from "@types";
+import type {
+  Auth,
+  SelfHostedServerProbe,
+  SelfHostedServerStatus,
+  User,
+  UserPreferences,
+} from "@types";
 import { SSEClient } from "./sse";
-import { sanitizeNetworkLogPayload } from "./network-log-payload";
+import {
+  sanitizeAxiosError,
+  sanitizeNetworkLogPayload,
+} from "./network-log-payload";
+import {
+  disabledSelfHostedServerStatus,
+  isValidSelfHostedUrl,
+  normalizeSelfHostedUrl,
+  probeSelfHostedServer,
+  resolveSelfHostedServerStatus,
+} from "./self-hosted/probe-self-hosted-server";
+import {
+  ACHIEVEMENT_SOUVENIRS_FEATURE,
+  forgetSouvenirSources,
+  isOfficialSouvenirProfile,
+  isSouvenirRoute,
+} from "./souvenir-routes";
 
 export interface HydraApiOptions {
   needsAuth?: boolean;
@@ -35,6 +57,12 @@ export class HydraApi {
   private static readonly EXPIRATION_OFFSET_IN_MS = 1000 * 60 * 5; // 5 minutes
   private static readonly ADD_LOG_INTERCEPTOR = true;
 
+  /* Axios defaults to waiting forever. Every route through these clients is a
+     JSON call — the big binary uploads go straight to presigned URLs — so a
+     request still going after a minute is a server that stopped answering,
+     and a self-hosted one is the likeliest to do it. */
+  private static readonly REQUEST_TIMEOUT_IN_MS = 60_000;
+
   private static secondsToMilliseconds(seconds: number) {
     return seconds * 1000;
   }
@@ -46,11 +74,390 @@ export class HydraApi {
     subscription: null,
   };
 
+  /* Self-hosted cloud storage server. Accounts, friends, catalogue and every
+     other route keep using the official API — only the subscription-gated
+     features below are re-routed, authenticated with the same official
+     access token (the self-hosted server validates it against the official
+     API to identify the user). */
+  private static cloudInstance: AxiosInstance | null = null;
+  private static selfHostedCloudUrl: string | null = null;
+
+  /* Features the configured self-hosted server reports at /capabilities,
+     plus the URL they were read from. `null` means "not known yet or the
+     server didn't answer" — treated as supporting nothing, so a feature is
+     only enabled once the server has actually claimed it. Capabilities read
+     from another URL never gate the current server, which is what the URL
+     alongside them is for. */
+  private static selfHostedFeatures: Set<string> | null = null;
+  private static selfHostedVersion: string | null = null;
+  private static selfHostedCapabilitiesUrl: string | null = null;
+
+  private static clearSelfHostedCapabilities() {
+    this.selfHostedFeatures = null;
+    this.selfHostedVersion = null;
+    this.selfHostedCapabilitiesUrl = null;
+  }
+
+  private static storeSelfHostedCapabilities(
+    url: string,
+    probe: SelfHostedServerProbe
+  ) {
+    this.selfHostedFeatures = new Set(probe.features);
+    this.selfHostedVersion = probe.version;
+    this.selfHostedCapabilitiesUrl = url;
+  }
+
+  /* Resolves once the probe started by the last setupApi() has answered.
+     Startup work that needs the capabilities awaits this; the launcher itself
+     does not, so a server that is off the network can't hold the window
+     closed. */
+  private static selfHostedCapabilitiesSettled: Promise<void> =
+    Promise.resolve();
+
+  public static whenSelfHostedCapabilitiesSettled() {
+    return this.selfHostedCapabilitiesSettled;
+  }
+
+  /* Probes overlap: the monitor's tick, the settings page's re-check and a
+     server change all call in, and they don't come back in the order they
+     left. Applying an older answer over a newer one would leave both the
+     gating and the indicator describing a state the server has already moved
+     on from, until the next tick ten minutes later. */
+  private static selfHostedProbeSequence = 0;
+  private static appliedSelfHostedProbeSequence = 0;
+
+  /* Whether what we last read still describes the server we are routing to. */
+  private static hasCapabilitiesForCurrentServer() {
+    return (
+      this.selfHostedCapabilitiesUrl !== null &&
+      this.selfHostedCapabilitiesUrl === this.selfHostedCloudUrl
+    );
+  }
+
+  /* Last known reachability of the configured server, rendered by the
+     launcher's status indicator and the settings page. */
+  private static selfHostedStatus: SelfHostedServerStatus =
+    disabledSelfHostedServerStatus();
+
+  private static readonly CLOUD_ROUTED_PREFIXES = [
+    "/profile/games/artifacts",
+    "/profile/hidden-games",
+    /* Custom game images (covers, icons, logos, banners). Uploads already
+       route here via needsSubscription; the read side has no such flag, and
+       these listing endpoints only exist on the self-hosted server. */
+    "/profile/games/artwork",
+    "/profile/emulation-saves",
+    "/profile/download-sources",
+    /* Banner fallback lookup/removal — these endpoints only exist on the
+       self-hosted server ("/profile/banner" also matches
+       "/profile/banners/{userId}"). */
+    "/profile/banner",
+    /* Achievement-count fallback for profile stats the official API only
+       computes for subscribers */
+    "/profile/stats",
+    /* Recently unlocked achievements for a profile. Deliberately not under
+       "/profile/games/achievements": the sync mirrors that path to BOTH this
+       server and the official API, and routing the prefix would swallow the
+       official half. */
+    "/profile/achievements",
+    /* Daily playtime buckets for the profile heatmap — only exists on the
+       self-hosted server */
+    "/profile/playtime",
+    /* Same-server membership lookup for the profile badge — only exists on
+       the self-hosted server */
+    "/profile/members",
+  ];
+
+  /* Banner uploads are subscription-gated on the official API. With a REAL
+     subscription they keep going to the official CDN; without one the
+     self-hosted server stores and serves the image, and the resulting URL
+     is still saved to the official profile. */
+  private static readonly CLOUD_FALLBACK_PREFIXES = [
+    "/presigned-urls/background-image",
+  ];
+
+  /* Subscriber-only services that are NOT storage and only the official API
+     can perform, even though they carry needsSubscription. Hoster unlocking
+     resolves a download link through Hydra's own credentials with that
+     file host — nothing a self-hosted server could stand in for. */
+  private static readonly OFFICIAL_ONLY_PREFIXES = ["/hosters/"];
+
+  /* Expiration of the user's real official subscription, unaffected by the
+     synthetic self-hosted one injected into user data. */
+  private static realSubscriptionExpiresAt: Date | null = null;
+
+  public static syncRealSubscription(
+    subscription: { expiresAt: Date | string | null } | null
+  ) {
+    this.realSubscriptionExpiresAt = subscription?.expiresAt
+      ? new Date(subscription.expiresAt)
+      : null;
+  }
+
+  private static hasRealActiveSubscription() {
+    return (
+      this.realSubscriptionExpiresAt !== null &&
+      this.realSubscriptionExpiresAt > new Date()
+    );
+  }
+
+  /* A URL that isn't http(s) is not something axios can be pointed at, and
+     the renderer's check is not a guarantee — preferences also arrive from
+     disk, where an older or hand-edited value can be anything. */
+  private static normalizeUrl(url?: string | null) {
+    const normalized = normalizeSelfHostedUrl(url);
+
+    if (normalized && !isValidSelfHostedUrl(normalized)) {
+      logger.error("ignoring self-hosted cloud URL that is not http(s)");
+      return null;
+    }
+
+    return normalized;
+  }
+
+  public static isSelfHostedCloudEnabled() {
+    return this.selfHostedCloudUrl !== null;
+  }
+
+  public static getSelfHostedCloudUrl() {
+    return this.selfHostedCloudUrl;
+  }
+
+  public static getSelfHostedVersion() {
+    return this.hasCapabilitiesForCurrentServer()
+      ? this.selfHostedVersion
+      : null;
+  }
+
+  public static getSelfHostedStatus() {
+    return this.selfHostedStatus;
+  }
+
+  private static setSelfHostedStatus(status: SelfHostedServerStatus) {
+    this.selfHostedStatus = status;
+
+    WindowManager.sendToAppWindows("on-self-hosted-status-updated", status);
+  }
+
+  /**
+   * Re-reads the configured server's capabilities and reachability, pushing
+   * the result to every window. Called when the URL changes, by the periodic
+   * status monitor, and whenever the user asks for a re-check.
+   */
+  public static async refreshSelfHostedStatus() {
+    await this.refreshSelfHostedCapabilities();
+    return this.selfHostedStatus;
+  }
+
+  /**
+   * Whether the cloud server backing the subscription-gated features supports
+   * `feature`.
+   *
+   * Without a self-hosted server everything runs against official Hydra
+   * Cloud, which by definition implements whatever the launcher ships. With
+   * one configured we only enable a feature the server has actually
+   * advertised: the launcher routes these calls to it, and upstream keeps
+   * adding endpoints that a self-hosted deployment may not have yet. Failing
+   * closed turns "silently broken mid-sync" into "feature stays off".
+   */
+  public static supportsCloudFeature(feature: string) {
+    if (!this.isSelfHostedCloudEnabled()) return true;
+    if (!this.hasCapabilitiesForCurrentServer()) return false;
+    return this.selfHostedFeatures?.has(feature) ?? false;
+  }
+
+  /**
+   * Hidden games are stored on the self-hosted server, so the feature needs an
+   * authenticated session against one that advertises it. Both renderers gate
+   * their UI on this, and the hide/unhide handlers enforce it.
+   */
+  public static supportsHiddenGames() {
+    return (
+      this.isLoggedIn() &&
+      this.isSelfHostedCloudEnabled() &&
+      this.supportsCloudFeature("hidden-games")
+    );
+  }
+
+  /**
+   * Reads /capabilities from the self-hosted server. Unauthenticated and
+   * cheap, so it runs on every setup, whenever the URL changes, and on the
+   * status monitor's tick.
+   *
+   * Anything other than a capabilities payload — a 404 from a server
+   * predating the endpoint, a URL that isn't Hydra Cloud, an unreachable
+   * host — leaves the feature set empty, which is exactly the conservative
+   * answer we want. The probe result doubles as the status the UI shows.
+   *
+   * A re-check of a server we already have an answer for keeps that answer
+   * until the new one lands: the probe can take ten seconds, and nothing
+   * gated on the server should read as unsupported meanwhile.
+   */
+  private static async refreshSelfHostedCapabilities() {
+    const baseUrl = this.selfHostedCloudUrl;
+
+    if (!baseUrl) {
+      this.clearSelfHostedCapabilities();
+      this.setSelfHostedStatus(disabledSelfHostedServerStatus());
+      return;
+    }
+
+    /* Capabilities belonging to a different server say nothing about this
+       one, so those go before the probe. What we already know about THIS
+       server stays live until the probe answers: a probe takes up to ten
+       seconds, and dropping the feature set for that long on every monitor
+       tick would disable hidden games, cloud saves and souvenirs — or route
+       them back to the official API — on a server that never stopped being
+       healthy. */
+    if (!this.hasCapabilitiesForCurrentServer()) {
+      this.clearSelfHostedCapabilities();
+    }
+
+    /* Only announce "checking" when there is nothing better to show — a
+       periodic re-check of a server already known to be up shouldn't make the
+       indicator flicker on every tick. */
+    const hasResultForThisServer =
+      this.selfHostedStatus.url === baseUrl &&
+      this.selfHostedStatus.checkedAt !== null;
+
+    if (!hasResultForThisServer) {
+      this.setSelfHostedStatus({
+        ...disabledSelfHostedServerStatus(),
+        url: baseUrl,
+        state: "checking",
+      });
+    }
+
+    const sequence = ++this.selfHostedProbeSequence;
+
+    const probe = await probeSelfHostedServer(baseUrl, {
+      userAgent: `Hydra Launcher v${appVersion}`,
+    });
+
+    if (this.selfHostedCloudUrl !== baseUrl) return;
+
+    /* A probe that started later has already answered: it knows more about
+       the server than this one does. */
+    if (sequence < this.appliedSelfHostedProbeSequence) return;
+
+    this.appliedSelfHostedProbeSequence = sequence;
+
+    if (probe.error === null) {
+      this.storeSelfHostedCapabilities(baseUrl, probe);
+
+      logger.log(
+        "self-hosted cloud server",
+        probe.name ?? "unknown server",
+        this.selfHostedVersion ?? "unknown version",
+        `${probe.latencyInMs}ms`,
+        probe.features.join(", ")
+      );
+    } else {
+      /* The probe has spoken: whatever we were still holding from the last
+         successful one no longer describes a server we can reach, so the
+         gating falls back closed. */
+      this.clearSelfHostedCapabilities();
+
+      logger.error(
+        "self-hosted cloud server probe failed — features gated on it stay disabled",
+        probe.error
+      );
+    }
+
+    this.setSelfHostedStatus(
+      resolveSelfHostedServerStatus(baseUrl, probe, Date.now())
+    );
+  }
+
+  /**
+   * Probes an arbitrary URL without touching the configured server, so the
+   * settings page can tell the user whether a URL works BEFORE they commit to
+   * it — the whole point being to not need a relaunch to find out.
+   */
+  public static async testSelfHostedServer(
+    url: string
+  ): Promise<SelfHostedServerProbe> {
+    const baseUrl = normalizeSelfHostedUrl(url);
+
+    if (!baseUrl) return this.unprobableUrl("EMPTY_URL");
+    if (!isValidSelfHostedUrl(baseUrl))
+      return this.unprobableUrl("INVALID_URL");
+
+    return probeSelfHostedServer(baseUrl, {
+      userAgent: `Hydra Launcher v${appVersion}`,
+    });
+  }
+
+  /* A URL there is no point sending a request to, shaped like the probe the
+     settings page is waiting for. */
+  private static unprobableUrl(error: string): SelfHostedServerProbe {
+    return {
+      reachable: false,
+      statusCode: null,
+      latencyInMs: null,
+      name: null,
+      status: null,
+      version: null,
+      features: [],
+      error,
+    };
+  }
+
+  private static resolveInstance(url: string, options?: HydraApiOptions) {
+    if (!this.cloudInstance) return this.instance;
+
+    /* `needsSubscription` normally means "storage feature" and routes here,
+       but upstream also uses the flag for subscriber-only services the
+       official API alone provides. Those must never be re-routed: a
+       self-hosted storage server has no way to unlock a file host. */
+    if (this.OFFICIAL_ONLY_PREFIXES.some((prefix) => url.startsWith(prefix))) {
+      return this.instance;
+    }
+
+    /* The upload and the profile listing it have to agree on where souvenirs
+       live, so a server without the endpoints keeps the whole feature on the
+       official API rather than 404ing halfway through a capture. */
+    if (isSouvenirRoute(url)) {
+      /* A profile whose souvenirs came from official Hydra keeps its likes
+         and reports there too. */
+      if (isOfficialSouvenirProfile(url)) return this.instance;
+
+      return this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
+        ? this.cloudInstance
+        : this.instance;
+    }
+
+    const isCloudRoute =
+      options?.needsSubscription === true ||
+      this.CLOUD_ROUTED_PREFIXES.some((prefix) => url.startsWith(prefix)) ||
+      (!this.hasRealActiveSubscription() &&
+        this.CLOUD_FALLBACK_PREFIXES.some((prefix) => url.startsWith(prefix)));
+
+    return isCloudRoute ? this.cloudInstance : this.instance;
+  }
+
   public static isLoggedIn() {
     return this.userAuth.authToken !== "";
   }
 
+  /**
+   * Upstream only asks whether the account has Hydra Cloud. With a self-hosted
+   * server standing in for the subscription, the question is also whether
+   * *that* server has the endpoints — capturing screenshots whose sync can
+   * only 404 fills the retry queue with work that can never finish.
+   */
+  public static supportsAchievementSouvenirs() {
+    return (
+      this.hasActiveSubscription() &&
+      this.supportsCloudFeature(ACHIEVEMENT_SOUVENIRS_FEATURE)
+    );
+  }
+
   public static hasActiveSubscription() {
+    /* The self-hosted server provides the subscription-gated features, so
+       having one configured counts as an active subscription. */
+    if (this.isSelfHostedCloudEnabled()) return true;
+
     const expiresAt = new Date(this.userAuth.subscription?.expiresAt ?? 0);
     return expiresAt > new Date();
   }
@@ -155,7 +562,49 @@ export class HydraApi {
     }
   }
 
+  /* The official session is untouched when the self-hosted cloud URL
+     changes — only the cloud axios instance needs rebuilding, and the user
+     data refresh re-applies (or removes) the synthetic subscription.
+
+     Re-running the cloud-dependent startup work here is what makes the new
+     URL take effect without a relaunch: renderers reload the user (the
+     self-hosted subscription perks live on it) and the capability-gated UI,
+     the library re-syncs against the new server, and download sources are
+     pulled from it again. */
+  static async handleCloudServerChange() {
+    forgetSouvenirSources();
+    await this.setupApi();
+
+    /* The renderers recompute their capability-gated UI off this broadcast, so
+       it has to carry the new server's answer, not the previous one's. */
+    await this.whenSelfHostedCapabilitiesSettled();
+    await this.refreshSession();
+
+    WindowManager.sendToAppWindows(
+      "on-cloud-server-changed",
+      this.selfHostedStatus
+    );
+
+    /* The V2 default migration is skipped while the cloud server can't serve
+       V2, and used to only get another chance on the next launch. */
+    const { migrateCloudSaveAutomaticSyncDefaults } = await import(
+      "./cloud-save"
+    );
+    await migrateCloudSaveAutomaticSyncDefaults().catch((err) =>
+      logger.error("failed to migrate cloud save defaults", err)
+    );
+
+    if (!this.isLoggedIn()) return;
+
+    void uploadGamesBatch();
+
+    const { syncDownloadSourcesFromApi } = await import("./user");
+    void syncDownloadSourcesFromApi();
+  }
+
   static async handleSignOut() {
+    forgetSouvenirSources();
+
     this.userAuth = {
       authToken: "",
       refreshToken: "",
@@ -186,10 +635,37 @@ export class HydraApi {
   }
 
   static async setupApi() {
+    const userPreferences = await db
+      .get<string, UserPreferences | null>(levelKeys.userPreferences, {
+        valueEncoding: "json",
+      })
+      .catch(() => null);
+
+    this.selfHostedCloudUrl = this.normalizeUrl(
+      userPreferences?.selfHostedCloudUrl
+    );
+
     this.instance = axios.create({
       baseURL: import.meta.env.MAIN_VITE_API_URL,
       headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+      timeout: this.REQUEST_TIMEOUT_IN_MS,
     });
+
+    this.cloudInstance = this.selfHostedCloudUrl
+      ? axios.create({
+          baseURL: this.selfHostedCloudUrl,
+          headers: { "User-Agent": `Hydra Launcher v${appVersion}` },
+          timeout: this.REQUEST_TIMEOUT_IN_MS,
+        })
+      : null;
+
+    /* Started, not awaited: the probe waits up to ten seconds on a server that
+       may be off the network, and nothing here needs the answer. Callers that
+       do await whenSelfHostedCapabilitiesSettled(). */
+    this.selfHostedCapabilitiesSettled =
+      this.refreshSelfHostedCapabilities().catch((err) => {
+        logger.error("failed to refresh self-hosted capabilities", err);
+      });
 
     if (this.ADD_LOG_INTERCEPTOR) {
       this.instance.interceptors.request.use(
@@ -275,7 +751,17 @@ export class HydraApi {
         ? { expiresAt: user.subscription?.expiresAt }
         : null,
     };
+  }
 
+  /**
+   * Re-reads the account from the official API, which is what applies (or
+   * removes) the subscription the self-hosted server stands in for.
+   *
+   * Split out of setupApi() because it is network-bound: the session restored
+   * from disk is enough to answer the renderer, so this settles behind the
+   * open window instead of holding it closed.
+   */
+  public static async refreshSession() {
     const updatedUserData = await getUserData();
 
     this.updateUserSubscription(updatedUserData?.subscription);
@@ -341,6 +827,8 @@ export class HydraApi {
   }
 
   private static readonly handleUnauthorizedError = async (err) => {
+    sanitizeAxiosError(err);
+
     if (err instanceof AxiosError && err.response?.status === 401) {
       logger.error(
         "401 - Current credentials:",
@@ -431,7 +919,7 @@ export class HydraApi {
       "If-None-Match": options?.ifNoneMatch,
     };
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .get<T>(url, {
         params,
         ...this.getAxiosConfig(),
@@ -458,7 +946,7 @@ export class HydraApi {
       "If-None-Match": options?.ifNoneMatch,
     };
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .get<T>(url, {
         params,
         ...this.getAxiosConfig(),
@@ -483,7 +971,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .post<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -521,7 +1009,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .put<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -537,7 +1025,7 @@ export class HydraApi {
   ) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .patch<T>(url, data, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
@@ -549,7 +1037,7 @@ export class HydraApi {
   static async delete<T = any>(url: string, options?: HydraApiOptions) {
     await this.validateOptions(options);
 
-    return this.instance
+    return this.resolveInstance(url, options)
       .delete<T>(url, {
         ...this.getAxiosConfig(),
         signal: options?.signal,
