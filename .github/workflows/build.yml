@@ -1,5 +1,10 @@
 name: Build
 
+env:
+  STAGING_ARTIFACT_RETENTION_DAYS: 3
+  PRODUCTION_ARTIFACT_RETENTION_DAYS: 7
+  ARTIFACT_COMPRESSION_LEVEL: 0
+
 on:
   workflow_dispatch:
   pull_request:
@@ -125,6 +130,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Build-staging-${{ matrix.os }}
+          retention-days: ${{ env.STAGING_ARTIFACT_RETENTION_DAYS }}
+          compression-level: ${{ env.ARTIFACT_COMPRESSION_LEVEL }}
           path: |
             dist/*-portable*.exe
             dist/*-setup*.exe
@@ -252,6 +259,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Build-production-${{ matrix.os }}
+          retention-days: ${{ env.PRODUCTION_ARTIFACT_RETENTION_DAYS }}
+          compression-level: ${{ env.ARTIFACT_COMPRESSION_LEVEL }}
           path: |
             dist/*-portable*.exe
             dist/*-setup*.exe
