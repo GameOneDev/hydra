@@ -90,6 +90,43 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar autoconf automake libtool
 
+      # The windows-11-arm image now ships only Visual Studio 2026, which the
+      # node-gyp used by yarn (11.x) and by @electron/rebuild (10.x) cannot
+      # detect. Install the VS 2022 C++ tools and pin every native build to them.
+      - name: Install Visual Studio 2022 C++ build tools
+        if: matrix.os == 'windows-11-arm'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $components = @(
+            "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          )
+          function Find-BuildTools {
+            & $vswhere -products "*" -version "[17.0,18.0)" -requires $components -latest -property installationPath
+          }
+          $installPath = Find-BuildTools
+          if (-not $installPath) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bootstrapper
+            $arguments = @(
+              "--quiet", "--wait", "--norestart", "--nocache",
+              "--add", "Microsoft.VisualStudio.Workload.VCTools",
+              "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+            ) + ($components | ForEach-Object { "--add", $_ })
+            $setup = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            if ($setup.ExitCode -notin 0, 3010) {
+              throw "Visual Studio 2022 Build Tools setup exited with code $($setup.ExitCode)"
+            }
+            $installPath = Find-BuildTools
+          }
+          if (-not $installPath) {
+            throw "Visual Studio 2022 C++ build tools were not found after setup"
+          }
+          "npm_config_msvs_version=2022" >> $env:GITHUB_ENV
+          "CMAKE_GENERATOR=Visual Studio 17 2022" >> $env:GITHUB_ENV
+          "VCPKG_VISUAL_STUDIO_PATH=$installPath" >> $env:GITHUB_ENV
+
       - name: Install dependencies
         run: yarn --frozen-lockfile
 
@@ -218,6 +255,43 @@ jobs:
       - name: Install Linux native build prerequisites
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar autoconf automake libtool
+
+      # The windows-11-arm image now ships only Visual Studio 2026, which the
+      # node-gyp used by yarn (11.x) and by @electron/rebuild (10.x) cannot
+      # detect. Install the VS 2022 C++ tools and pin every native build to them.
+      - name: Install Visual Studio 2022 C++ build tools
+        if: matrix.os == 'windows-11-arm'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $components = @(
+            "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          )
+          function Find-BuildTools {
+            & $vswhere -products "*" -version "[17.0,18.0)" -requires $components -latest -property installationPath
+          }
+          $installPath = Find-BuildTools
+          if (-not $installPath) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bootstrapper
+            $arguments = @(
+              "--quiet", "--wait", "--norestart", "--nocache",
+              "--add", "Microsoft.VisualStudio.Workload.VCTools",
+              "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+            ) + ($components | ForEach-Object { "--add", $_ })
+            $setup = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            if ($setup.ExitCode -notin 0, 3010) {
+              throw "Visual Studio 2022 Build Tools setup exited with code $($setup.ExitCode)"
+            }
+            $installPath = Find-BuildTools
+          }
+          if (-not $installPath) {
+            throw "Visual Studio 2022 C++ build tools were not found after setup"
+          }
+          "npm_config_msvs_version=2022" >> $env:GITHUB_ENV
+          "CMAKE_GENERATOR=Visual Studio 17 2022" >> $env:GITHUB_ENV
+          "VCPKG_VISUAL_STUDIO_PATH=$installPath" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: yarn --frozen-lockfile
