@@ -201,7 +201,40 @@ export function CloudSaveV2Provider({
   const hasExecutablePath = game
     ? hasCloudSaveExecutableSelection(game)
     : false;
-  const canCheckEmulator = isV2Eligible && canUseCloudSaves;
+
+  /* A self-hosted cloud server may predate the V2 endpoints. Starts as `null`
+     ("not answered yet") so the panel stays hidden until the main process
+     confirms support, rather than flashing a UI whose every action 404s. */
+  const [isV2Supported, setIsV2Supported] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = () =>
+      window.electron
+        .getCloudSaveV2Supported()
+        .then((supported) => {
+          if (!cancelled) setIsV2Supported(supported);
+        })
+        .catch(() => {
+          if (!cancelled) setIsV2Supported(false);
+        });
+
+    refresh();
+
+    /* Support hangs off the configured server's capabilities, which are only
+       ever learned from a probe — a server that was down at launch, or that
+       has since been upgraded, changes this answer mid-session. */
+    const unsubscribe = window.electron.onSelfHostedStatusUpdated(refresh);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  const canCheckEmulator =
+    isV2Eligible && canUseCloudSaves && isV2Supported === true;
   const canCheckCloudSaves = canCheckEmulator && hasExecutablePath;
   const {
     overview,

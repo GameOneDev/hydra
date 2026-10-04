@@ -3,7 +3,7 @@ import type {
   ComparedAchievements,
   ProfileSouvenir,
   SouvenirsHiddenReason,
-  SouvenirsResponse,
+  SteamAchievement,
   UserAchievement,
   UserFriend,
   UserFriends,
@@ -13,17 +13,30 @@ import type {
   UserStats,
 } from "@types";
 import {
-  buildUserSouvenirsPath,
   getSouvenirKey,
   normalizeProfileSouvenir,
   SOUVENIRS_PAGE_SIZE,
 } from "@shared";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { applySelfHostedArtwork } from "@renderer/services/self-hosted-artwork.service";
+import { logger } from "@renderer/logger";
 import { getGameIdentityKey } from "../../helpers";
+import {
+  fetchSelfHostedAchievementSum,
+  fetchSelfHostedBanner,
+  fetchSelfHostedRecentAchievements,
+  getCatalogueLanguage,
+  getProfileArtwork,
+  withSouvenirAchievementMetadata,
+  type SelfHostedAchievementGame,
+} from "./self-hosted-profile";
 
 const PROFILE_RECENT_ACHIEVEMENT_GROUP_LIMIT = 2;
 const PROFILE_RECENT_ACHIEVEMENTS_PER_GAME = 2;
 const PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE = 12;
+/* Wide enough that the handful of games the self-hosted server reports as
+   recently played are almost certainly present to be named. */
+const PROFILE_SELF_HOSTED_LIBRARY_TAKE = 100;
 const PROFILE_FRIENDS_LIMIT = 5;
 const PROFILE_REMOTE_LIBRARY_PAGE_SIZE = 12;
 const PROFILE_FAVORITE_GAME_LIMIT = 1;
@@ -65,6 +78,33 @@ function normalizeUserProfile(profile: UserProfile): UserProfile {
     friends: ensureArray(profile.friends),
     libraryGames: ensureArray(profile.libraryGames),
     recentGames: ensureArray(profile.recentGames),
+  };
+}
+
+/**
+ * Normalizes the profile, then fills in what the official API withholds from
+ * non-subscribers: the custom images on its embedded game lists and the
+ * profile banner. Both fall back to the official values when the
+ * self-hosted server has nothing, so real Hydra Cloud members are unaffected.
+ */
+async function resolveUserProfile(
+  profileId: string,
+  profile: UserProfile
+): Promise<UserProfile> {
+  const normalized = normalizeUserProfile(profile);
+
+  const [artwork, banner] = await Promise.all([
+    getProfileArtwork(profileId),
+    normalized.backgroundImageUrl
+      ? Promise.resolve(null)
+      : fetchSelfHostedBanner(profileId),
+  ]);
+
+  return {
+    ...normalized,
+    backgroundImageUrl: normalized.backgroundImageUrl ?? banner,
+    libraryGames: applySelfHostedArtwork(normalized.libraryGames, artwork),
+    recentGames: applySelfHostedArtwork(normalized.recentGames, artwork),
   };
 }
 
@@ -173,13 +213,29 @@ function buildRecentAchievementGroups(
     .slice(0, PROFILE_RECENT_ACHIEVEMENT_GROUP_LIMIT);
 }
 
+/* Every library request on the profile page goes through here, so the
+   self-hosted custom images are overlaid once, centrally. */
 async function getUserLibrary(
   targetUserId: string,
   query: string
 ): Promise<UserLibraryResponse> {
-  return globalThis.window.electron.hydraApi.get<UserLibraryResponse>(
-    `/users/${targetUserId}/library?${query}`
-  );
+  const [response, artwork] = await Promise.all([
+    globalThis.window.electron.hydraApi.get<UserLibraryResponse>(
+      `/users/${targetUserId}/library?${query}`
+    ),
+    getProfileArtwork(targetUserId),
+  ]);
+
+  if (!artwork?.size) return response;
+
+  return {
+    ...response,
+    library: applySelfHostedArtwork(ensureArray(response.library), artwork),
+    pinnedGames: applySelfHostedArtwork(
+      ensureArray(response.pinnedGames),
+      artwork
+    ),
+  };
 }
 
 async function fetchRemoteLibraryGames(
@@ -226,10 +282,20 @@ async function fetchRemoteLibraryGames(
 }
 
 async function fetchAchievementGames(
-  targetUserId: string
+  targetUserId: string,
+  /* The official API leaves unlock counts off non-subscribers' libraries, so
+     the self-hosted path can't filter on them — it already knows which games
+     have unlocks and only needs this list to name and illustrate them. It
+     also has to look up specific games rather than take the top of the list,
+     so it reads a wider page: a recently played game sitting outside the
+     first few would otherwise be dropped for want of a title. */
+  {
+    requireUnlockedCount = true,
+    take = PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE,
+  }: { requireUnlockedCount?: boolean; take?: number } = {}
 ): Promise<UserGame[]> {
   const searchParams = new URLSearchParams({
-    take: String(PROFILE_RECENT_ACHIEVEMENT_LIBRARY_TAKE),
+    take: String(take),
     skip: "0",
     sortBy: "achievementCount",
   });
@@ -237,10 +303,11 @@ async function fetchAchievementGames(
   searchParams.append("shop", "launchbox");
 
   const response = await getUserLibrary(targetUserId, searchParams.toString());
+  const games = ensureArray(response.library);
 
-  return ensureArray(response.library).filter(
-    (game) => (game.unlockedAchievementCount ?? 0) > 0
-  );
+  return requireUnlockedCount
+    ? games.filter((game) => (game.unlockedAchievementCount ?? 0) > 0)
+    : games;
 }
 
 async function fetchGameAchievements(
@@ -282,6 +349,144 @@ async function fetchGameAchievements(
           achievement !== null
       ),
   };
+}
+
+/**
+ * Stands in for a game the viewer can't find in the profile's library.
+ *
+ * A library only lists what the official API will disclose, and a game with
+ * synced unlocks is often missing from it. The self-hosted server sends the
+ * name and cover along with the unlocks precisely so those achievements can
+ * still be shown rather than silently dropped.
+ */
+function toLibrarylessGame(
+  entry: SelfHostedAchievementGame,
+  achievementCount: number
+): UserGame {
+  return {
+    objectId: entry.objectId,
+    shop: entry.shop,
+    title: entry.title ?? entry.objectId,
+    iconUrl: entry.coverUrl,
+    coverImageUrl: entry.coverUrl,
+    libraryHeroImageUrl: null,
+    libraryImageUrl: null,
+    logoImageUrl: null,
+    logoPosition: null,
+    downloadSources: [],
+    playTimeInSeconds: 0,
+    lastTimePlayed: null,
+    unlockedAchievementCount: entry.unlockedCount,
+    achievementCount,
+    achievementsPointsEarnedSum: 0,
+    hasManuallyUpdatedPlaytime: false,
+    isFavorite: false,
+    isPinned: false,
+  };
+}
+
+/**
+ * Recent achievements for a profile whose owner has no official
+ * subscription, built from the self-hosted server's synced unlocks.
+ *
+ * That server keeps only achievement names and unlock times, so the public
+ * catalogue supplies the icon and title for each one. Anything the catalogue
+ * doesn't know is dropped rather than rendered blank.
+ */
+async function fetchSelfHostedAchievementGroups(
+  targetUserId: string
+): Promise<ProfileRecentAchievementGroup[]> {
+  const [achievementGames, library, language] = await Promise.all([
+    fetchSelfHostedRecentAchievements(targetUserId),
+    fetchAchievementGames(targetUserId, {
+      requireUnlockedCount: false,
+      take: PROFILE_SELF_HOSTED_LIBRARY_TAKE,
+    }),
+    getCatalogueLanguage(),
+  ]);
+
+  if (!achievementGames.length) {
+    logger.info("[self-hosted] no synced achievements for", targetUserId);
+    return [];
+  }
+
+  const libraryByGame = new Map(
+    library.map((game) => [getGameIdentityKey(game), game])
+  );
+
+  /* Each step below drops entries it can't resolve. Say which and why:
+     an empty section otherwise looks the same whether the server had
+     nothing, the library couldn't name the game, or the catalogue didn't
+     recognise the achievements. */
+  const settled = await Promise.allSettled(
+    achievementGames.map(async (entry) => {
+      const { shop, objectId, achievements } = entry;
+
+      const catalogue = await globalThis.window.electron.hydraApi
+        .get<
+          SteamAchievement[]
+        >(`/games/${shop}/${objectId}/achievements?language=${language}`)
+        .catch((error) => {
+          logger.error(
+            `[self-hosted] catalogue lookup failed for ${shop}/${objectId}`,
+            error
+          );
+          return [] as SteamAchievement[];
+        });
+
+      const catalogueAchievements = ensureArray(catalogue);
+      /* Case-insensitive, matching how the launcher joins its own unlocks:
+         names recorded from achievement files don't reliably match the
+         catalogue's casing. */
+      const metadataByName = new Map(
+        catalogueAchievements.map((achievement) => [
+          achievement.name.toUpperCase(),
+          achievement,
+        ])
+      );
+
+      const resolved = achievements
+        .map(({ name, unlockTime }) => {
+          const metadata = metadataByName.get(name.toUpperCase());
+          if (!metadata) return null;
+
+          return {
+            key: `${name}-${unlockTime}`,
+            icon: metadata.icon,
+            displayName: metadata.displayName,
+            description: metadata.description ?? "",
+            unlockTime,
+          };
+        })
+        .filter(
+          (achievement): achievement is ProfileRecentAchievement =>
+            achievement !== null
+        );
+
+      if (!resolved.length) {
+        logger.info(
+          `[self-hosted] none of ${achievements.length} unlocks for ${shop}/${objectId} matched the catalogue's ${metadataByName.size} achievements`
+        );
+      }
+
+      return {
+        game:
+          libraryByGame.get(getGameIdentityKey({ shop, objectId })) ??
+          toLibrarylessGame(entry, catalogueAchievements.length),
+        achievements: resolved,
+      };
+    })
+  );
+
+  const achievementsByGame = settled
+    .filter(
+      (result): result is PromiseFulfilledResult<AchievementGame> =>
+        result.status === "fulfilled"
+    )
+    .map(({ value }) => value)
+    .filter(({ achievements }) => achievements.length > 0);
+
+  return buildRecentAchievementGroups(achievementsByGame);
 }
 
 async function fetchRecentAchievementGroups(
@@ -326,7 +531,7 @@ export function useExternalProfile(targetUserId: string | undefined) {
     const profile = await globalThis.window.electron.hydraApi.get<UserProfile>(
       `/users/${profileId}`
     );
-    setExternalProfile(normalizeUserProfile(profile));
+    setExternalProfile(await resolveUserProfile(profileId, profile));
   }, []);
 
   useEffect(() => {
@@ -341,8 +546,9 @@ export function useExternalProfile(targetUserId: string | undefined) {
 
     globalThis.window.electron.hydraApi
       .get<UserProfile>(`/users/${targetUserId}`)
+      .then((profile) => resolveUserProfile(targetUserId, profile))
       .then((profile) => {
-        if (isMounted) setExternalProfile(normalizeUserProfile(profile));
+        if (isMounted) setExternalProfile(profile);
       })
       .catch(() => {
         if (isMounted) setExternalProfile(null);
@@ -376,6 +582,18 @@ function useUserStats(targetUserId: string | undefined) {
 
     globalThis.window.electron.hydraApi
       .get<UserStats>(`/users/${targetUserId}/stats`)
+      .then(async (stats) => {
+        /* The official API only totals achievements for subscribers; the
+           self-hosted server knows them from achievement sync. */
+        if (stats?.unlockedAchievementSum !== undefined) return stats;
+
+        const unlockedAchievementSum =
+          await fetchSelfHostedAchievementSum(targetUserId);
+
+        return unlockedAchievementSum === null
+          ? stats
+          : { ...stats, unlockedAchievementSum };
+      })
       .then((stats) => {
         if (isMounted) setUserStats(stats);
       })
@@ -570,14 +788,24 @@ export function useRecentAchievements(
   }, []);
 
   useEffect(() => {
-    if (!targetUserId || !hasActiveSubscription) {
+    if (!targetUserId) {
       setGroups([]);
       return;
     }
 
     let isMounted = true;
 
-    fetchRecentAchievementGroups(targetUserId, isOwnProfile)
+    /* A self-hosted cloud server already grants the viewer a subscription of
+       its own, so their own profile takes the branch above and reads
+       achievements straight off this device. Only other people's profiles
+       need the fallback — theirs live on the server, not here. Without a
+       self-hosted server this resolves empty, leaving Hydra Cloud's own
+       gating untouched. */
+    const load = hasActiveSubscription
+      ? fetchRecentAchievementGroups(targetUserId, isOwnProfile)
+      : fetchSelfHostedAchievementGroups(targetUserId);
+
+    load
       .then((recentGroups) => {
         if (isMounted) setGroups(recentGroups);
       })
@@ -633,18 +861,19 @@ export function useProfileSouvenirs(
     setIsLoading(true);
     let isMounted = true;
 
-    globalThis.window.electron.hydraApi
-      .get<SouvenirsResponse | null>(
-        buildUserSouvenirsPath({ userId: targetUserId }),
-        { needsAuth: isAuthenticated }
-      )
-      .then((response) => {
+    /* Reads from whichever server this profile's owner captured on — the
+       self-hosted one, or official Hydra for everyone else. */
+    globalThis.window.electron
+      .getProfileSouvenirs({ userId: targetUserId })
+      .then(async (response) => {
+        const items = await withSouvenirAchievementMetadata(
+          ensureArray(response?.items).map((item) =>
+            normalizeProfileSouvenir(item)
+          )
+        );
+
         if (isMounted && requestGenerationRef.current === requestGeneration) {
-          setSouvenirs(
-            ensureArray(response?.items).map((item) =>
-              normalizeProfileSouvenir(item)
-            )
-          );
+          setSouvenirs(items);
           setTotal(response?.total ?? 0);
           setHiddenReason(response?.hiddenReason ?? null);
         }
@@ -687,15 +916,19 @@ export function useProfileSouvenirs(
     setIsLoadingMore(true);
 
     try {
-      const response =
-        await globalThis.window.electron.hydraApi.get<SouvenirsResponse | null>(
-          buildUserSouvenirsPath({
-            userId: targetUserId,
-            skip,
-            take: SOUVENIRS_PAGE_SIZE,
-          }),
-          { needsAuth: isAuthenticated }
-        );
+      const response = await globalThis.window.electron.getProfileSouvenirs({
+        userId: targetUserId,
+        skip,
+        take: SOUVENIRS_PAGE_SIZE,
+      });
+
+      if (requestGenerationRef.current !== requestGeneration) return;
+
+      const page = await withSouvenirAchievementMetadata(
+        ensureArray(response?.items).map((item) =>
+          normalizeProfileSouvenir(item)
+        )
+      );
 
       if (requestGenerationRef.current !== requestGeneration) return;
 
@@ -703,9 +936,9 @@ export function useProfileSouvenirs(
         const knownKeys = new Set(
           current.map((souvenir) => getSouvenirKey(souvenir.id))
         );
-        const nextItems = ensureArray(response?.items)
-          .map((item) => normalizeProfileSouvenir(item))
-          .filter((souvenir) => !knownKeys.has(getSouvenirKey(souvenir.id)));
+        const nextItems = page.filter(
+          (souvenir) => !knownKeys.has(getSouvenirKey(souvenir.id))
+        );
 
         return [...current, ...nextItems];
       });
@@ -719,7 +952,7 @@ export function useProfileSouvenirs(
         setIsLoadingMore(false);
       }
     }
-  }, [isAuthenticated, souvenirs.length, targetUserId, total]);
+  }, [souvenirs.length, targetUserId, total]);
 
   const updateSouvenir = useCallback(
     (souvenirId: string, update: Partial<ProfileSouvenir>) => {

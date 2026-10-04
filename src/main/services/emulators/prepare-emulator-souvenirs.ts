@@ -15,7 +15,7 @@ export const prepareEmulatorSouvenirs = async (
   system: EmulatorSessionSystem,
   executablePath: string | null
 ) => {
-  if (!HydraApi.hasActiveSubscription()) return null;
+  if (!HydraApi.supportsAchievementSouvenirs()) return null;
 
   const userPreferences = await db.get<string, UserPreferences | null>(
     levelKeys.userPreferences,

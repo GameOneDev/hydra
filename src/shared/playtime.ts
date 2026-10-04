@@ -66,6 +66,14 @@ export const mergeLocalAndRemotePlayTime = (
       local.playTimeInMilliseconds ?? 0,
       hydraMs
     ),
-    steamPlayTimeInMilliseconds: steamMs,
+    /* This fork also reads Steam playtime straight off the local Steam
+       installation, which the official profile knows nothing about. Taking
+       the higher of the two keeps that reading through a profile sync;
+       disconnecting the Steam integration clears the field outright, so a
+       stale value can't survive that way. */
+    steamPlayTimeInMilliseconds: Math.max(
+      local.steamPlayTimeInMilliseconds ?? 0,
+      steamMs
+    ),
   };
 };

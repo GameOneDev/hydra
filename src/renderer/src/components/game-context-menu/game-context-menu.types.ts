@@ -6,6 +6,8 @@ export interface GameContextMenuGame {
   shop: GameShop;
   title: string;
   executablePath?: string | null;
+  /** Steam-imported game launched through Steam rather than a local executable. */
+  launchThroughSteam?: boolean;
   download?: { downloadPath?: string | null; status?: string | null } | null;
   favorite?: boolean;
   isPinned?: boolean;

@@ -97,6 +97,25 @@ describe("cloud save sync planner", () => {
     );
   });
 
+  it("never pushes local state back over a version restored in the cloud", () => {
+    assert.equal(
+      planCloudSaveSync(
+        input({ trigger: "version-restore", proposalChanged: true })
+      ).kind,
+      "noop"
+    );
+    assert.equal(
+      planCloudSaveSync(
+        input({
+          trigger: "version-restore",
+          proposalChanged: true,
+          restoreEntryCount: 1,
+        })
+      ).kind,
+      "restore"
+    );
+  });
+
   it("distinguishes upload, restore and merge after the first sync", () => {
     assert.equal(
       planCloudSaveSync(input({ proposalChanged: true })).kind,

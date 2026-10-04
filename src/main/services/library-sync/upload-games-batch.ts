@@ -5,15 +5,26 @@ import { WindowManager } from "../window-manager";
 import { AchievementWatcherManager } from "../achievements/achievement-watcher-manager";
 import { gamesSublevel } from "@main/level";
 import { trackRemoteLibrarySync } from "./remote-library-sync-state";
+import { migrateSelfHostedHiddenGames } from "./self-hosted-hidden-games";
 
 const uploadLocalGamesAndMerge = async () => {
+  /* Before the upload below: games this fork hid were taken off the profile,
+     and uploading them as they are would put them back on it, visible. */
+  await migrateSelfHostedHiddenGames().catch(() => {});
+
   const games = await gamesSublevel
     .values()
     .all()
     .then((results) => {
       return results.filter(
         (game) =>
-          !game.isDeleted && game.remoteId === null && game.shop !== "custom"
+          !game.isDeleted &&
+          game.remoteId === null &&
+          game.shop !== "custom" &&
+          /* Concealed but not on the profile only happens to a game this
+             fork hid, which the migration above hasn't moved yet. Uploading
+             it here would put it on the profile visible. */
+          !game.isConcealed
       );
     });
 

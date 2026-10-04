@@ -1,6 +1,7 @@
 import { registerEvent } from "../register-event";
 import { gamesSublevel, levelKeys } from "@main/level";
 import { createGame } from "@main/services/library-sync";
+import { mirrorGameVisibilityToSelfHostedServer } from "@main/services/library-sync/self-hosted-hidden-games";
 import { HydraApi } from "@main/services";
 import type { GameShop } from "@types";
 
@@ -48,6 +49,8 @@ const setGameVisibility = async (
     isHiddenFromOthers: saved.isHiddenFromOthers,
     isConcealed: saved.isConcealed,
   });
+
+  mirrorGameVisibilityToSelfHostedServer({ shop, objectId, ...saved });
 
   return saved;
 };

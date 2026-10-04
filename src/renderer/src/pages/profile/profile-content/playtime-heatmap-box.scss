@@ -1,0 +1,133 @@
+@use "../../../scss/globals.scss";
+
+$cell-gap: 3px;
+$label-size: 12px;
+
+.playtime-heatmap {
+  display: flex;
+  flex-direction: column;
+  gap: globals.$spacing-unit;
+  padding: calc(globals.$spacing-unit * 2);
+
+  &__empty {
+    color: #8e919b;
+    font-size: globals.$small-font-size;
+  }
+
+  &__chart {
+    display: flex;
+    gap: calc(globals.$spacing-unit / 2);
+  }
+
+  &__weekdays {
+    display: flex;
+    flex-direction: column;
+    gap: $cell-gap;
+    /* Same offset as the months row so weekday labels align with the grid */
+    padding-top: calc($label-size + $cell-gap);
+  }
+
+  &__weekday {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    min-width: 28px;
+    color: #8e919b;
+    font-size: 10px;
+  }
+
+  &__weeks {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: $cell-gap;
+  }
+
+  &__months {
+    display: flex;
+    gap: $cell-gap;
+    height: $label-size;
+  }
+
+  &__month {
+    flex: 1;
+    min-width: 0;
+    overflow: visible;
+    white-space: nowrap;
+    color: #8e919b;
+    font-size: 10px;
+    line-height: $label-size;
+  }
+
+  &__grid {
+    display: flex;
+    gap: $cell-gap;
+  }
+
+  &__week {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: $cell-gap;
+  }
+
+  &__cell {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 3px;
+
+    &--level-0 {
+      background-color: rgba(255, 255, 255, 0.06);
+    }
+
+    &--level-1 {
+      background-color: #0d3d33;
+    }
+
+    &--level-2 {
+      background-color: #10614f;
+    }
+
+    &--level-3 {
+      background-color: #148c72;
+    }
+
+    &--level-4 {
+      background-color: globals.$brand-teal;
+    }
+
+    &--future {
+      background-color: transparent;
+    }
+
+    &:not(.playtime-heatmap__cell--future):hover {
+      outline: 1px solid rgba(255, 255, 255, 0.4);
+      outline-offset: -1px;
+    }
+  }
+
+  &__legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: $cell-gap;
+    color: #8e919b;
+    font-size: 10px;
+
+    .playtime-heatmap__cell {
+      flex: 0 0 auto;
+      width: 10px;
+      height: 10px;
+    }
+
+    span:first-child {
+      margin-right: calc(globals.$spacing-unit / 2);
+    }
+
+    span:last-child {
+      margin-left: calc(globals.$spacing-unit / 2);
+    }
+  }
+}

@@ -47,9 +47,13 @@ const normalizePathForCss = (url: string | null | undefined): string => {
 
 interface InstalledBadgeProps {
   emulatorIcon: string | null | undefined;
+  isSteamManaged: boolean;
 }
 
-function InstalledBadge({ emulatorIcon }: Readonly<InstalledBadgeProps>) {
+function InstalledBadge({
+  emulatorIcon,
+  isSteamManaged,
+}: Readonly<InstalledBadgeProps>) {
   const { t } = useTranslation("library");
 
   return (
@@ -57,7 +61,9 @@ function InstalledBadge({ emulatorIcon }: Readonly<InstalledBadgeProps>) {
       className={cn("library-game-card-large__installed-badge", {
         "library-game-card-large__installed-badge--classics": emulatorIcon,
       })}
-      title={t("installed_tooltip")}
+      title={t(
+        isSteamManaged ? "installed_via_steam_tooltip" : "installed_tooltip"
+      )}
     >
       {emulatorIcon ? (
         <img
@@ -105,6 +111,8 @@ export const LibraryGameCardLarge = memo(function LibraryGameCardLarge({
 
   const [isCoverHovered, setIsCoverHovered] = useState(false);
 
+  const isSteamManaged =
+    Boolean(game.launchThroughSteam) && !game.executablePath;
   const isInstalled = isGameReadyToPlay(game);
 
   const sizeBars = useMemo(() => {
@@ -313,7 +321,10 @@ export const LibraryGameCardLarge = memo(function LibraryGameCardLarge({
 
   const installedBadge =
     !hideReadySizeBadges && isInstalled ? (
-      <InstalledBadge emulatorIcon={classicsEmulatorIcon} />
+      <InstalledBadge
+        emulatorIcon={classicsEmulatorIcon}
+        isSteamManaged={isSteamManaged}
+      />
     ) : null;
 
   return (

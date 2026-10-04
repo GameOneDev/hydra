@@ -158,6 +158,9 @@ export function Sidebar() {
     [hasPlatforms, selectedPlatforms]
   );
 
+  const { gameRunning } = useAppSelector((state) => state.gameRunning);
+  const runningGameId = gameRunning?.id;
+
   const orderSidebarGames = useCallback(
     (games: LibraryGame[]) => {
       const sorted = sortLibraryGames(games, sidebarSortBy);
@@ -172,9 +175,28 @@ export function Sidebar() {
     [sidebarSortBy, showFavoritesFirst]
   );
 
+  /* A game that is currently running is pinned to the very top, whichever
+     sort and grouping the user picked. Filtering keeps the order, so pinning
+     the ordered list carries through to the filtered list and to search. */
+  const pinRunningGame = useCallback(
+    (games: LibraryGame[]) => {
+      if (!runningGameId) return games;
+
+      const runningIndex = games.findIndex((game) => game.id === runningGameId);
+      if (runningIndex <= 0) return games;
+
+      return [
+        games[runningIndex],
+        ...games.slice(0, runningIndex),
+        ...games.slice(runningIndex + 1),
+      ];
+    },
+    [runningGameId]
+  );
+
   const orderedLibrary = useMemo(
-    () => orderSidebarGames(library),
-    [library, orderSidebarGames]
+    () => pinRunningGame(orderSidebarGames(library)),
+    [library, orderSidebarGames, pinRunningGame]
   );
 
   const sortedLibrary = useMemo(
@@ -376,6 +398,26 @@ export function Sidebar() {
   useEffect(() => {
     updateLibrary();
   }, [lastPacket?.gameId, updateLibrary]);
+
+  const runningGameIdsRef = useRef("");
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onGamesRunning((gamesRunning) => {
+      const runningIds = gamesRunning
+        .map((game) => game.id)
+        .sort((a, b) => a.localeCompare(b))
+        .join(",");
+
+      if (runningIds !== runningGameIdsRef.current) {
+        runningGameIdsRef.current = runningIds;
+        updateLibrary();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [updateLibrary]);
 
   useEffect(() => {
     const handlePinToggled = () => {
