@@ -24,7 +24,7 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 ## What this fork adds
 
 - **🖥️ Self-hosted cloud storage** — point Hydra at your own [`hydra-server`](https://github.com/GameOneDev/hydra-server) instance from **Settings → Integrations → Self-hosted cloud storage**.
-- **☁️ Self-hosted cloud saves** — back up and restore game saves to your own server instead of Hydra Cloud.
+- **☁️ Self-hosted cloud saves** — back up and restore game saves to your own server instead of Hydra Cloud, including the RetroArch and RPCS3 saves and save states upstream syncs through Cloud Save V2.
 - **🏆 Self-hosted achievement sync** — unlock and sync achievements without a subscription. Achievement names are matched case-insensitively and kept even for games that are no longer in your library. Unlocks imported by the Steam integration are mirrored to your server too, since Steam uploads them through endpoints only official Hydra serves.
 - **🖼️ Custom game images** — read and share your own covers, icons, logos and banners from your server, just like Hydra Cloud does for subscribers. Custom images are visible to anyone who views your profile.
 - **📸 Self-hosted achievement souvenirs** — the screenshot Hydra takes when an achievement pops is stored on your server and shown on your profile, with per-souvenir privacy, likes and reports. Achievement names, icons and points are joined from the public catalogue, since your server only stores the picture.
@@ -37,7 +37,9 @@ You keep using your normal Hydra account. Login, friends, the catalogue and ever
 3. Paste your server URL (`http://` or `https://`) and save.
 4. That's it — cloud saves, achievements, souvenirs, custom artwork and download-source sync now route to your server. Clear the field at any time to switch back to the official Hydra Cloud subscription.
 
-Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later. A profile's achievement total follows the platform tab you pick with hydra-server 4.1.4 or later; older servers answer for the whole library, whichever tab is open.
+Each feature is enabled only when your server says it has the endpoints for it (`GET /capabilities`), so a launcher newer than your server keeps the missing features off instead of failing mid-sync. Souvenirs need hydra-server 4.1.2 or later. A profile's achievement total follows the platform tab you pick with hydra-server 4.1.4 or later; older servers answer for the whole library, whichever tab is open. Emulator save states need hydra-server 4.1.6 or later to restore with the emulator and core they were made with.
+
+Hiding games is upstream's own feature since 4.1.6 (**Conceal** and **Hide**, kept on the official servers). Games hidden with this fork's earlier hide are moved over once per account, as both concealed and hidden from others, and your server's hidden list follows upstream's from then on, so a hidden game stays out of the stats, achievements, artwork and playtime other members see there.
 
 ## Features (from upstream Hydra)
 

@@ -96,6 +96,7 @@ describe("cloud save automatic sync mode", () => {
         "steam",
         true,
         true,
+        null,
         false
       ),
       "legacy"
@@ -108,9 +109,23 @@ describe("cloud save automatic sync mode", () => {
         "steam",
         true,
         undefined,
+        null,
         true
       ),
       "v2"
+    );
+  });
+
+  it("leaves emulator saves off when the server cannot serve V2", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "launchbox",
+        true,
+        true,
+        "Sony PlayStation 3",
+        false
+      ),
+      "disabled"
     );
   });
 
@@ -127,6 +142,75 @@ describe("cloud save automatic sync mode", () => {
       ),
       "disabled"
     );
+  });
+
+  it("defaults supported emulator games to V2 and preserves later opt-outs", () => {
+    for (const platform of [
+      "Sony PlayStation 3",
+      "Nintendo Entertainment System",
+      "Super Nintendo Entertainment System",
+      "Nintendo 64",
+      "Nintendo Game Boy",
+      "Nintendo Game Boy Color",
+      "Nintendo Game Boy Advance",
+    ]) {
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "launchbox",
+          true,
+          undefined,
+          platform
+        ),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "launchbox",
+          true,
+          true,
+          platform
+        ),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "launchbox",
+          true,
+          false,
+          platform
+        ),
+        "disabled"
+      );
+    }
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "launchbox",
+        true,
+        undefined,
+        "Atari 2600"
+      ),
+      "legacy"
+    );
+  });
+
+  it("keeps other emulators on legacy even with an old V2 preference", () => {
+    for (const platform of [
+      "Sony PlayStation",
+      "Sony PlayStation 2",
+      "Sony PlayStation Portable",
+      "Nintendo GameCube",
+      "Nintendo Wii",
+    ]) {
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "launchbox",
+          true,
+          true,
+          platform
+        ),
+        "legacy"
+      );
+    }
   });
 
   it("enabling legacy disables V2", () => {

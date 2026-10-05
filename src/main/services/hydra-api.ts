@@ -20,6 +20,7 @@ import { SSEClient } from "./sse";
 import {
   sanitizeAxiosError,
   sanitizeNetworkLogPayload,
+  summarizeNetworkLogPayload,
 } from "./network-log-payload";
 import {
   disabledSelfHostedServerStatus,
@@ -35,6 +36,12 @@ import {
   isSouvenirRoute,
 } from "./souvenir-routes";
 
+declare module "axios" {
+  interface AxiosRequestConfig {
+    logResponseBody?: boolean;
+  }
+}
+
 export interface HydraApiOptions {
   needsAuth?: boolean;
   needsSubscription?: boolean;
@@ -42,6 +49,7 @@ export interface HydraApiOptions {
   ifNoneMatch?: string;
   validateStatus?: (status: number) => boolean;
   signal?: AbortSignal;
+  logResponseBody?: boolean;
 }
 
 interface HydraApiUserAuth {
@@ -141,6 +149,8 @@ export class HydraApi {
 
   private static readonly CLOUD_ROUTED_PREFIXES = [
     "/profile/games/artifacts",
+    /* The list the server keeps games off other members' views with. It
+       follows upstream's Conceal and Hide; see self-hosted-hidden-games. */
     "/profile/hidden-games",
     /* Custom game images (covers, icons, logos, banners). Uploads already
        route here via needsSubscription; the read side has no such flag, and
@@ -264,19 +274,6 @@ export class HydraApi {
     if (!this.isSelfHostedCloudEnabled()) return true;
     if (!this.hasCapabilitiesForCurrentServer()) return false;
     return this.selfHostedFeatures?.has(feature) ?? false;
-  }
-
-  /**
-   * Hidden games are stored on the self-hosted server, so the feature needs an
-   * authenticated session against one that advertises it. Both renderers gate
-   * their UI on this, and the hide/unhide handlers enforce it.
-   */
-  public static supportsHiddenGames() {
-    return (
-      this.isLoggedIn() &&
-      this.isSelfHostedCloudEnabled() &&
-      this.supportsCloudFeature("hidden-games")
-    );
   }
 
   /**
@@ -501,6 +498,8 @@ export class HydraApi {
       this.secondsToMilliseconds(expiresIn) -
       this.EXPIRATION_OFFSET_IN_MS;
 
+    await clearGamesRemoteIds();
+
     this.userAuth = {
       authToken: accessToken,
       refreshToken: refreshToken,
@@ -551,7 +550,6 @@ export class HydraApi {
 
     if (WindowManager.mainWindow) {
       WindowManager.mainWindow.webContents.send("on-signin");
-      await clearGamesRemoteIds();
       void uploadGamesBatch();
 
       SSEClient.close();
@@ -693,7 +691,9 @@ export class HydraApi {
             response.status,
             response.config.method,
             response.config.url,
-            sanitizeNetworkLogPayload(response.data)
+            response.config.logResponseBody === false
+              ? summarizeNetworkLogPayload(response.data)
+              : sanitizeNetworkLogPayload(response.data)
           );
           return response;
         },
@@ -928,6 +928,7 @@ export class HydraApi {
           ? { validateStatus: options.validateStatus }
           : {}),
         signal: options?.signal,
+        logResponseBody: options?.logResponseBody,
       })
       .then((response) => response.data)
       .catch(this.handleUnauthorizedError);

@@ -7,7 +7,6 @@ import {
   PinSlashIcon,
   PlayIcon,
   PlusCircleIcon,
-  EyeClosedIcon,
 } from "@primer/octicons-react";
 import { Button, ConfirmationModal } from "@renderer/components";
 import { XCircle } from "lucide-react";
@@ -16,13 +15,15 @@ import {
   useLibrary,
   useToast,
   useUserDetails,
-  useHiddenGamesEnabled,
 } from "@renderer/hooks";
 import { useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { gameDetailsContext } from "@renderer/context";
-import { handleClassicsLaunchError } from "@renderer/helpers";
+import {
+  canDownloadOnSteam,
+  handleClassicsLaunchError,
+} from "@renderer/helpers";
 import { DiscSelectionModal } from "../modals/disc-selection-modal";
 
 import "./hero-panel-actions.scss";
@@ -51,8 +52,6 @@ export function HeroPanelActions() {
     isTransferring,
     transferProgress,
   } = useContext(gameDetailsContext);
-
-  const hiddenGamesEnabled = useHiddenGamesEnabled();
 
   const { lastPacket } = useDownload();
 
@@ -138,7 +137,7 @@ export function HeroPanelActions() {
     };
   }, [updateLibrary, updateGame]);
 
-  const addGameToLibrary = async (isHidden = false) => {
+  const addGameToLibrary = async () => {
     setToggleLibraryGameDisabled(true);
 
     try {
@@ -146,8 +145,7 @@ export function HeroPanelActions() {
         shop,
         objectId!,
         gameTitle,
-        shopDetails?.platform ?? null,
-        isHidden
+        shopDetails?.platform ?? null
       );
 
       updateLibrary();
@@ -233,7 +231,10 @@ export function HeroPanelActions() {
 
     const discs = game.discs ?? [];
 
-    if (discs.length <= 1) {
+    if (
+      discs.length === 0 ||
+      (discs.length === 1 && game.selectedDiscPath !== null)
+    ) {
       await launchClassicsWithErrorHandling();
       return;
     }
@@ -308,29 +309,15 @@ export function HeroPanelActions() {
   const deleting = game ? isGameDeleting(game?.id) : false;
 
   const addGameToLibraryButton = (
-    <div className="hero-panel-actions__container">
-      {!game && hiddenGamesEnabled && (
-        <Button
-          theme="outline"
-          disabled={toggleLibraryGameDisabled}
-          onClick={() => addGameToLibrary(true)}
-          className="hero-panel-actions__action"
-          title={t("add_to_library_hidden")}
-        >
-          <EyeClosedIcon />
-          {t("add_to_library_hidden")}
-        </Button>
-      )}
-      <Button
-        theme="outline"
-        disabled={toggleLibraryGameDisabled}
-        onClick={() => addGameToLibrary(false)}
-        className="hero-panel-actions__action"
-      >
-        <PlusCircleIcon />
-        {t("add_to_library")}
-      </Button>
-    </div>
+    <Button
+      theme="outline"
+      disabled={toggleLibraryGameDisabled}
+      onClick={addGameToLibrary}
+      className="hero-panel-actions__action"
+    >
+      <PlusCircleIcon />
+      {t("add_to_library")}
+    </Button>
   );
 
   const showDownloadOptionsButton = (
@@ -401,7 +388,7 @@ export function HeroPanelActions() {
         onClick={() => setShowRepacksModal(true)}
         theme="outline"
         disabled={isGameDownloading}
-        className={`hero-panel-actions__action ${repacks.length === 0 ? "hero-panel-actions__action--disabled" : ""}`}
+        className={`hero-panel-actions__action ${repacks.length === 0 && !canDownloadOnSteam(game) ? "hero-panel-actions__action--disabled" : ""}`}
       >
         <DownloadIcon />
         {t("download")}

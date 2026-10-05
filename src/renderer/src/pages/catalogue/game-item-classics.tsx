@@ -1,9 +1,4 @@
-import {
-  QuestionIcon,
-  PlusIcon,
-  CheckIcon,
-  EyeClosedIcon,
-} from "@primer/octicons-react";
+import { QuestionIcon, PlusIcon, CheckIcon } from "@primer/octicons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import cn from "classnames";
@@ -11,11 +6,7 @@ import cn from "classnames";
 import { Badge } from "@renderer/components/badge/badge";
 import { Link } from "@renderer/components/link/link";
 import { buildGameDetailsPath } from "@renderer/helpers";
-import {
-  useAppSelector,
-  useLibrary,
-  useHiddenGamesEnabled,
-} from "@renderer/hooks";
+import { useAppSelector, useLibrary } from "@renderer/hooks";
 
 import type { CatalogueSearchResult } from "@types";
 
@@ -101,22 +92,19 @@ export function GameItemClassics({ game }: GameItemClassicsProps) {
 
   const { steamGenres } = useAppSelector((state) => state.catalogueSearch);
 
-  const { library, hiddenLibrary, updateLibrary } = useLibrary();
+  const { library, updateLibrary } = useLibrary();
   const [isAddingToLibrary, setIsAddingToLibrary] = useState(false);
   const [added, setAdded] = useState(false);
 
-  const hiddenGamesEnabled = useHiddenGamesEnabled();
-
   useEffect(() => {
-    const isInLibrary = [...library, ...hiddenLibrary].some(
+    const exists = library.some(
       (libItem) =>
         libItem.shop === game.shop && libItem.objectId === game.objectId
     );
+    setAdded(exists);
+  }, [library, game.shop, game.objectId]);
 
-    setAdded(isInLibrary);
-  }, [library, hiddenLibrary, game.shop, game.objectId]);
-
-  const addGameToLibrary = async (isHidden = false) => {
+  const addGameToLibrary = async () => {
     if (added || isAddingToLibrary) return;
 
     setIsAddingToLibrary(true);
@@ -126,10 +114,8 @@ export function GameItemClassics({ game }: GameItemClassicsProps) {
         game.shop,
         game.objectId,
         game.title,
-        game.platform ?? null,
-        isHidden
+        game.platform ?? null
       );
-      setAdded(true);
       updateLibrary();
     } catch (error) {
       console.error(error);
@@ -210,38 +196,18 @@ export function GameItemClassics({ game }: GameItemClassicsProps) {
         </div>
       </Link>
 
-      <div className="game-item-classics__actions">
-        {!added && hiddenGamesEnabled && (
-          <button
-            type="button"
-            className="game-item-classics__plus-wrapper"
-            onClick={(e) => {
-              e.preventDefault();
-              addGameToLibrary(true);
-            }}
-            title={t("add_to_library_hidden")}
-            aria-label={t("add_to_library_hidden")}
-            disabled={isAddingToLibrary}
-          >
-            <EyeClosedIcon size={16} />
-          </button>
-        )}
-        <button
-          type="button"
-          className={cn("game-item-classics__plus-wrapper", {
-            "game-item-classics__plus-wrapper--added": added,
-          })}
-          onClick={(e) => {
-            e.preventDefault();
-            addGameToLibrary(false);
-          }}
-          title={added ? t("already_in_library") : t("add_to_library")}
-          aria-label={added ? t("already_in_library") : t("add_to_library")}
-          disabled={added || isAddingToLibrary}
-        >
-          {added ? <CheckIcon size={16} /> : <PlusIcon size={16} />}
-        </button>
-      </div>
+      <button
+        type="button"
+        className={cn("game-item-classics__plus-wrapper", {
+          "game-item-classics__plus-wrapper--added": added,
+        })}
+        onClick={addGameToLibrary}
+        title={added ? t("already_in_library") : t("add_to_library")}
+        aria-label={added ? t("already_in_library") : t("add_to_library")}
+        disabled={added || isAddingToLibrary}
+      >
+        {added ? <CheckIcon size={16} /> : <PlusIcon size={16} />}
+      </button>
     </article>
   );
 }

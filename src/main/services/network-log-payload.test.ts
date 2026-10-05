@@ -8,6 +8,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import {
   sanitizeAxiosError,
   sanitizeNetworkLogPayload,
+  summarizeNetworkLogPayload,
 } from "./network-log-payload.js";
 
 describe("network log payload", () => {
@@ -101,6 +102,18 @@ describe("network log payload", () => {
       status: 200,
       self: "[Circular]",
     });
+  });
+
+  it("summarizes bulk payloads without walking them", () => {
+    assert.equal(
+      summarizeNetworkLogPayload([{ id: 1 }, { id: 2 }]),
+      "[Array: 2 items]"
+    );
+    assert.equal(
+      summarizeNetworkLogPayload({ games: [], total: 0 }),
+      "[Object: 2 keys]"
+    );
+    assert.equal(summarizeNetworkLogPayload("ok"), "ok");
   });
 });
 

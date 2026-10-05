@@ -44,7 +44,6 @@ const updateGameAsDeleted = async (
   const updatedGame = {
     ...updateGameExecutablePath(game, null),
     isDeleted: true,
-    isHidden: false,
     ...(game.shop !== "custom" && {
       customIconUrl: null,
       customLogoImageUrl: null,
@@ -105,12 +104,6 @@ const removeGameFromLibrary = async (
 
   if (game.remoteId) {
     HydraApi.delete(`/profile/games/${game.remoteId}`).catch(() => {});
-  }
-
-  if (game.isHidden) {
-    HydraApi.delete(
-      `/profile/hidden-games?shop=${encodeURIComponent(shop)}&objectId=${encodeURIComponent(objectId)}`
-    ).catch(() => {});
   }
 
   await deleteAssetFiles(assetPathsToDelete);

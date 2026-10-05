@@ -7,6 +7,7 @@ import {
   type SkuRegion,
 } from "@renderer/helpers";
 import type { GameShop, ShopAssets } from "@types";
+import { hasCloudSaveExecutableSelection } from "@shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
@@ -56,7 +57,6 @@ import {
   useHeaderTitle,
   useNavigationScreenActions,
 } from "../../hooks";
-import { useHiddenGamesEnabled } from "@renderer/hooks";
 import {
   BIG_PICTURE_SIDEBAR_ITEM_IDS,
   BIG_PICTURE_SIDEBAR_REGION_ID,
@@ -494,7 +494,6 @@ function SimilarGamesEmptyState({
 }
 
 export default function Game() {
-  const hiddenGamesEnabled = useHiddenGamesEnabled();
   const { t } = useTranslation("big_picture");
   const { showErrorToast, showSuccessToast } = useBigPictureToast();
   const { shop, objectId } = useParams<{ shop: GameShop; objectId: string }>();
@@ -858,54 +857,50 @@ export default function Game() {
     setIsDownloadModalOpen(false);
   }, []);
 
-  const handleAddToLibrary = useCallback(
-    async (isHidden = false) => {
-      if (
-        !shop ||
-        !objectId ||
-        !canAddToLibrary ||
-        game ||
-        isAddingToLibrary ||
-        !shopDetails
-      ) {
-        return;
-      }
+  const handleAddToLibrary = useCallback(async () => {
+    if (
+      !shop ||
+      !objectId ||
+      !canAddToLibrary ||
+      game ||
+      isAddingToLibrary ||
+      !shopDetails
+    ) {
+      return;
+    }
 
-      setIsAddingToLibrary(true);
+    setIsAddingToLibrary(true);
 
-      try {
-        await globalThis.window.electron.addGameToLibrary(
-          shop,
-          objectId,
-          resolvedGameTitle,
-          shopDetails.platform ?? null,
-          isHidden
-        );
-        await updateGame();
-        globalThis.window.dispatchEvent(new Event("library-update"));
+    try {
+      await globalThis.window.electron.addGameToLibrary(
+        shop,
+        objectId,
+        resolvedGameTitle,
+        shopDetails.platform ?? null
+      );
+      await updateGame();
+      globalThis.window.dispatchEvent(new Event("library-update"));
 
-        const { title, ...toastOptions } = await buildLibraryToastOptions(
-          gameToastSource,
-          "added"
-        );
-        showSuccessToast(title, toastOptions);
-      } finally {
-        setIsAddingToLibrary(false);
-      }
-    },
-    [
-      canAddToLibrary,
-      game,
-      gameToastSource,
-      isAddingToLibrary,
-      objectId,
-      resolvedGameTitle,
-      shop,
-      shopDetails,
-      showSuccessToast,
-      updateGame,
-    ]
-  );
+      const { title, ...toastOptions } = await buildLibraryToastOptions(
+        gameToastSource,
+        "added"
+      );
+      showSuccessToast(title, toastOptions);
+    } finally {
+      setIsAddingToLibrary(false);
+    }
+  }, [
+    canAddToLibrary,
+    game,
+    gameToastSource,
+    isAddingToLibrary,
+    objectId,
+    resolvedGameTitle,
+    shop,
+    showSuccessToast,
+    shopDetails,
+    updateGame,
+  ]);
 
   const launchClassicsWithErrorHandling = useCallback(
     async (discPath?: string, force?: boolean) => {
@@ -959,7 +954,10 @@ export default function Game() {
 
     const discs = game.discs ?? [];
 
-    if (discs.length <= 1) {
+    if (
+      discs.length === 0 ||
+      (discs.length === 1 && game.selectedDiscPath !== null)
+    ) {
       await launchClassicsWithErrorHandling();
       return;
     }
@@ -1450,7 +1448,10 @@ export default function Game() {
         <BigPictureCloudSaveProvider
           objectId={objectId!}
           shop={shop!}
-          hasExecutablePath={Boolean(game?.executablePath)}
+          platform={game?.platform}
+          hasExecutablePath={
+            game ? hasCloudSaveExecutableSelection(game) : false
+          }
           isGameRunning={isGameRunning}
           onSelectExecutable={() => setIsGameSettingsModalOpen(true)}
         >
@@ -1468,7 +1469,6 @@ export default function Game() {
             onClose={closeGame}
             isAddingToLibrary={isAddingToLibrary}
             canAddToLibrary={canAddToLibrary}
-            canAddAsHidden={!game && hiddenGamesEnabled}
             downNavigationTarget={contentBelowHeroTarget}
             sidebarEntryTarget={sidebarEntryTarget}
           />

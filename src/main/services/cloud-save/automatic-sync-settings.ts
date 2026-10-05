@@ -13,6 +13,8 @@ import type {
 import { HydraApi } from "../hydra-api";
 import { WindowManager } from "../window-manager";
 import { assertCloudSaveSubscription } from "./cloud-save-access";
+import { assertLegacyCloudSaveWriteAllowed } from "./legacy-cloud-save-policy";
+import { assertCloudSaveV2Eligible } from "./assert-cloud-save-executable";
 import {
   CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
@@ -54,6 +56,7 @@ const readCloudSaveAutomaticSyncMode = async (
     shop,
     legacyEnabled,
     storedV2Enabled,
+    game?.platform,
     HydraApi.supportsCloudFeature(CLOUD_SAVE_V2_FEATURE)
   );
 
@@ -107,6 +110,7 @@ export const setCloudSaveAutomaticSyncEnabled = async (
   enabled: boolean
 ) => {
   if (enabled) {
+    await assertCloudSaveV2Eligible(objectId, shop);
     assertCloudSaveSubscription();
   }
 
@@ -130,10 +134,11 @@ export const setLegacyCloudSaveAutomaticSyncEnabled = async (
   shop: GameShop,
   enabled: boolean
 ) => {
-  const { mode: currentMode } = await readCloudSaveAutomaticSyncMode(
+  const { game, mode: currentMode } = await readCloudSaveAutomaticSyncMode(
     objectId,
     shop
   );
+  assertLegacyCloudSaveWriteAllowed(game);
   const nextMode = getNextCloudSaveAutomaticSyncMode(
     currentMode,
     "legacy",

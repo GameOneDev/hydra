@@ -37,10 +37,8 @@ export const trackGamePlaytime = async (
 
   reportPlaytimeToSelfHostedCloud(game, playTimeDeltaInSeconds);
 
-  if (!game.isHidden) {
-    return HydraApi.put(`/profile/games/${game.shop}/${game.objectId}`, {
-      playTimeDeltaInSeconds,
-      lastTimePlayed,
-    });
-  }
+  return HydraApi.put(`/profile/games/${game.shop}/${game.objectId}`, {
+    playTimeDeltaInSeconds,
+    lastTimePlayed,
+  });
 };

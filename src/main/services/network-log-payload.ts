@@ -107,6 +107,15 @@ const sanitizePayload = (value: unknown, seen: WeakSet<object>): unknown => {
 export const sanitizeNetworkLogPayload = (value: unknown) =>
   sanitizePayload(value, new WeakSet());
 
+export const summarizeNetworkLogPayload = (value: unknown) => {
+  if (Array.isArray(value)) return `[Array: ${value.length} items]`;
+  if (value !== null && typeof value === "object") {
+    return `[Object: ${Object.keys(value).length} keys]`;
+  }
+
+  return sanitizeNetworkLogPayload(value);
+};
+
 /* Request headers carrying credentials. Matched case-insensitively:
    AxiosHeaders keeps whatever casing the caller used, so a literal
    `headers.Authorization` lookup silently misses a lowercase header. */

@@ -850,6 +850,8 @@ function ProfileHeroActions({
   tertiaryNavigationOverrides,
   onSignOut,
 }: Readonly<ProfileHeroActionsProps>) {
+  const { t } = useTranslation("user_profile");
+
   if (profileUser?.isOwnProfile) {
     return (
       <HorizontalFocusGroup
@@ -863,7 +865,7 @@ function ProfileHeroActions({
           focusNavigationOverrides={signOutNavigationOverrides}
           onClick={onSignOut}
         >
-          Sign Out
+          {t("sign_out")}
         </Button>
       </HorizontalFocusGroup>
     );
@@ -2719,8 +2721,19 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     [externalProfile, userDetails, userId]
   );
 
+  const [showSignOutModal, setShowSignOutModal] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+
   const handleSignOut = useCallback(async () => {
-    await signOut();
+    setIsSigningOut(true);
+
+    try {
+      await signOut();
+    } finally {
+      setIsSigningOut(false);
+      setShowSignOutModal(false);
+    }
+
     navigate(getBasePath() || "/");
   }, [navigate, signOut]);
 
@@ -3274,9 +3287,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
           isPerformingAction={isPerformingProfileAction}
           isLoading={isLoading}
           firstContentFocusId={firstContentFocusId}
-          onSignOut={() => {
-            handleSignOut().catch(() => {});
-          }}
+          onSignOut={() => setShowSignOutModal(true)}
         />
 
         {profileUser ? (
@@ -3411,6 +3422,18 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
             }
           }}
           onConfirm={() => void handleSouvenirSyncCleanup()}
+        />
+
+        <ConfirmationModal
+          visible={showSignOutModal}
+          title={t("sign_out_modal_title")}
+          description={t("sign_out_modal_text")}
+          confirmLabel={t("sign_out")}
+          cancelLabel={t("cancel")}
+          loading={isSigningOut}
+          danger
+          onClose={() => setShowSignOutModal(false)}
+          onConfirm={() => handleSignOut().catch(() => {})}
         />
 
         <ConfirmationModal

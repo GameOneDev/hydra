@@ -1,6 +1,7 @@
 export * from "./use-download";
 export * from "./use-download-layout";
 export * from "./use-library";
+export * from "./use-non-steam-executable";
 export * from "./use-date";
 export * from "./use-toast";
 export * from "./redux";
@@ -18,6 +19,5 @@ export * from "./use-retroarch-scan";
 export * from "./use-game-artwork-grid";
 export * from "./game-artwork-utils";
 export * from "./use-cover-poster";
-export * from "./use-hidden-games-enabled";
 export * from "./use-self-hosted-status";
 export * from "./use-processed-image";

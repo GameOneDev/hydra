@@ -110,6 +110,7 @@ export function ProfileContent() {
     libraryGames,
     pinnedGames,
     getUserStats,
+    getUserProfile,
     getUserLibraryGames,
     loadMoreLibraryGames,
     hasMoreLibraryGames,
@@ -358,6 +359,15 @@ export function ProfileContent() {
       window.removeEventListener("hydra:game-pin-toggled", handlePinToggled);
     };
   }, [getUserLibraryGames, effectiveSortBy, libraryFilter, userProfile]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (isMe) void getUserProfile();
+    };
+    window.addEventListener("hydra:game-visibility-updated", refresh);
+    return () =>
+      window.removeEventListener("hydra:game-visibility-updated", refresh);
+  }, [getUserProfile, isMe]);
 
   // Clear reviews state and reset tab when switching users
   useEffect(() => {

@@ -1,4 +1,5 @@
 import type { CloudSaveAutomaticSyncMode, GameShop } from "@types";
+import { getCloudSaveEmulatorProvider } from "../../../shared/cloud-save-emulator-provider.js";
 
 export type { CloudSaveAutomaticSyncMode } from "@types";
 
@@ -39,18 +40,29 @@ export const resolveStoredCloudSaveAutomaticSyncModeForShop = (
   shop: GameShop,
   legacyEnabled: boolean,
   storedV2Enabled: boolean | undefined,
+  platform?: string | null,
   v2Supported = true
-) =>
-  shop === "steam"
-    ? resolveStoredCloudSaveAutomaticSyncMode(
-        legacyEnabled,
-        storedV2Enabled,
-        v2Supported
-      )
-    : resolveCloudSaveAutomaticSyncMode({
-        legacyEnabled,
-        v2Enabled: false,
-      });
+) => {
+  if (shop === "steam") {
+    return resolveStoredCloudSaveAutomaticSyncMode(
+      legacyEnabled,
+      storedV2Enabled,
+      v2Supported
+    );
+  }
+  if (getCloudSaveEmulatorProvider(shop, platform)) {
+    /* Emulator saves only ever sync through V2, so a server without it gets
+       nothing rather than a legacy flow upstream no longer offers for them. */
+    return resolveCloudSaveAutomaticSyncMode({
+      legacyEnabled: false,
+      v2Enabled: v2Supported && (storedV2Enabled ?? true),
+    });
+  }
+  return resolveCloudSaveAutomaticSyncMode({
+    legacyEnabled,
+    v2Enabled: false,
+  });
+};
 
 export const getCloudSaveAutomaticSyncStateForMode = (
   mode: CloudSaveAutomaticSyncMode
