@@ -34,6 +34,37 @@ const reportPlaytimeToSelfHostedCloud = (
   }).catch(() => {});
 };
 
+/* Sessions Hydra doesn't count toward its own playtime — Epic and Steam
+   games whose time the store reports — never reach trackGamePlaytime, so
+   the heatmap would miss them. Their wall-clock time is collected here and
+   reported in whole seconds, carrying the remainder to the next flush. */
+const untrackedSessionTime = new Map<string, number>();
+
+export const recordUntrackedSessionTime = (
+  game: Game,
+  deltaInMillis: number
+) => {
+  if (!HydraApi.isSelfHostedCloudEnabled()) return;
+  if (game.shop === "custom" || !(deltaInMillis > 0)) return;
+
+  const key = levelKeys.game(game.shop, game.objectId);
+  untrackedSessionTime.set(
+    key,
+    (untrackedSessionTime.get(key) ?? 0) + deltaInMillis
+  );
+};
+
+export const flushUntrackedSessionTime = (game: Game, sessionEnded = false) => {
+  const key = levelKeys.game(game.shop, game.objectId);
+  const pending = untrackedSessionTime.get(key) ?? 0;
+  const seconds = Math.trunc(pending / 1000);
+
+  if (sessionEnded) untrackedSessionTime.delete(key);
+  else untrackedSessionTime.set(key, pending - seconds * 1000);
+
+  reportPlaytimeToSelfHostedCloud(game, seconds);
+};
+
 export const trackGamePlaytime = async (
   game: Game,
   deltaInMillis: number,

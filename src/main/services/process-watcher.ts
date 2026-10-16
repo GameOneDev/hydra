@@ -7,7 +7,12 @@ import {
 } from "./epic";
 import { WindowManager } from "./window-manager";
 import { updateGameExecutablePath } from "@main/helpers/update-executable-path";
-import { createGame, trackGamePlaytime } from "./library-sync";
+import {
+  createGame,
+  flushUntrackedSessionTime,
+  recordUntrackedSessionTime,
+  trackGamePlaytime,
+} from "./library-sync";
 import type { Game, UserPreferences } from "@types";
 import axios from "axios";
 import { db, gamesSublevel, levelKeys } from "@main/level";
@@ -627,12 +632,17 @@ function onTickGame(game: Game) {
     delta
   );
 
+  if (!gamePlaytime.countHydraPlaytime)
+    recordUntrackedSessionTime(game, now - gamePlaytime.lastTick);
+
   setGamePlaytime(levelKeys.game(game.shop, game.objectId), {
     ...gamePlaytime,
     lastTick: now,
   });
 
   if (currentTick % TICKS_TO_UPDATE_API === 0 && game.shop !== "custom") {
+    flushUntrackedSessionTime(game);
+
     logPlaytimeTrace("periodic-sync-request", game, {
       method: game.remoteId ? "track" : "create",
       deltaToSync,
@@ -746,6 +756,10 @@ const onCloseGame = (game: Game) => {
   };
 
   void persistGamePlaytime(gameKey, updatedGame, authContext, delta);
+
+  if (!gamePlaytime.countHydraPlaytime)
+    recordUntrackedSessionTime(game, now - gamePlaytime.lastTick);
+  flushUntrackedSessionTime(game, true);
 
   if (game.shop === "custom") return;
 

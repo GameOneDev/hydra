@@ -173,6 +173,8 @@ function fixture() {
         "./library-sync": {
           createGame: sync.create,
           trackGamePlaytime: sync.track,
+          recordUntrackedSessionTime: () => {},
+          flushUntrackedSessionTime: () => {},
         },
         "./game-running-state": running,
         "./game-record-updater": {
