@@ -66,6 +66,9 @@ export interface HydraApiOptions {
   logResponseBody?: boolean;
   timeout?: number;
   authContext?: HydraApiAuthContext;
+  /** Send to the official API even when the path is one the self-hosted
+      server normally answers. Main process only. */
+  forceOfficialApi?: boolean;
 }
 
 interface HydraApiUserAuth {
@@ -282,7 +285,13 @@ export class HydraApi {
      can perform, even though they carry needsSubscription. Hoster unlocking
      resolves a download link through Hydra's own credentials with that
      file host — nothing a self-hosted server could stand in for. */
-  private static readonly OFFICIAL_ONLY_PREFIXES = ["/hosters/"];
+  private static readonly OFFICIAL_ONLY_PREFIXES = [
+    "/hosters/",
+    /* Linked Steam and Epic achievement totals, computed from the official
+       catalogue. It sits under "/profile/achievements", which is routed here
+       for the self-hosted recent-achievements endpoint. */
+    "/profile/achievements/combined",
+  ];
 
   /* Expiration of the user's real official subscription, unaffected by the
      synthetic self-hosted one injected into user data. */
@@ -493,7 +502,7 @@ export class HydraApi {
   }
 
   private static resolveInstance(url: string, options?: HydraApiOptions) {
-    if (!this.cloudInstance) return this.instance;
+    if (!this.cloudInstance || options?.forceOfficialApi) return this.instance;
 
     /* `needsSubscription` normally means "storage feature" and routes here,
        but upstream also uses the flag for subscriber-only services the
@@ -1188,7 +1197,10 @@ export class HydraApi {
     options: HydraApiOptions | undefined,
     generation: number
   ) {
-    if (options?.needsAuth === false) return Promise.reject(err);
+    if (options?.needsAuth === false) {
+      sanitizeAxiosError(err);
+      return Promise.reject(err);
+    }
     return this.handleUnauthorizedError(err, generation);
   }
 

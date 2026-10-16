@@ -137,8 +137,30 @@ export const getUnlockedAchievements = async (
       combined?.achievements.length &&
       (includesRequestedCopy || emptyCopyInGroup)
     ) {
+      /* Souvenirs kept on a self-hosted server are unknown to the official
+         combined view, so fill in the requested copy's own pictures. */
+      const withSouvenirs = souvenirs.size
+        ? {
+            ...combined,
+            achievements: combined.achievements.map((achievement) => ({
+              ...achievement,
+              variants: achievement.variants.map((variant) =>
+                variant.imageUrl ||
+                !variant.name ||
+                variant.shop !== shop ||
+                variant.objectId !== objectId
+                  ? variant
+                  : {
+                      ...variant,
+                      imageUrl:
+                        souvenirs.get(variant.name.toUpperCase()) ?? null,
+                    }
+              ),
+            })),
+          }
+        : combined;
       return presentCombinedAchievements(
-        combined,
+        withSouvenirs,
         (sourceShop, sourceObjectId) =>
           AchievementMemoryStore.get(sourceShop, sourceObjectId)
             ?.unlockedAchievements ?? [],
