@@ -109,6 +109,9 @@ function fixture() {
     "./achievement-source": { EpicAchievementSource },
     "./achievement-protocol": achievementProtocol,
     "./sync-snapshot": snapshot,
+    "./epic-achievements-cloud-mirror": {
+      mirrorEpicAchievementsToSelfHostedCloud: async () => 0,
+    },
     "../achievements/achievement-memory-store": { AchievementMemoryStore },
     "node:crypto": {
       createHash: () => ({ update: () => ({ digest: () => "scope-key" }) }),

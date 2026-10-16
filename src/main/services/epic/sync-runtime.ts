@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { Game } from "@types";
 import type {
   EpicConnectionState,
+  EpicSnapshotGame,
   EpicSyncTrigger,
   EpicSyncRun,
 } from "../../../types/epic-integration.types";
@@ -29,6 +30,7 @@ import { EpicPlaytimeSource } from "./playtime-source";
 import { EpicAchievementSource } from "./achievement-source";
 import { parseEpicAchievementTargets } from "./achievement-protocol";
 import { buildEpicSnapshotChunks } from "./sync-snapshot";
+import { mirrorEpicAchievementsToSelfHostedCloud } from "./epic-achievements-cloud-mirror";
 import { AchievementMemoryStore } from "../achievements/achievement-memory-store";
 import { EpicConnectionStore } from "./store";
 import { getEpicDownloadService } from "./download";
@@ -105,6 +107,9 @@ export class EpicSyncRuntime {
     );
     this.source = new EpicPlaytimeSource(this.session);
     const achievementSource = new EpicAchievementSource(this.session);
+    /* The unlocks the latest snapshot carried, mirrored to a self-hosted
+       server once the merge has linked their games. */
+    let collectedAchievements: EpicSnapshotGame[] = [];
     const options = (context: EpicSyncContext, signal: AbortSignal) => ({
       authContext: context.auth,
       signal,
@@ -187,6 +192,7 @@ export class EpicSyncRuntime {
           () => db.put(key, result.pendingObjectIds, { valueEncoding: "json" }),
           () => this.current(context)
         );
+        collectedAchievements = result.games;
         return result;
       },
       start: async (context, trigger, signal) => {
@@ -294,6 +300,16 @@ export class EpicSyncRuntime {
         if (result && !signal.aborted) await this.connection();
         if (result && !signal.aborted && this.current(context))
           void this.importEpicStoreInstallations();
+        if (result && !signal.aborted && this.current(context)) {
+          const games = collectedAchievements;
+          collectedAchievements = [];
+          void mirrorEpicAchievementsToSelfHostedCloud(
+            games,
+            context.auth
+          ).catch((error) =>
+            logger.error("Failed to mirror Epic achievements", error)
+          );
+        }
         return result;
       },
       emit: (state) => this.send("on-epic-sync-progress", state),
