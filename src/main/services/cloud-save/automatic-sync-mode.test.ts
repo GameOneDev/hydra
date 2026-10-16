@@ -129,7 +129,20 @@ describe("cloud save automatic sync mode", () => {
     );
   });
 
-  it("keeps non-Steam games on legacy or disabled", () => {
+  it("leaves Epic saves off when the server cannot serve V2", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "epic",
+        true,
+        true,
+        null,
+        false
+      ),
+      "disabled"
+    );
+  });
+
+  it("keeps custom games on legacy or disabled", () => {
     assert.equal(
       resolveStoredCloudSaveAutomaticSyncModeForShop("custom", true, undefined),
       "legacy"
@@ -142,6 +155,27 @@ describe("cloud save automatic sync mode", () => {
       ),
       "disabled"
     );
+  });
+
+  it("uses Epic V2 by default, honors opt-outs and ignores stale legacy flags", () => {
+    for (const legacy of [false, true]) {
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "epic",
+          legacy,
+          undefined
+        ),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop("epic", legacy, true),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop("epic", legacy, false),
+        "disabled"
+      );
+    }
   });
 
   it("defaults supported emulator games to V2 and preserves later opt-outs", () => {

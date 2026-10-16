@@ -50,9 +50,9 @@ export const resolveStoredCloudSaveAutomaticSyncModeForShop = (
       v2Supported
     );
   }
-  if (getCloudSaveEmulatorProvider(shop, platform)) {
-    /* Emulator saves only ever sync through V2, so a server without it gets
-       nothing rather than a legacy flow upstream no longer offers for them. */
+  if (shop === "epic" || getCloudSaveEmulatorProvider(shop, platform)) {
+    /* Epic and emulator saves only ever sync through V2, so a server without
+       it gets nothing rather than a legacy flow upstream doesn't offer them. */
     return resolveCloudSaveAutomaticSyncMode({
       legacyEnabled: false,
       v2Enabled: v2Supported && (storedV2Enabled ?? true),

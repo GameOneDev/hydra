@@ -27,10 +27,7 @@ import {
 import { deleteLocalSaveTargets } from "./delete-local-save-targets";
 import { assertCloudSaveEnvironmentCurrent } from "./environment-guard";
 import { canDeleteInstallationOwnedCustomPathFiles } from "./installation-owned-custom-paths";
-import { listRemoteGameSnapshots } from "./list-remote-game-snapshots";
 import { resolveAnalyzedCloudSaveMerge } from "./resolve-analyzed-cloud-save-merge";
-import { getRemoteSnapshotRestoreManifest } from "./resolve-remote-snapshot-targets";
-import { ensureRpcs3ProfileBindingForAnalysis } from "./rpcs3-save-provider";
 import {
   buildRemoteSnapshotDeletionPlan,
   decideRemoteSnapshotDeletion,
@@ -41,6 +38,7 @@ import {
   shouldRetryCloudSaveStateChange,
 } from "./snapshot-retry-policy";
 import { cloudSaveOperationGate } from "./operation-gate";
+import { runWithHydraSaveGuard } from "../epic/cloud-saves";
 import { assertCloudSaveDeletionNotPending } from "./pending-deletion";
 import {
   type ProgressCallback,
@@ -695,16 +693,6 @@ const executeGameCloudSaveSync = async ({
   );
   await assertEnvironmentCurrent();
   const initialState = analysis.state.state;
-  if (getEmulatorSaveProvider(analysis.context.game) === "rpcs3") {
-    const { ensureRpcs3ProfileBindingForSync } = await import(
-      "./rpcs3-save-provider"
-    );
-    await ensureRpcs3ProfileBindingForSync(
-      analysis.context.game!,
-      analysis.remoteManifest?.files ?? [],
-      analysis.localSnapshot.files
-    );
-  }
   const finish = createSyncFinisher(
     objectId,
     shop,
@@ -962,47 +950,23 @@ const runCloudSaveOperation = (
     progressState.latestProgress = progress;
     for (const listener of progressState.listeners) listener(progress);
   };
-  const promise = cloudSaveOperationGate
-    .runSync(
+  // Take the provider file gate first, before the per-game gate, for every entry point.
+  const promise = runWithHydraSaveGuard(() =>
+    cloudSaveOperationGate.runSync(
       key,
       operationKey,
       () => run(emitProgress),
       () => assertCloudSaveDeletionNotPending(objectId, shop)
     )
-    .finally(() => {
-      if (activeSyncs.get(key)?.promise === promise) activeSyncs.delete(key);
-    });
+  ).finally(() => {
+    if (activeSyncs.get(key)?.promise === promise) activeSyncs.delete(key);
+  });
   activeSyncs.set(key, { operationKey, promise, progress: progressState });
   return promise;
 };
 
 export const isCloudSaveSyncActive = (objectId: string, shop: GameShop) =>
   activeSyncs.has(gameKey(objectId, shop));
-
-const prepareRpcs3SyncContext = async (
-  objectId: string,
-  shop: GameShop,
-  context: Awaited<ReturnType<typeof getCloudSaveGameContext>>
-) => {
-  if (!context.game || getEmulatorSaveProvider(context.game) !== "rpcs3") {
-    return context;
-  }
-  const snapshots = await listRemoteGameSnapshots(objectId, shop);
-  const manifest = snapshots[0]
-    ? await getRemoteSnapshotRestoreManifest(snapshots[0])
-    : null;
-  if (
-    manifest &&
-    (manifest.snapshot.shop !== shop || manifest.snapshot.objectId !== objectId)
-  ) {
-    throw new Error("Active Cloud Save snapshot belongs to another game");
-  }
-  const changed = await ensureRpcs3ProfileBindingForAnalysis(
-    context.game,
-    manifest?.files ?? []
-  );
-  return changed ? getCloudSaveGameContext(objectId, shop) : context;
-};
 
 const prepareRetroArchSyncLayout = async (
   game: Awaited<ReturnType<typeof assertCloudSaveRuntimeAvailable>>
@@ -1046,13 +1010,10 @@ export const syncGameCloudSave = async (
         throw new Error("cloud_save_game_running");
       }
       await prepareRetroArchSyncLayout(game);
-      const operationContext = await prepareRpcs3SyncContext(
-        objectId,
-        shop,
+      const operationContext =
         getEmulatorSaveProvider(game) === "rpcs3"
           ? await getCloudSaveGameContext(objectId, shop)
-          : context
-      );
+          : context;
       return runGameCloudSaveSync(
         objectId,
         shop,
@@ -1090,13 +1051,10 @@ export const resolveCloudSaveConflict = async (
         throw new Error("cloud_save_game_running");
       }
       await prepareRetroArchSyncLayout(game);
-      const operationContext = await prepareRpcs3SyncContext(
-        objectId,
-        shop,
+      const operationContext =
         getEmulatorSaveProvider(game) === "rpcs3"
           ? await getCloudSaveGameContext(objectId, shop)
-          : context
-      );
+          : context;
       return runGameCloudSaveSync(
         objectId,
         shop,

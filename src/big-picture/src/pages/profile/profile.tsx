@@ -118,7 +118,7 @@ import {
   buildUserSouvenirReportPath,
   findSouvenirByNotificationTarget,
   getPrimarySouvenirAchievement,
-  getSouvenirSyncErrorTranslationKeys,
+  getSouvenirSyncMessage,
   getSouvenirKey as buildSouvenirKey,
   getSouvenirVisualVariant,
   normalizeSouvenirReportValues,
@@ -465,6 +465,10 @@ function getLibraryCarouselPlaytimeInMilliseconds(
   ) {
     return getDisplayedPlayTimeInMilliseconds({
       playTimeInMilliseconds: game.playTimeInMilliseconds,
+      epicPlayTimeInMilliseconds:
+        "epicPlayTimeInMilliseconds" in game
+          ? game.epicPlayTimeInMilliseconds
+          : undefined,
       steamPlayTimeInMilliseconds:
         "steamPlayTimeInMilliseconds" in game
           ? game.steamPlayTimeInMilliseconds
@@ -1817,8 +1821,11 @@ const PROFILE_SOUVENIR_SYNC_RETRY_FOCUS_ID = "profile-souvenir-sync-retry";
 const PROFILE_SOUVENIR_SYNC_CLEANUP_FOCUS_ID = "profile-souvenir-sync-cleanup";
 
 const hasProfileSouvenirSyncIssues = (
-  syncStatus: AchievementSouvenirSyncStatus
-) => syncStatus.pendingCount > 0 || syncStatus.failedCount > 0;
+  syncStatus: AchievementSouvenirSyncStatus,
+  hasActiveSubscription: boolean
+) =>
+  hasActiveSubscription &&
+  (syncStatus.pendingCount > 0 || syncStatus.failedCount > 0);
 
 const getProfileSouvenirSyncActionFocusId = (
   syncStatus: AchievementSouvenirSyncStatus
@@ -2135,20 +2142,7 @@ function ProfileSouvenirSyncStatus({
   onOpenCleanup,
 }: Readonly<ProfileSouvenirSyncStatusProps>) {
   const { t } = useTranslation("settings");
-  const messages: string[] = [];
-  if (syncStatus.pendingCount > 0) {
-    messages.push(
-      t("souvenir_sync_pending", { count: syncStatus.pendingCount })
-    );
-  }
-  if (syncStatus.failedCount > 0) {
-    messages.push(t("souvenir_sync_failed", { count: syncStatus.failedCount }));
-  }
-  messages.push(
-    ...getSouvenirSyncErrorTranslationKeys(syncStatus.errorCodes).map((key) =>
-      t(key)
-    )
-  );
+  const message = getSouvenirSyncMessage(syncStatus);
 
   const focusNavigationOverrides: FocusOverrides = {
     up: upFocusId ? { type: "item", itemId: upFocusId } : undefined,
@@ -2159,8 +2153,8 @@ function ProfileSouvenirSyncStatus({
     <aside className="profile-page__souvenirs-sync-status">
       <WarningCircleIcon size={24} />
       <div className="profile-page__souvenirs-sync-copy">
-        <strong>{t("souvenir_sync_status_title")}</strong>
-        <span>{messages.join(" ")}</span>
+        <strong>{t(message.titleKey)}</strong>
+        <span>{t(message.key, { count: message.count })}</span>
       </div>
       <HorizontalFocusGroup className="profile-page__souvenirs-sync-actions">
         {syncStatus.pendingCount > 0 ? (
@@ -2403,7 +2397,10 @@ function ProfileSouvenirs({
   onOpenCleanup,
 }: Readonly<ProfileSouvenirsProps>) {
   const { t } = useTranslation("user_profile");
-  const hasSyncIssues = hasProfileSouvenirSyncIssues(syncStatus);
+  const hasSyncIssues = hasProfileSouvenirSyncIssues(
+    syncStatus,
+    hasActiveSubscription
+  );
   const firstSouvenir = souvenirs[0];
   const firstSouvenirFocusId = firstSouvenir
     ? getProfileSouvenirItemId(getSouvenirKey(firstSouvenir))
@@ -2491,6 +2488,7 @@ interface ProfileNavigationInput {
   friends: UserFriend[];
   canFocusRecentAchievements: boolean;
   souvenirSyncStatus: AchievementSouvenirSyncStatus;
+  hasActiveSubscription: boolean;
 }
 
 type ProfileFocusIds = Pick<
@@ -2516,9 +2514,10 @@ function getLastItem<T>(items: T[]) {
 
 function getFirstProfileSouvenirFocusId(
   souvenirs: ProfileSouvenir[],
-  syncStatus: AchievementSouvenirSyncStatus
+  syncStatus: AchievementSouvenirSyncStatus,
+  hasActiveSubscription: boolean
 ) {
-  if (hasProfileSouvenirSyncIssues(syncStatus)) {
+  if (hasProfileSouvenirSyncIssues(syncStatus, hasActiveSubscription)) {
     return getProfileSouvenirSyncActionFocusId(syncStatus);
   }
 
@@ -2544,6 +2543,7 @@ function getProfileFocusIds({
   friends,
   canFocusRecentAchievements,
   souvenirSyncStatus,
+  hasActiveSubscription,
 }: Omit<ProfileNavigationInput, "profileUser">) {
   const firstActivity = getFirstItem(recentActivityGames);
   const lastActivity = getLastItem(recentActivityGames);
@@ -2568,7 +2568,8 @@ function getProfileFocusIds({
       : null,
     firstSouvenirFocusId: getFirstProfileSouvenirFocusId(
       souvenirs,
-      souvenirSyncStatus
+      souvenirSyncStatus,
+      hasActiveSubscription
     ),
     firstAchievementFocusId: firstAchievement
       ? getProfileAchievementFocusId(firstAchievement.game)
@@ -2594,6 +2595,7 @@ function getProfileNavigation({
   friends,
   canFocusRecentAchievements,
   souvenirSyncStatus,
+  hasActiveSubscription,
 }: ProfileNavigationInput): ProfileNavigation {
   const focusIds = getProfileFocusIds({
     recentActivityGames,
@@ -2603,6 +2605,7 @@ function getProfileNavigation({
     friends,
     canFocusRecentAchievements,
     souvenirSyncStatus,
+    hasActiveSubscription,
   });
   const {
     firstActivityFocusId,
@@ -2887,11 +2890,8 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
       if (remainingCount === 0) {
         showSuccessToast(tSettings("souvenir_sync_retry_succeeded"));
       } else {
-        showErrorToast(
-          tSettings("souvenir_sync_retry_incomplete", {
-            count: remainingCount,
-          })
-        );
+        const message = getSouvenirSyncMessage(result.status);
+        showErrorToast(tSettings(message.key, { count: remainingCount }));
       }
     } catch {
       const currentStatus = await globalThis.window.electron
@@ -3265,6 +3265,7 @@ function ProfileContent({ userId }: Readonly<ProfileContentProps>) {
     friends,
     canFocusRecentAchievements,
     souvenirSyncStatus,
+    hasActiveSubscription: targetHasActiveSubscription,
   });
   const showFriendsViewAll = totalFriends > friends.length;
   const externalProfileActions = useMemo<ProfileHeroAction[]>(() => {
