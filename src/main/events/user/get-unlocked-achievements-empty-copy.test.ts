@@ -79,6 +79,8 @@ for (const scenario of [
       },
       "@main/services/hydra-api": {
         HydraApi: {
+          isSelfHostedCloudEnabled: () => false,
+          supportsCloudFeature: () => true,
           getAuthContext: () => null,
           get: async () => ({
             canonicalId: scenario.canonicalId,

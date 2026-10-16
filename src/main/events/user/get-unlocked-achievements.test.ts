@@ -28,6 +28,8 @@ for (const ownerChanged of [false, true]) {
           },
           "@main/services/hydra-api": {
             HydraApi: {
+              isSelfHostedCloudEnabled: () => false,
+              supportsCloudFeature: () => true,
               getAuthContext: () => activeOwner,
               isAuthContextCurrent: (owner: string) => owner === activeOwner,
               get: async (

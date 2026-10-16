@@ -65,6 +65,8 @@ const load = (options: {
     },
     "@main/services/hydra-api": {
       HydraApi: {
+        isSelfHostedCloudEnabled: () => false,
+        supportsCloudFeature: () => true,
         getAuthContext: () =>
           options.switchAccountDuring ? { userId: "owner" } : null,
         isAuthContextCurrent: () => ownerCurrent,

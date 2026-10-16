@@ -69,6 +69,10 @@ export interface HydraApiOptions {
   /** Send to the official API even when the path is one the self-hosted
       server normally answers. Main process only. */
   forceOfficialApi?: boolean;
+  /** Send to the self-hosted server even when the path normally belongs to
+      the official API — for the few views that server can rebuild when the
+      official one comes back empty. Main process only. */
+  forceSelfHostedApi?: boolean;
 }
 
 interface HydraApiUserAuth {
@@ -503,6 +507,7 @@ export class HydraApi {
 
   private static resolveInstance(url: string, options?: HydraApiOptions) {
     if (!this.cloudInstance || options?.forceOfficialApi) return this.instance;
+    if (options?.forceSelfHostedApi) return this.cloudInstance;
 
     /* `needsSubscription` normally means "storage feature" and routes here,
        but upstream also uses the flag for subscriber-only services the

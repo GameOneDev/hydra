@@ -18,6 +18,9 @@ import {
 } from "@main/services/achievements/combined-achievement-presentation";
 
 const COMBINED_ACHIEVEMENTS_TIMEOUT_MS = 5_000;
+/* What a self-hosted server advertises once it can rebuild the combined
+   Steam/Epic view itself. */
+const COMBINED_ACHIEVEMENTS_FEATURE = "achievements-combined";
 
 export const getUnlockedAchievements = async (
   objectId: string,
@@ -110,11 +113,24 @@ export const getUnlockedAchievements = async (
   // Preserve the selected copy's catalogue/cache refresh and sync side effects.
   // The union is a display projection and must never replace that source state.
   if (shop === "steam" || shop === "epic") {
-    const combined = await HydraApi.get<CombinedAchievements>(
-      "/profile/achievements/combined",
-      { shop, objectId, language: userPreferences?.language ?? "en" },
-      { timeout: COMBINED_ACHIEVEMENTS_TIMEOUT_MS }
-    ).catch(() => null);
+    const fetchCombined = (options?: { forceSelfHostedApi: true }) =>
+      HydraApi.get<CombinedAchievements>(
+        "/profile/achievements/combined",
+        { shop, objectId, language: userPreferences?.language ?? "en" },
+        { timeout: COMBINED_ACHIEVEMENTS_TIMEOUT_MS, ...options }
+      ).catch(() => null);
+    let combined = await fetchCombined();
+    /* Official Hydra's pairing is the real one, so it goes first. When it
+       has nothing — the view may be for subscribers only — a self-hosted
+       server rebuilds it from the library links the launcher sends it. */
+    if (
+      !combined?.achievements?.length &&
+      HydraApi.isSelfHostedCloudEnabled() &&
+      HydraApi.supportsCloudFeature(COMBINED_ACHIEVEMENTS_FEATURE)
+    ) {
+      assertCurrent();
+      combined = await fetchCombined({ forceSelfHostedApi: true });
+    }
     const includesRequestedCopy = combined?.achievements.some((achievement) =>
       achievement.variants.some(
         (variant) => variant.shop === shop && variant.objectId === objectId

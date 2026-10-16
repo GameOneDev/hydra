@@ -53,6 +53,7 @@ import { mergePersistedAchievementTotals } from "../achievements/achievement-mem
 import { trackAchievementBatchGame } from "../achievements/achievement-batch-games";
 import { fetchRemoteProfileGames as fetchProfileGames } from "./fetch-remote-profile-games";
 import { reconcileSelfHostedHiddenGames } from "./self-hosted-hidden-games";
+import { syncSelfHostedGameLinks } from "./self-hosted-game-links";
 
 type ProfileGame = {
   id: string;
@@ -706,6 +707,7 @@ const mergeWithRemoteGamesOnce = async (
     /* The self-hosted server's hidden list follows the visibility just read.
        Not awaited: the library is already merged and shouldn't wait on it. */
     void reconcileSelfHostedHiddenGames(remoteGames).catch(() => {});
+    void syncSelfHostedGameLinks(remoteGames, context);
 
     for (const batch of chunk(candidates, TARGETED_MERGE_CONCURRENCY)) {
       if (!current()) return false;

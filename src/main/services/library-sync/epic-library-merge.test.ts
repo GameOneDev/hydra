@@ -192,6 +192,9 @@ function fixture() {
     "./self-hosted-hidden-games": {
       reconcileSelfHostedHiddenGames: async () => {},
     },
+    "./self-hosted-game-links": {
+      syncSelfHostedGameLinks: async () => {},
+    },
     "./fetch-remote-profile-games": {
       fetchRemoteProfileGames: async () => {
         state.reads++;
