@@ -58,6 +58,7 @@ function fixture() {
       HydraApi: {
         getAuthContext: () => auth,
         isAuthContextCurrent: () => state.current,
+        isSelfHostedCloudEnabled: () => false,
         post: async (_path: string, body: unknown) => {
           state.calls.push({ method: "post", body });
           await state.postGate;
@@ -86,6 +87,9 @@ function fixture() {
         ),
     },
     "../epic/import-cleanup": { clearStaleEpicImports: async () => {} },
+    "./self-hosted-hidden-games": {
+      migrateSelfHostedHiddenGames: async () => {},
+    },
     "./merge-with-remote-games": { mergeWithRemoteGames: async () => true },
     "../window-manager": { WindowManager: { mainWindow: null } },
     "../achievements/achievement-watcher-manager": {

@@ -87,6 +87,7 @@ describe("mergeLocalAndRemotePlayTime", () => {
       {
         playTimeInMilliseconds: 2_000,
         steamPlayTimeInMilliseconds: 600_000,
+        epicPlayTimeInMilliseconds: 0,
       }
     );
   });

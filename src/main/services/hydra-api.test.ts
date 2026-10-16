@@ -138,7 +138,8 @@ async function fixture(t: TestContext, apiUrl = "http://localhost:3000") {
     "./library-sync": "export const uploadGamesBatch = async () => {};",
     "./library-sync/clear-games-remote-id":
       "export const clearGamesRemoteIds = async () => {};",
-    "./logger": "export const networkLogger = harness.logger;",
+    "./logger":
+      "export const networkLogger = harness.logger; export const logger = harness.logger;",
     "../logger": "export const logger = harness.logger;",
     "@shared":
       "export class UserNotLoggedInError extends Error {} export class SubscriptionRequiredError extends Error {}",
@@ -163,6 +164,8 @@ async function fixture(t: TestContext, apiUrl = "http://localhost:3000") {
     "./chat/chat-sender-profiles":
       "export const clearChatSenderProfiles = () => {};",
     "./notifications": "export const closeChatNotifications = () => {};",
+    "./cloud-save":
+      "export const migrateCloudSaveAutomaticSyncDefaults = async () => {};",
   };
   const bundlePath = path.join(root, "api.mjs");
   // Exercise real auth, HTTP interceptors and profile code; replace environment boundaries only.
