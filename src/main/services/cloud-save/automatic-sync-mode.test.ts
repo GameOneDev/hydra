@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  CLOUD_SAVE_V2_EPIC_FEATURE,
+  CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
+  getCloudSaveV2FeaturesForShop,
   getNextCloudSaveAutomaticSyncMode,
   resolveCloudSaveAutomaticSyncMode,
   resolveStoredCloudSaveAutomaticSyncMode,
@@ -12,6 +15,19 @@ import {
 } from "./automatic-sync-mode.js";
 
 describe("cloud save automatic sync mode", () => {
+  it("needs the Epic capability on top of V2 for Epic games only", () => {
+    /* A self-hosted server older than 4.2.0 serves V2 but refuses shop=epic. */
+    assert.deepEqual(getCloudSaveV2FeaturesForShop("epic"), [
+      CLOUD_SAVE_V2_FEATURE,
+      CLOUD_SAVE_V2_EPIC_FEATURE,
+    ]);
+    for (const shop of ["steam", "launchbox", null, undefined] as const) {
+      assert.deepEqual(getCloudSaveV2FeaturesForShop(shop), [
+        CLOUD_SAVE_V2_FEATURE,
+      ]);
+    }
+  });
+
   it("prefers V2 when both modes are enabled", () => {
     assert.equal(
       resolveCloudSaveAutomaticSyncMode({

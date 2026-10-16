@@ -6,6 +6,16 @@ export type { CloudSaveAutomaticSyncMode } from "@types";
 /** Feature string a cloud server advertises when it implements Cloud Save V2. */
 export const CLOUD_SAVE_V2_FEATURE = "cloud-saves-v2";
 
+/** Advertised by a server whose Cloud Save V2 also accepts Epic games, which
+    launcher 4.2.0 started syncing. Older servers refuse `shop=epic`. */
+export const CLOUD_SAVE_V2_EPIC_FEATURE = "cloud-saves-v2-epic";
+
+/** The capability a server needs before Cloud Save V2 can run for `shop`. */
+export const getCloudSaveV2FeaturesForShop = (shop?: GameShop | null) =>
+  shop === "epic"
+    ? [CLOUD_SAVE_V2_FEATURE, CLOUD_SAVE_V2_EPIC_FEATURE]
+    : [CLOUD_SAVE_V2_FEATURE];
+
 export interface CloudSaveAutomaticSyncState {
   legacyEnabled: boolean;
   v2Enabled: boolean;

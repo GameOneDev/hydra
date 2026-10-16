@@ -16,8 +16,8 @@ import { assertCloudSaveSubscription } from "./cloud-save-access";
 import { assertLegacyCloudSaveWriteAllowed } from "./legacy-cloud-save-policy";
 import { assertCloudSaveV2Eligible } from "./assert-cloud-save-executable";
 import {
-  CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
+  getCloudSaveV2FeaturesForShop,
   getNextCloudSaveAutomaticSyncMode,
   resolveStoredCloudSaveAutomaticSyncModeForShop,
 } from "./automatic-sync-mode";
@@ -65,7 +65,9 @@ const readCloudSaveAutomaticSyncMode = async (
     legacyEnabled,
     v2Enabled,
     game?.platform,
-    HydraApi.supportsCloudFeature(CLOUD_SAVE_V2_FEATURE)
+    getCloudSaveV2FeaturesForShop(shop).every((feature) =>
+      HydraApi.supportsCloudFeature(feature)
+    )
   );
 
   return { game, key, mode };

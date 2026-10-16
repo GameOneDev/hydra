@@ -199,8 +199,8 @@ contextBridge.exposeInMainWorld("electron", {
       objectId,
       shop
     ) as Promise<CloudSaveOverview>,
-  getCloudSaveV2Supported: () =>
-    ipcRenderer.invoke("getCloudSaveV2Supported") as Promise<boolean>,
+  getCloudSaveV2Supported: (shop?: GameShop | null) =>
+    ipcRenderer.invoke("getCloudSaveV2Supported", shop) as Promise<boolean>,
   getAchievementSouvenirsSupported: () =>
     ipcRenderer.invoke("getAchievementSouvenirsSupported") as Promise<boolean>,
   getProfileSouvenirs: (payload: {

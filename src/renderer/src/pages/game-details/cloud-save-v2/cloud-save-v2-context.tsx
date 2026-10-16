@@ -212,7 +212,7 @@ export function CloudSaveV2Provider({
 
     const refresh = () =>
       window.electron
-        .getCloudSaveV2Supported()
+        .getCloudSaveV2Supported(shop)
         .then((supported) => {
           if (!cancelled) setIsV2Supported(supported);
         })
@@ -231,7 +231,7 @@ export function CloudSaveV2Provider({
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [shop]);
 
   const canCheckEmulator =
     isV2Eligible && canUseCloudSaves && isV2Supported === true;
