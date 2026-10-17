@@ -4,7 +4,11 @@ import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import type { LibraryGame } from "@types";
-import { removeDiacritics } from "@shared";
+import {
+  getGameCatalogueIdentity,
+  groupLibraryGames,
+  removeDiacritics,
+} from "@shared";
 
 import { ConfirmationModal, TextField } from "@renderer/components";
 import {
@@ -23,7 +27,7 @@ import {
   categoryShowsPlatforms,
   categoryShowsSources,
   filterLibraryGames,
-  hasSteamLibraryGames,
+  hasImportedLibraryGames,
   readStoredLibraryFilters,
   type LibraryCategory,
   type LibrarySource,
@@ -84,6 +88,9 @@ export function Sidebar() {
   const { t } = useTranslation(["sidebar", "library"]);
   const { library, updateLibrary } = useLibrary();
   const isLibraryLoading = useAppSelector(selectIsLibraryLoading);
+  const runningGameId = useAppSelector(
+    (state) => state.gameRunning.gameRunning?.id
+  );
   const [deckyPluginInfo, setDeckyPluginInfo] = useState<{
     installed: boolean;
     version: string | null;
@@ -147,19 +154,19 @@ export function Sidebar() {
     );
   }, [library]);
 
-  const hasSteamGames = useMemo(() => hasSteamLibraryGames(library), [library]);
+  const hasImportedGames = useMemo(
+    () => hasImportedLibraryGames(library),
+    [library]
+  );
   const hasPlatforms = uniquePlatforms.length > 0;
   const effectiveSources = useMemo(
-    () => (hasSteamGames ? selectedSources : []),
-    [hasSteamGames, selectedSources]
+    () => (hasImportedGames ? selectedSources : []),
+    [hasImportedGames, selectedSources]
   );
   const effectivePlatforms = useMemo(
     () => (hasPlatforms ? selectedPlatforms : []),
     [hasPlatforms, selectedPlatforms]
   );
-
-  const { gameRunning } = useAppSelector((state) => state.gameRunning);
-  const runningGameId = gameRunning?.id;
 
   const orderSidebarGames = useCallback(
     (games: LibraryGame[]) => {
@@ -195,8 +202,13 @@ export function Sidebar() {
   );
 
   const orderedLibrary = useMemo(
-    () => pinRunningGame(orderSidebarGames(library)),
-    [library, orderSidebarGames, pinRunningGame]
+    () =>
+      pinRunningGame(
+        orderSidebarGames(
+          groupLibraryGames(library, runningGameId ? [runningGameId] : [])
+        )
+      ),
+    [library, orderSidebarGames, pinRunningGame, runningGameId]
   );
 
   const sortedLibrary = useMemo(
@@ -507,7 +519,7 @@ export function Sidebar() {
   const handleSidebarGameClick = (game: LibraryGame) => {
     const path = buildGameDetailsPath({
       ...game,
-      objectId: game.objectId,
+      ...getGameCatalogueIdentity(game),
     });
     if (path !== location.pathname) {
       navigate(path);
@@ -627,7 +639,7 @@ export function Sidebar() {
                 showFavoritesFirst={showFavoritesFirst}
                 onToggleFavoritesFirst={handleToggleFavoritesFirst}
                 showSources={
-                  categoryShowsSources(sidebarCategory) && hasSteamGames
+                  categoryShowsSources(sidebarCategory) && hasImportedGames
                 }
                 selectedSources={selectedSources}
                 onSourcesChange={handleSelectedSourcesChange}

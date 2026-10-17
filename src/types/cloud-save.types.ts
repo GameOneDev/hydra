@@ -474,11 +474,6 @@ export interface CloudSaveV2FileDetails {
     warningCodes: string[];
   }>;
   unresolvedRemoteVariantCount: number;
-  rpcs3Profile?: {
-    localProfileId: string;
-    cloudProfileIds: string[];
-    linkedCloudProfileId: string | null;
-  } | null;
 }
 
 /** What became of the local save after a rollback. The cloud half has

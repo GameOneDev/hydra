@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  CLOUD_SAVE_V2_EPIC_FEATURE,
+  CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
+  getCloudSaveV2FeaturesForShop,
   getNextCloudSaveAutomaticSyncMode,
   resolveCloudSaveAutomaticSyncMode,
   resolveStoredCloudSaveAutomaticSyncMode,
@@ -12,6 +15,19 @@ import {
 } from "./automatic-sync-mode.js";
 
 describe("cloud save automatic sync mode", () => {
+  it("needs the Epic capability on top of V2 for Epic games only", () => {
+    /* A self-hosted server older than 4.2.0 serves V2 but refuses shop=epic. */
+    assert.deepEqual(getCloudSaveV2FeaturesForShop("epic"), [
+      CLOUD_SAVE_V2_FEATURE,
+      CLOUD_SAVE_V2_EPIC_FEATURE,
+    ]);
+    for (const shop of ["steam", "launchbox", null, undefined] as const) {
+      assert.deepEqual(getCloudSaveV2FeaturesForShop(shop), [
+        CLOUD_SAVE_V2_FEATURE,
+      ]);
+    }
+  });
+
   it("prefers V2 when both modes are enabled", () => {
     assert.equal(
       resolveCloudSaveAutomaticSyncMode({
@@ -129,7 +145,20 @@ describe("cloud save automatic sync mode", () => {
     );
   });
 
-  it("keeps non-Steam games on legacy or disabled", () => {
+  it("leaves Epic saves off when the server cannot serve V2", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "epic",
+        true,
+        true,
+        null,
+        false
+      ),
+      "disabled"
+    );
+  });
+
+  it("keeps custom games on legacy or disabled", () => {
     assert.equal(
       resolveStoredCloudSaveAutomaticSyncModeForShop("custom", true, undefined),
       "legacy"
@@ -142,6 +171,27 @@ describe("cloud save automatic sync mode", () => {
       ),
       "disabled"
     );
+  });
+
+  it("uses Epic V2 by default, honors opt-outs and ignores stale legacy flags", () => {
+    for (const legacy of [false, true]) {
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop(
+          "epic",
+          legacy,
+          undefined
+        ),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop("epic", legacy, true),
+        "v2"
+      );
+      assert.equal(
+        resolveStoredCloudSaveAutomaticSyncModeForShop("epic", legacy, false),
+        "disabled"
+      );
+    }
   });
 
   it("defaults supported emulator games to V2 and preserves later opt-outs", () => {
