@@ -4,6 +4,7 @@ import type { Game, User } from "@types";
 import { HydraApi } from "../hydra-api";
 import { logger } from "../logger";
 import { createGame } from "./create-game";
+import { updateGameRecord } from "../game-record-updater";
 import {
   isHiddenOnSelfHostedServer,
   planHiddenGamesReconcile,
@@ -120,19 +121,19 @@ export const migrateSelfHostedHiddenGames = async () => {
     /* A game hidden on another machine and never synced to this one has
        nothing here to move; that machine moves it. */
     if (!game || game.isDeleted || game.shop === "custom") continue;
+    /* Epic-imported games are never created through the generic library
+       endpoint, so a missing one could never be moved and would hold the
+       migration open forever. Their visibility follows the Epic sync. */
+    if (game.source === "epic") continue;
 
     try {
       await setOfficialVisibility(game, "conceal");
       const saved = await setOfficialVisibility(game, "hide");
 
-      const current = await gamesSublevel.get(gameKey);
-      if (current) {
-        await gamesSublevel.put(gameKey, {
-          ...current,
-          isConcealed: saved.isConcealed,
-          isHiddenFromOthers: saved.isHiddenFromOthers,
-        });
-      }
+      await updateGameRecord(gameKey, {
+        isConcealed: saved.isConcealed,
+        isHiddenFromOthers: saved.isHiddenFromOthers,
+      });
     } catch (error) {
       failed += 1;
       logger.error(`Failed to conceal hidden game ${gameKey}`, error);

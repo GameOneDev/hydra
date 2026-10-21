@@ -45,9 +45,9 @@ export const levelKeys = {
   gameVisibilityRenameMigration: "game-visibility-rename-migration",
   selfHostedHiddenGamesMigration: "self-hosted-hidden-games-migration",
   cloudSaveCustomPaths: "cloud-save-custom-paths",
-  cloudSaveRpcs3ProfileBindings: "cloud-save-rpcs3-profile-bindings",
   cloudSaveEmulatorDestinations: "cloud-save-emulator-destinations",
   cloudSaveRetroArchBindings: "cloud-save-retroarch-bindings",
   cloudSavePendingDeletions: "cloud-save-pending-deletions",
   steamSyncRun: "steamSyncRun",
+  chatNotificationCursor: "chatNotificationCursor", // Newest chat message already announced
 };

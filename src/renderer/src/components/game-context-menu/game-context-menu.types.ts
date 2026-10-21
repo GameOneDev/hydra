@@ -8,7 +8,11 @@ export interface GameContextMenuGame {
   executablePath?: string | null;
   /** Steam-imported game launched through Steam rather than a local executable. */
   launchThroughSteam?: boolean;
-  download?: { downloadPath?: string | null; status?: string | null } | null;
+  download?: {
+    downloadPath?: string | null;
+    status?: string | null;
+    extracting?: boolean;
+  } | null;
   favorite?: boolean;
   isPinned?: boolean;
   isHiddenFromOthers?: boolean;

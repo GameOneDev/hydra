@@ -212,7 +212,7 @@ export function CloudSaveV2Provider({
 
     const refresh = () =>
       window.electron
-        .getCloudSaveV2Supported()
+        .getCloudSaveV2Supported(shop)
         .then((supported) => {
           if (!cancelled) setIsV2Supported(supported);
         })
@@ -231,7 +231,7 @@ export function CloudSaveV2Provider({
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [shop]);
 
   const canCheckEmulator =
     isV2Eligible && canUseCloudSaves && isV2Supported === true;
@@ -397,13 +397,6 @@ export function CloudSaveV2Provider({
           .catch(() => setHasSyncError(true));
         return true;
       }
-      if (
-        typeof message === "string" &&
-        message.includes("cloud_save_rpcs3_profile_binding_required")
-      ) {
-        setIsFileBrowserVisible(true);
-        return true;
-      }
       const errorKind = getCloudSaveSyncErrorKind(error);
       if (errorKind === "generic") return false;
 
@@ -521,33 +514,6 @@ export function CloudSaveV2Provider({
     searchParams,
     setSearchParams,
     shop,
-    showHydraCloudModal,
-  ]);
-
-  useEffect(() => {
-    if (
-      !isV2Eligible ||
-      searchParams.get("openCloudSaveProfileBinding") !== "1"
-    ) {
-      return;
-    }
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.delete("openCloudSaveProfileBinding");
-    setSearchParams(nextSearchParams, { replace: true });
-    if (cloudSaveAccessAction === "sign-in") {
-      window.electron.openAuthWindow(AuthPage.SignIn);
-      return;
-    }
-    if (cloudSaveAccessAction === "paywall") {
-      showHydraCloudModal("backup");
-      return;
-    }
-    setIsFileBrowserVisible(true);
-  }, [
-    cloudSaveAccessAction,
-    isV2Eligible,
-    searchParams,
-    setSearchParams,
     showHydraCloudModal,
   ]);
 
