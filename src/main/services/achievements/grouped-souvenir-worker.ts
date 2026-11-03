@@ -287,7 +287,7 @@ const reconcileAchievementMemory = async (
   );
 };
 
-const synchronizeAchievements = (
+const synchronizeAchievements = async (
   pending: PendingAchievementSouvenir,
   achievements: PendingSouvenirAchievement[],
   includeSouvenir: boolean
@@ -295,14 +295,67 @@ const synchronizeAchievements = (
   const context = HydraApi.getAuthContext();
   if (context?.userId !== pending.ownerId)
     throw new Error("achievement-sync-context-changed");
+  const payload = buildGroupedSouvenirSyncPayload(
+    pending,
+    achievements,
+    includeSouvenir
+  );
+  const options = {
+    authContext: context,
+    timeout: ACHIEVEMENT_SYNC_REQUEST_TIMEOUT_MS,
+  };
+
+  if (!HydraApi.isSelfHostedCloudEnabled()) {
+    return achievementSyncCoordinator.runRequest(
+      pending.gameKey,
+      () =>
+        HydraApi.put<UpdatedUnlockedAchievements>(
+          "/profile/games/achievements",
+          payload,
+          options
+        ),
+      () => HydraApi.isAuthContextCurrent(context)
+    );
+  }
+
+  /* The souvenir was uploaded to the self-hosted server, so the call filing it
+     lands there too — with the game, which that server keys its rows by. The
+     official API still gets the achievements (this fork mirrors every sync to
+     both), just not the souvenir it has no image for. Both go out in the same
+     queue slot, so the mirror stays serialized with every other sync. */
+  const game = await gamesSublevel.get(pending.gameKey).catch(() => null);
+
   return achievementSyncCoordinator.runRequest(
     pending.gameKey,
-    () =>
-      HydraApi.put<UpdatedUnlockedAchievements>(
+    async () => {
+      const mirror = HydraApi.put(
         "/profile/games/achievements",
-        buildGroupedSouvenirSyncPayload(pending, achievements, includeSouvenir),
-        { authContext: context, timeout: ACHIEVEMENT_SYNC_REQUEST_TIMEOUT_MS }
-      ),
+        { id: payload.id, achievements: payload.achievements },
+        options
+      ).catch((error) => {
+        achievementsLogger.error(
+          "Failed to mirror grouped souvenir achievements to the official API",
+          { clientId: pending.clientId, error }
+        );
+      });
+
+      try {
+        return await HydraApi.put<UpdatedUnlockedAchievements>(
+          "/profile/games/achievements",
+          {
+            ...payload,
+            ...(game && {
+              objectId: game.objectId,
+              shop: game.shop,
+              hasActiveSteamImport: game.hasActiveSteamImport === true,
+            }),
+          },
+          { ...options, needsSubscription: true }
+        );
+      } finally {
+        await mirror;
+      }
+    },
     () => HydraApi.isAuthContextCurrent(context)
   );
 };

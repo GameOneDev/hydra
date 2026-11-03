@@ -243,6 +243,16 @@ export class AchievementWatcherManager {
     AchievementMemoryStore.clear();
     UnlockedAchievementsCache.clear();
     CombinedAchievementsRequests.clear();
+
+    fileStats.clear();
+    fltFiles.clear();
+  }
+
+  public static rebaselineAchievementFiles() {
+    AchievementMemoryStore.clearHydration();
+
+    fileStats.clear();
+    fltFiles.clear();
   }
 
   public static forgetAchievementFiles(gameKey: string, filePaths: string[]) {
@@ -492,6 +502,9 @@ export class AchievementWatcherManager {
     }
 
     if (!unlockedAchievements.length) {
+      if (gameAchievementFiles.length > 0) {
+        AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+      }
       return { newAchievements: 0, isRemoteBehind: false };
     }
 
@@ -612,11 +625,24 @@ export class AchievementWatcherManager {
     try {
       const gameAchievementFiles = await this.getGameAchievementFiles();
 
-      const preProcessResults = await Promise.all(
+      const settledResults = await Promise.allSettled(
         gameAchievementFiles.map(({ game, achievementFiles }) => {
           return this.preProcessGameAchievementFiles(game, achievementFiles);
         })
       );
+
+      const preProcessResults = settledResults.map((result, index) => {
+        if (result.status === "fulfilled") return result.value;
+
+        achievementsLogger.error(
+          "Failed to pre-process achievements for",
+          gameAchievementFiles[index].game.objectId,
+          gameAchievementFiles[index].game.title,
+          result.reason
+        );
+
+        return { newAchievements: 0, isRemoteBehind: false };
+      });
 
       const totalNewGamesWithAchievements = preProcessResults.filter(
         (result) => result.newAchievements > 0
@@ -644,9 +670,9 @@ export class AchievementWatcherManager {
       }
     } catch (err) {
       achievementsLogger.error("Error on preSearchAchievements", err);
+    } finally {
+      this._hasFinishedPreSearch = true;
     }
-
-    this._hasFinishedPreSearch = true;
   }
 
   private static async uploadPreSearchAchievements(

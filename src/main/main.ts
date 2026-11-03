@@ -28,6 +28,7 @@ import {
   DeckyPlugin,
   DownloadSourcesChecker,
   DownloadOrchestrator,
+  SelfHostedStatusMonitor,
   SSEClient,
   Wine,
   WindowManager,
@@ -35,6 +36,7 @@ import {
   logger,
   migrateCloudSaveAutomaticSyncDefaults,
   groupedSouvenirWorker,
+  syncSteamPlaytimeForLibrary,
 } from "@main/services";
 import { migrateDownloadSources } from "./helpers/migrate-download-sources";
 import { getDirSize } from "./services/download/helpers";
@@ -71,10 +73,22 @@ const hasMissingSeedFiles = async (download: Download): Promise<boolean> => {
   return currentSize < expectedSize;
 };
 
-export const loadState = async () => {
+/**
+ * The part of startup a window cannot open without: the lock, the IPC handlers
+ * its renderer invokes the moment it mounts, and the API client those handlers
+ * reach for. Everything here reads local state and returns in milliseconds.
+ *
+ * Anything that talks to the network — the self-hosted probe, the session
+ * refresh, the download sources — belongs in loadState(), which runs behind
+ * the window rather than in front of it. A configured cloud server that is
+ * unreachable used to hold the launcher closed for the probe's full ten-second
+ * timeout before anything was drawn.
+ */
+export const prepareForWindows = async () => {
   await Lock.acquireLock();
   await clearLegacyAchievementPersistence();
-  await migrateCloudSaveAutomaticSyncDefaults();
+  /* Both local-only. The automatic-sync defaults migration is not here: it
+     reads what the self-hosted server supports, so it runs in loadState(). */
   await migrateEmulatorCloudSaveDefaults();
   await migrateGameVisibilityFields();
 
@@ -91,6 +105,8 @@ export const loadState = async () => {
   );
   ScreenshotInputService.syncUserPreferences(userPreferences);
 
+  /* Registers every IPC handler. A window opened before this can only answer
+     its own mount with "no handler registered". */
   await import("./events");
 
   if (userPreferences?.realDebridApiToken) {
@@ -111,6 +127,14 @@ export const loadState = async () => {
 
   GofileApi.initialize();
 
+  /* Creates the API clients and restores the session from disk; the
+     self-hosted probe it starts is deliberately left running. */
+  await HydraApi.setupApi();
+
+  return userPreferences ?? null;
+};
+
+export const loadState = async (userPreferences: UserPreferences | null) => {
   if (
     userPreferences?.appendGlobalTrackersUrl &&
     userPreferences?.globalTrackersUrl
@@ -131,33 +155,46 @@ export const loadState = async () => {
   void watchSteamLibraries();
   void syncRetroAchievementsEmulatorCredentials();
 
-  await HydraApi.setupApi().then(async () => {
-    void ScreenshotInputService.refreshFeatureFlag();
-    try {
-      await initializeEpicIntegration();
-    } catch (err) {
-      logger.warn("Epic integration initialization failed on startup", err);
-    }
-    uploadGamesBatch();
-    void migrateDownloadSources();
+  SelfHostedStatusMonitor.start();
 
-    const { syncDownloadSourcesFromApi } = await import("./services/user");
-    void syncDownloadSourcesFromApi();
+  /* Both of these read what the self-hosted server can do, so they wait for
+     the probe the launcher no longer waits for. The migration in particular
+     used to run before setupApi() had even read the configured URL, so its
+     "skip when the server can't serve V2" guard never saw a server at all. */
+  await HydraApi.whenSelfHostedCapabilitiesSettled();
+  await HydraApi.refreshSession().catch((err) =>
+    logger.error("Failed to refresh the session on startup", err)
+  );
+  await migrateCloudSaveAutomaticSyncDefaults().catch((err) =>
+    logger.error("Failed to migrate cloud save defaults", err)
+  );
 
-    // Check for new download options on startup (if enabled)
-    (async () => {
-      await DownloadSourcesChecker.checkForChanges();
-    })();
+  void ScreenshotInputService.refreshFeatureFlag();
 
-    initializeScreenshots();
+  /* A failed Epic initialization must not take the rest of startup, and with
+     it the download loop, down with it. */
+  try {
+    await initializeEpicIntegration();
+  } catch (err) {
+    logger.warn("Epic integration initialization failed on startup", err);
+  }
+  uploadGamesBatch();
+  void migrateDownloadSources();
 
-    if (HydraApi.isLoggedIn()) {
-      SSEClient.connect();
-      void groupedSouvenirWorker.trigger();
-      void startSteamSyncOnStartup();
-      void startEpicSyncOnStartup();
-    }
-  });
+  const { syncDownloadSourcesFromApi } = await import("./services/user");
+  void syncDownloadSourcesFromApi();
+
+  // Check for new download options on startup (if enabled)
+  void DownloadSourcesChecker.checkForChanges();
+
+  initializeScreenshots();
+
+  if (HydraApi.isLoggedIn()) {
+    SSEClient.connect();
+    void groupedSouvenirWorker.trigger();
+    void startSteamSyncOnStartup();
+    void startEpicSyncOnStartup();
+  }
 
   void recoverInterruptedInstallers().catch((error) => {
     logger.error(
@@ -241,6 +278,16 @@ export const loadState = async () => {
   WindowManager.sendDownloadsUpdated();
 
   startMainLoop();
+
+  syncSteamPlaytimeForLibrary()
+    .then((updatedCount) => {
+      if (updatedCount > 0) {
+        WindowManager.sendToAppWindows("on-library-batch-complete");
+      }
+    })
+    .catch((err) => {
+      logger.warn("Failed to sync Steam playtime on startup", err);
+    });
 
   if (process.platform === "win32") {
     CommonRedistManager.downloadCommonRedist();

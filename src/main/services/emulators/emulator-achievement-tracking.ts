@@ -16,11 +16,11 @@ export const hasRetroAchievementsCredentials = (
 
 export const resolveEmulatorAchievementTracking = (
   userPreferences: UserPreferences | null | undefined,
-  hasActiveSubscription: boolean,
+  souvenirsAvailable: boolean,
   platform: NodeJS.Platform
 ): EmulatorAchievementTracking => ({
   souvenirs:
-    hasActiveSubscription &&
+    souvenirsAvailable &&
     isAchievementSouvenirsEnabled(
       userPreferences?.enableAchievementSouvenirs,
       platform

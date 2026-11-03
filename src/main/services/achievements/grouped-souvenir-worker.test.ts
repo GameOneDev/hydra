@@ -132,6 +132,7 @@ function fixture(records = [pending()]) {
     "../hydra-api": {
       HydraApi: {
         isLoggedIn: () => state.loggedIn,
+        isSelfHostedCloudEnabled: () => false,
         hasActiveSubscription: () => state.active,
         getAuthContext: () =>
           state.loggedIn ? { userId: state.user.id } : null,

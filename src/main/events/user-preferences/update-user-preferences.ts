@@ -8,7 +8,9 @@ import { defaultDownloadsPath } from "@main/constants";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { patchUserProfile } from "../profile/update-profile";
 import { DownloadManager, ScreenshotInputService, Wine } from "@main/services";
+import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
+import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { getDownloadDirectoryPreferences } from "@shared";
 import {
   restoreDuckStationFileLogging,
@@ -128,7 +130,7 @@ const updateEmulatorAchievementTracking = async (
 
   const tracking = resolveEmulatorAchievementTracking(
     updatedPreferences,
-    HydraApi.hasActiveSubscription(),
+    HydraApi.supportsAchievementSouvenirs(),
     process.platform
   );
   if (isEmulatorAchievementTrackingActive(tracking)) return;
@@ -215,6 +217,14 @@ const updateUserPreferences = async (
   );
 
   if (
+    Object.hasOwn(preferences, "enableSteamAchievements") &&
+    preferences.enableSteamAchievements === true &&
+    userPreferences?.enableSteamAchievements !== true
+  ) {
+    AchievementWatcherManager.rebaselineAchievementFiles();
+  }
+
+  if (
     ACHIEVEMENT_VIEW_PREFERENCE_KEYS.some(
       (key) =>
         Object.hasOwn(preferences, key) &&
@@ -237,6 +247,17 @@ const updateUserPreferences = async (
   );
 
   await applyDownloadManagerPreferences(preferences);
+
+  const cloudServerChanged =
+    Object.hasOwn(preferences, "selfHostedCloudUrl") &&
+    (preferences.selfHostedCloudUrl ?? null) !==
+      (userPreferences?.selfHostedCloudUrl ?? null);
+
+  if (cloudServerChanged) {
+    // A different server has never been told the souvenir privacy setting.
+    resetSouvenirsVisibilityMirror();
+    await HydraApi.handleCloudServerChange();
+  }
 };
 
 registerEvent("updateUserPreferences", updateUserPreferences);

@@ -5,11 +5,19 @@ import type {
   UserPreferences,
 } from "@types";
 import { WindowManager } from "../window-manager";
-import { publishNewAchievementNotification } from "../notifications";
+import {
+  publishCombinedNewAchievementNotification,
+  publishNewAchievementNotification,
+} from "../notifications";
 import { achievementsLogger } from "../logger";
 import { achievementNotificationPresenter } from "../achievement-notification-presenter-electron";
 
 const RARE_ACHIEVEMENT_MAX_UNLOCK_PERCENTAGE = 10;
+
+/* A batch larger than this is announced once instead of one toast per
+   achievement, so replaying a long list (a first sync, an emulator importing a
+   save) can't bury the screen. */
+const MAX_INDIVIDUAL_ACHIEVEMENT_NOTIFICATIONS = 10;
 
 const isRareAchievement = (points: number) => {
   const rawPercentage = (50 - Math.sqrt(points)) * 2;
@@ -72,6 +80,30 @@ export const publishAchievementUnlockNotifications = ({
 
   const position =
     userPreferences?.achievementCustomNotificationPosition ?? "top-left";
+
+  if (achievementsInfo.length > MAX_INDIVIDUAL_ACHIEVEMENT_NOTIFICATIONS) {
+    achievementsLogger.log(
+      "Collapsing oversized achievement batch into a combined notification",
+      game.objectId,
+      achievementsInfo.length
+    );
+
+    const publishCombinedOsNotification = () =>
+      publishCombinedNewAchievementNotification(achievementsInfo.length, 1);
+
+    if (customNotificationsOnly && process.platform !== "linux") {
+      achievementNotificationPresenter.enqueueCombined(
+        position,
+        1,
+        achievementsInfo.length,
+        publishCombinedOsNotification
+      );
+    } else {
+      void publishCombinedOsNotification();
+    }
+
+    return;
+  }
 
   const publishOsNotification = () =>
     publishNewAchievementNotification({

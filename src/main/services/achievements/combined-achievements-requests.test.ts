@@ -11,7 +11,8 @@ type Requests = {
     shop: string,
     objectId: string,
     language: string,
-    request: () => Promise<T>
+    request: () => Promise<T>,
+    source?: "official" | "self-hosted"
   ) => Promise<T | null>;
   clear: () => void;
 };
@@ -231,4 +232,49 @@ it("keeps each account's backoff apart and clears it on reset", async () => {
   requests.clear();
   await requests.fetch(owner, "steam", "10", "en", api.request);
   assert.equal(api.calls, 4);
+});
+
+it("keeps a backoff per server, so one failing does not silence the other", async () => {
+  const requests = load();
+  const official = counter(() => Promise.reject(httpError(403)));
+  const selfHosted = counter(() => Promise.resolve("combined"));
+
+  assert.equal(
+    await requests.fetch(owner, "steam", "1", "en", official.request),
+    null
+  );
+  assert.equal(
+    await requests.fetch(owner, "steam", "1", "en", official.request),
+    null
+  );
+  assert.equal(official.calls, 1, "official is backing off");
+
+  assert.equal(
+    await requests.fetch(
+      owner,
+      "steam",
+      "1",
+      "en",
+      selfHosted.request,
+      "self-hosted"
+    ),
+    "combined"
+  );
+  assert.equal(selfHosted.calls, 1, "self-hosted is asked despite the backoff");
+
+  const failingSelfHosted = counter(() => Promise.reject(httpError(503)));
+  await requests.fetch(
+    owner,
+    "steam",
+    "2",
+    "en",
+    failingSelfHosted.request,
+    "self-hosted"
+  );
+  const healthyOfficial = counter(() => Promise.resolve("combined"));
+  assert.equal(
+    await requests.fetch(owner, "steam", "2", "en", healthyOfficial.request),
+    "combined"
+  );
+  assert.equal(healthyOfficial.calls, 1, "and the reverse");
 });

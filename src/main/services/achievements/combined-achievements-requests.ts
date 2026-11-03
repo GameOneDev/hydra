@@ -11,6 +11,12 @@ export const COMBINED_ACHIEVEMENTS_BACKOFF_STEPS_MS = [
 ];
 const MAX_BACKOFF_MS = COMBINED_ACHIEVEMENTS_BACKOFF_STEPS_MS.at(-1)!;
 
+/* Which server a request goes to. A game can be failing on one and fine on
+   the other — official Hydra answering 403 to a non-subscriber says nothing
+   about a self-hosted server — so each keeps its own backoff, or the first
+   failure would silence the fallback for as long as the backoff lasts. */
+export type CombinedAchievementsSource = "official" | "self-hosted";
+
 interface Failure {
   attempts: number;
   retryAt: number;
@@ -70,13 +76,15 @@ const fetchCombined = <T>(
   shop: GameShop,
   objectId: string,
   language: string,
-  request: () => Promise<T>
+  request: () => Promise<T>,
+  source: CombinedAchievementsSource = "official"
 ): Promise<T | null> => {
   if (!context) return request().catch(() => null);
 
   const key = JSON.stringify([
     context.environment,
     context.userId,
+    source,
     shop,
     objectId,
   ]);

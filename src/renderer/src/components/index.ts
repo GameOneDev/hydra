@@ -39,6 +39,8 @@ export * from "./steam-library-badge/steam-library-badge";
 export * from "./classics-spinner/classics-spinner";
 export * from "./window-title-bar/window-title-bar";
 export * from "./error-boundary/error-fallback";
+export * from "./online-friends-bar/online-friends-bar";
+export * from "./self-hosted-status-indicator/self-hosted-status-indicator";
 export * from "./error-boundary/error-boundary";
 export * from "./content-report-modal/content-report-modal";
 export * from "./rich-text-editor/rich-text-editor";

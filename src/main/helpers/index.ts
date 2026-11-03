@@ -103,3 +103,4 @@ export * from "./platform-to-system";
 export * from "./platform-to-retroarch-platform";
 export * from "./launch-retroarch-game";
 export * from "./global-trackers";
+export * from "./cloud-saves-default";

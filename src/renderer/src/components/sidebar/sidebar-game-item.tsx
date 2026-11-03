@@ -35,6 +35,7 @@ export const SidebarGameItem = memo(function SidebarGameItem({
   const { showWarningToast } = useToast();
   const {
     canPlay,
+    isGameRunning,
     handlePlayGame,
     rpcs3ConfirmPending,
     handleConfirmRpcs3Launch,
@@ -100,6 +101,8 @@ export const SidebarGameItem = memo(function SidebarGameItem({
             location.pathname ===
             `/game/${catalogueIdentity.shop}/${catalogueIdentity.objectId}`,
           "sidebar__menu-item--muted": game.download?.status === "removed",
+          "sidebar__menu-item--not-playable": !canPlay,
+          "sidebar__menu-item--running": isGameRunning,
         })}
       >
         <button

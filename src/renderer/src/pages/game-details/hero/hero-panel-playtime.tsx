@@ -22,6 +22,7 @@ export function HeroPanelPlaytime() {
     game: operationalGame,
     presentation,
     isGameRunning,
+    updateGame,
   } = useContext(gameDetailsContext);
   const game = presentation ?? operationalGame;
   const { t } = useTranslation("game_details");
@@ -41,6 +42,21 @@ export function HeroPanelPlaytime() {
       );
     } else setLastTimePlayed("");
   }, [game?.lastTimePlayed, formatDistance]);
+
+  const isSteamManagedGame = Boolean(game?.launchThroughSteam);
+
+  useEffect(() => {
+    // Steam updates its local playtime files when a game session ends, so
+    // refresh the stat whenever the details of a Steam-managed game open.
+    if (!isSteamManagedGame) return;
+
+    window.electron
+      .syncSteamPlaytime()
+      .then((updatedCount) => {
+        if (updatedCount > 0) updateGame();
+      })
+      .catch(() => {});
+  }, [isSteamManagedGame, game?.objectId, updateGame]);
 
   const formattedPlayTime = useMemo(() => {
     const milliseconds = getDisplayedPlayTimeInMilliseconds({

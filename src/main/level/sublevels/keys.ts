@@ -49,6 +49,7 @@ export const levelKeys = {
   cloudSaveAutomaticSyncSettings: "cloud-save-automatic-sync-settings",
   cloudSaveV2DefaultMigration: "cloud-save-v2-default-migration",
   gameVisibilityRenameMigration: "game-visibility-rename-migration",
+  selfHostedHiddenGamesMigration: "self-hosted-hidden-games-migration",
   cloudSaveCustomPaths: "cloud-save-custom-paths",
   cloudSaveEmulatorDestinations: "cloud-save-emulator-destinations",
   cloudSaveRetroArchBindings: "cloud-save-retroarch-bindings",

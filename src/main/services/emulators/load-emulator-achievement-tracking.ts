@@ -13,7 +13,7 @@ export const loadEmulatorAchievementTracking = async () => {
 
   return resolveEmulatorAchievementTracking(
     userPreferences,
-    HydraApi.hasActiveSubscription(),
+    HydraApi.supportsAchievementSouvenirs(),
     process.platform
   );
 };

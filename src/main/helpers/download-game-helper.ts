@@ -10,6 +10,7 @@ import { getDownloadParts } from "@main/services/download/download-parts";
 import { assertMultipartHosterDownloadsEnabled } from "@main/services/download/multipart-hoster-feature";
 import { type Downloader, MULTIPART_DOWNLOADERS } from "@shared";
 import { canDiscardDownload, type GameShop } from "../../types";
+import { getAutomaticCloudSyncDefault } from "./cloud-saves-default";
 
 interface PrepareGameEntryParams {
   gameKey: string;
@@ -82,6 +83,7 @@ export const prepareGameEntry = async ({
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
       isDeleted: false,
+      automaticCloudSync: await getAutomaticCloudSyncDefault(),
     });
   }
 };

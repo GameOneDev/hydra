@@ -8,19 +8,20 @@ import {
   readStoredSouvenirSort,
   type ProfileLibraryFilter,
 } from "@renderer/helpers";
+import { logger } from "@renderer/logger";
 import { useAppSelector, useToast } from "@renderer/hooks";
 import type {
   Badge,
   ProfileSouvenir,
   SouvenirsHiddenReason,
-  SouvenirsResponse,
   SouvenirSort,
+  SteamAchievement,
   UserProfile,
   UserStats,
   UserGame,
 } from "@types";
 import {
-  buildUserSouvenirsPath,
+  enrichSouvenirAchievements,
   getSouvenirKey,
   normalizeProfileSouvenir,
 } from "@shared";
@@ -29,6 +30,11 @@ import { average } from "color.js";
 import { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import {
+  applySelfHostedArtwork,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "@renderer/services/self-hosted-artwork.service";
 
 export interface UserProfileContext {
   userProfile: UserProfile | null;
@@ -137,6 +143,10 @@ export function UserProfileContextProvider({
   userId,
 }: Readonly<UserProfileContextProviderProps>) {
   const { userDetails } = useAppSelector((state) => state.userDetails);
+  const userPreferences = useAppSelector(
+    (state) => state.userPreferences.value
+  );
+  const selfHostedCloudUrl = userPreferences?.selfHostedCloudUrl;
   const authUserId = userDetails?.id;
 
   const [userStats, setUserStats] = useState<UserStats | null>(null);
@@ -166,6 +176,25 @@ export function UserProfileContextProvider({
   const previousUserIdRef = useRef(userId);
   const userStatsRequestIdRef = useRef(0);
   const libraryRequestIdRef = useRef(0);
+
+  /* Custom game images this profile's owner keeps on the self-hosted server.
+     Fetched once per profile and shared by every library request below, so
+     paging through a library doesn't re-request the whole set. */
+  const artworkRef = useRef<{
+    userId: string;
+    promise: Promise<SelfHostedArtworkMap | null>;
+  } | null>(null);
+
+  const getSelfHostedArtwork = useCallback(() => {
+    if (artworkRef.current?.userId !== userId) {
+      artworkRef.current = {
+        userId,
+        promise: fetchSelfHostedArtwork(userId, selfHostedCloudUrl),
+      };
+    }
+
+    return artworkRef.current.promise;
+  }, [userId, selfHostedCloudUrl]);
 
   const isMe = userDetails?.id === userProfile?.id;
 
@@ -199,13 +228,44 @@ export function UserProfileContextProvider({
         .get<UserStats>(`/users/${userId}/stats?${params.toString()}`, {
           needsAuth: false,
         })
-        .then((stats) => {
+        .then(async (stats) => {
           if (requestId !== userStatsRequestIdRef.current) return;
 
-          setUserStats(stats);
+          let merged = stats;
+
+          /* The official API only computes achievement totals for
+             subscribers; the self-hosted server knows them from achievement
+             sync, so fill the gap from there. It reads the same filter, so
+             the total follows the tab the profile is showing — a server
+             predating the parameters ignores them and answers for the whole
+             library, which is what this fallback did before. */
+          if (
+            merged.unlockedAchievementSum === undefined &&
+            selfHostedCloudUrl
+          ) {
+            try {
+              const fallback = await window.electron.hydraApi.get<{
+                unlockedAchievementSum: number | null;
+              }>(`/profile/stats/${userId}?${params.toString()}`);
+
+              if (typeof fallback?.unlockedAchievementSum === "number") {
+                merged = {
+                  ...merged,
+                  unlockedAchievementSum: fallback.unlockedAchievementSum,
+                };
+              }
+            } catch {
+              /* No achievement data on the self-hosted server either */
+            }
+          }
+
+          /* the fallback is awaited, so a newer request may have started */
+          if (requestId !== userStatsRequestIdRef.current) return;
+
+          setUserStats(merged);
         });
     },
-    [userId]
+    [userId, selfHostedCloudUrl]
   );
 
   const getUserLibraryGames = useCallback(
@@ -236,7 +296,10 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await fetchLibraryPage(url);
+        const [response, artwork] = await Promise.all([
+          fetchLibraryPage(url),
+          getSelfHostedArtwork(),
+        ]);
 
         if (!isCurrentRequest()) return;
 
@@ -245,8 +308,8 @@ export function UserProfileContextProvider({
         }
 
         if (response) {
-          setLibraryGames(response.library);
-          setPinnedGames(response.pinnedGames);
+          setLibraryGames(applySelfHostedArtwork(response.library, artwork));
+          setPinnedGames(applySelfHostedArtwork(response.pinnedGames, artwork));
           setHasMoreLibraryGames(
             response.library.length === PROFILE_LIBRARY_PAGE_SIZE
           );
@@ -267,7 +330,7 @@ export function UserProfileContextProvider({
         }
       }
     },
-    [userId]
+    [userId, getSelfHostedArtwork]
   );
 
   const loadMoreLibraryGames = useCallback(
@@ -295,15 +358,21 @@ export function UserProfileContextProvider({
 
         const url = `/users/${userId}/library?${params.toString()}`;
 
-        const response = await fetchLibraryPage(url);
+        const [response, artwork] = await Promise.all([
+          fetchLibraryPage(url),
+          getSelfHostedArtwork(),
+        ]);
 
         if (!isCurrentRequest()) return false;
 
         if (response && response.library.length > 0) {
           setLibraryGames((prev) => {
             const existingIds = new Set(prev.map((game) => game.objectId));
-            const newGames = response.library.filter(
-              (game) => !existingIds.has(game.objectId)
+            const newGames = applySelfHostedArtwork(
+              response.library.filter(
+                (game) => !existingIds.has(game.objectId)
+              ),
+              artwork
             );
             return [...prev, ...newGames];
           });
@@ -323,24 +392,45 @@ export function UserProfileContextProvider({
         if (isCurrentRequest()) setIsLoadingLibraryGames(false);
       }
     },
-    [userId, libraryPage, hasMoreLibraryGames, isLoadingLibraryGames]
+    [
+      userId,
+      libraryPage,
+      hasMoreLibraryGames,
+      isLoadingLibraryGames,
+      getSelfHostedArtwork,
+    ]
   );
 
   const fetchSouvenirsPage = useCallback(
     async (sortBy: SouvenirSort, skip: number) => {
       const language = i18n.language.split("-")[0];
-      const path = buildUserSouvenirsPath({
+
+      /* Reads from whichever server this profile's owner captured on — the
+         self-hosted one, or official Hydra for everyone else. */
+      const response = await window.electron.getProfileSouvenirs({
         userId,
         skip,
         sortBy,
         language,
       });
 
-      return window.electron.hydraApi.get<SouvenirsResponse | null>(path, {
-        needsAuth: Boolean(authUserId),
-      });
+      if (!response) return null;
+
+      /* A self-hosted cloud server only knows the achievement names the
+         launcher sent it, so the catalogue fills in display names, icons and
+         points. A no-op for official Hydra Cloud, which sends them. */
+      const items = await enrichSouvenirAchievements(
+        (response.items ?? []).map((item) => normalizeProfileSouvenir(item)),
+        (shop, objectId) =>
+          window.electron.hydraApi.get<SteamAchievement[]>(
+            `/games/${shop}/${objectId}/achievements`,
+            { params: { language }, needsAuth: false }
+          )
+      );
+
+      return { ...response, items };
     },
-    [authUserId, i18n.language, userId]
+    [i18n.language, userId]
   );
 
   const getUserSouvenirs = useCallback(
@@ -352,9 +442,7 @@ export function UserProfileContextProvider({
         const response = await fetchSouvenirsPage(sortBy, 0);
         if (requestId !== souvenirRequestIdRef.current) return false;
 
-        setSouvenirs(
-          (response?.items ?? []).map((item) => normalizeProfileSouvenir(item))
-        );
+        setSouvenirs(response?.items ?? []);
         setSouvenirsTotal(response?.total ?? 0);
         setHasReachedSouvenirLimit(response?.hasReachedLimit ?? false);
         setSouvenirsHiddenReason(response?.hiddenReason ?? null);
@@ -395,11 +483,9 @@ export function UserProfileContextProvider({
           const existingKeys = new Set(
             current.map((souvenir) => getSouvenirKey(souvenir.id))
           );
-          const nextItems = response.items
-            .map((item) => normalizeProfileSouvenir(item))
-            .filter(
-              (souvenir) => !existingKeys.has(getSouvenirKey(souvenir.id))
-            );
+          const nextItems = response.items.filter(
+            (souvenir) => !existingKeys.has(getSouvenirKey(souvenir.id))
+          );
 
           return [...current, ...nextItems];
         });
@@ -473,15 +559,58 @@ export function UserProfileContextProvider({
       })
       .then(async (userProfile) => {
         if (previousUserIdRef.current !== userId) return;
-        setUserProfile(userProfile);
 
-        if (userProfile.profileImageUrl) {
-          getHeroBackgroundFromImageUrl(userProfile.profileImageUrl).then(
-            (color) => setHeroBackground(color)
+        let profile = userProfile;
+
+        /* The official API only stores banners for subscribers; users of a
+           self-hosted cloud server keep theirs there, so fall back to it
+           when the official profile has none. */
+        if (!profile.backgroundImageUrl && selfHostedCloudUrl) {
+          try {
+            const fallback = await window.electron.hydraApi.get<{
+              backgroundImageUrl: string | null;
+            }>(`/profile/banners/${userId}`);
+
+            if (fallback?.backgroundImageUrl) {
+              profile = {
+                ...profile,
+                backgroundImageUrl: fallback.backgroundImageUrl,
+              };
+            }
+          } catch {
+            /* No banner on the self-hosted server either */
+          }
+        }
+
+        /* The profile response embeds its own game lists, which need the
+           same custom images as the paged library above. */
+        const artwork = await getSelfHostedArtwork();
+        if (artwork?.size) {
+          profile = {
+            ...profile,
+            libraryGames: applySelfHostedArtwork(profile.libraryGames, artwork),
+            recentGames: applySelfHostedArtwork(profile.recentGames, artwork),
+          };
+        }
+
+        /* The banner and artwork lookups above are awaited, so the profile
+           being viewed may have changed while they ran. */
+        if (previousUserIdRef.current !== userId) return;
+
+        setUserProfile(profile);
+
+        if (profile.profileImageUrl) {
+          getHeroBackgroundFromImageUrl(profile.profileImageUrl).then((color) =>
+            setHeroBackground(color)
           );
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        /* This catch covers the whole chain above, not just the request, so
+           a bug in the handling reads to the user as a missing profile.
+           Record what actually failed. */
+        logger.error("Failed to load profile", userId, error);
+
         if (previousUserIdRef.current !== userId) return;
         showErrorToast(t("user_not_found"));
         navigate(-1);
@@ -493,6 +622,8 @@ export function UserProfileContextProvider({
     getUserSouvenirs,
     showErrorToast,
     userId,
+    selfHostedCloudUrl,
+    getSelfHostedArtwork,
     t,
   ]);
 

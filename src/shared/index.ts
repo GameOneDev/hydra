@@ -66,6 +66,7 @@ export * from "./language-flags";
 export * from "./use-hls-video";
 export * from "./use-souvenir-content-warning";
 export * from "./retroarch-platform";
+export * from "./self-hosted-url";
 export * from "./platform-to-system";
 export * from "./classics-emulator-games";
 export * from "./tracker-list";

@@ -138,7 +138,8 @@ async function fixture(t: TestContext, apiUrl = "http://localhost:3000") {
     "./library-sync": "export const uploadGamesBatch = async () => {};",
     "./library-sync/clear-games-remote-id":
       "export const clearGamesRemoteIds = async () => {};",
-    "./logger": "export const networkLogger = harness.logger;",
+    "./logger":
+      "export const networkLogger = harness.logger; export const logger = harness.logger;",
     "../logger": "export const logger = harness.logger;",
     "@shared":
       "export class UserNotLoggedInError extends Error {} export class SubscriptionRequiredError extends Error {}",
@@ -163,6 +164,8 @@ async function fixture(t: TestContext, apiUrl = "http://localhost:3000") {
     "./chat/chat-sender-profiles":
       "export const clearChatSenderProfiles = () => {};",
     "./notifications": "export const closeChatNotifications = () => {};",
+    "./cloud-save":
+      "export const migrateCloudSaveAutomaticSyncDefaults = async () => {};",
   };
   const bundlePath = path.join(root, "api.mjs");
   // Exercise real auth, HTTP interceptors and profile code; replace environment boundaries only.
@@ -578,4 +581,30 @@ test("errors without a response keep their code", async (t) => {
     code: "ECONNABORTED",
   });
   assert.equal(f.api.isLoggedIn(), true);
+});
+
+test("a self-hosted server counts as a subscription but not as a real one", async (t) => {
+  const { api } = await fixture(t);
+  const userAuth = Reflect.get(api, "userAuth");
+  const future = new Date(Date.now() + 86_400_000);
+  const past = new Date(Date.now() - 86_400_000);
+
+  // Without a self-hosted server the two questions are one: upstream's answer,
+  // whether or not anything has been recorded about the real subscription yet.
+  userAuth.subscription = { expiresAt: future.toISOString() };
+  assert.equal(api.hasActiveSubscription(), true);
+  assert.equal(api.hasRealActiveSubscription(), true);
+  userAuth.subscription = null;
+  assert.equal(api.hasActiveSubscription(), false);
+  assert.equal(api.hasRealActiveSubscription(), false);
+
+  // With one configured the launcher is subscribed, but only an account that
+  // really has Hydra Cloud may ask official Hydra for what it reserves to it.
+  Reflect.set(api, "selfHostedCloudUrl", "http://self-hosted.test");
+  assert.equal(api.hasActiveSubscription(), true);
+  assert.equal(api.hasRealActiveSubscription(), false);
+  api.syncRealSubscription({ expiresAt: past });
+  assert.equal(api.hasRealActiveSubscription(), false);
+  api.syncRealSubscription({ expiresAt: future });
+  assert.equal(api.hasRealActiveSubscription(), true);
 });

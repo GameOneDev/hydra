@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import type { GameShop, ProfileSouvenir, SteamAchievement } from "@types";
+
 import {
   buildProfileSouvenirVisibilityPath,
   buildProfileSouvenirDeletePath,
@@ -8,6 +10,7 @@ import {
   buildUserSouvenirLikePath,
   buildUserSouvenirReportPath,
   buildUserSouvenirsPath,
+  enrichSouvenirAchievements,
   getPrimarySouvenirAchievement,
   getSouvenirKey,
   getSouvenirVisualVariant,
@@ -293,5 +296,127 @@ describe("souvenir API helpers", () => {
       normalized.achievements.map((achievement) => achievement.name),
       ["LEGACY"]
     );
+  });
+});
+
+describe("souvenir achievement metadata", () => {
+  const souvenirOf = (
+    id: string,
+    names: string[],
+    objectId = "440"
+  ): ProfileSouvenir => ({
+    id,
+    imageUrl: `http://server/${id}.jpg`,
+    capturedAt: 100,
+    primaryAchievementName: names[0],
+    achievements: names.map((name) => ({
+      name,
+      displayName: name,
+      description: "",
+      achievementIcon: null,
+      unlockTime: 100,
+      points: null,
+      isRare: null,
+      isPlatinum: false,
+    })),
+    visibility: "PUBLIC",
+    gameId: "remote-1",
+    objectId,
+    shop: "steam",
+    gameTitle: "Team Fortress 2",
+    gameIconUrl: null,
+    likeCount: 0,
+    likedByMe: false,
+  });
+
+  const catalogueEntry = (name: string, points: number): SteamAchievement => ({
+    name,
+    displayName: `${name} pretty`,
+    description: `${name} description`,
+    icon: `http://cdn/${name}.jpg`,
+    icongray: `http://cdn/${name}-gray.jpg`,
+    hidden: false,
+    points,
+  });
+
+  it("fills names, icons and rarity from the catalogue", async () => {
+    const [souvenir] = await enrichSouvenirAchievements(
+      [souvenirOf("s1", ["ACH_WIN"])],
+      async () => [catalogueEntry("ach_win", 4)]
+    );
+
+    const [achievement] = souvenir.achievements;
+    assert.equal(achievement.displayName, "ach_win pretty");
+    assert.equal(achievement.description, "ach_win description");
+    assert.equal(achievement.achievementIcon, "http://cdn/ach_win.jpg");
+    assert.equal(achievement.points, 4);
+    /* (50 - sqrt(4)) * 2 = 96, well over the 10% rarity threshold. */
+    assert.equal(achievement.isRare, false);
+  });
+
+  it("marks a low-completion achievement rare", async () => {
+    const [souvenir] = await enrichSouvenirAchievements(
+      [souvenirOf("s1", ["ACH_WIN"])],
+      async () => [catalogueEntry("ACH_WIN", 2401)]
+    );
+
+    assert.equal(souvenir.achievements[0].isRare, true);
+  });
+
+  it("looks a game up once however many souvenirs it has", async () => {
+    const requested: string[] = [];
+
+    await enrichSouvenirAchievements(
+      [
+        souvenirOf("s1", ["A"]),
+        souvenirOf("s2", ["B"]),
+        souvenirOf("s3", ["C"], "70"),
+      ],
+      async (shop: GameShop, objectId: string) => {
+        requested.push(`${shop}:${objectId}`);
+        return [];
+      }
+    );
+
+    assert.deepEqual(requested.toSorted(), ["steam:440", "steam:70"]);
+  });
+
+  it("asks for nothing when the souvenirs already carry metadata", async () => {
+    const souvenir = souvenirOf("s1", ["ACH_WIN"]);
+    souvenir.achievements[0].achievementIcon = "http://cdn/official.jpg";
+    let calls = 0;
+
+    const [result] = await enrichSouvenirAchievements([souvenir], async () => {
+      calls += 1;
+      return [];
+    });
+
+    assert.equal(calls, 0);
+    assert.equal(
+      result.achievements[0].achievementIcon,
+      "http://cdn/official.jpg"
+    );
+  });
+
+  it("keeps the raw name when the catalogue can't be read", async () => {
+    const [souvenir] = await enrichSouvenirAchievements(
+      [souvenirOf("s1", ["ACH_WIN"])],
+      async () => {
+        throw new Error("offline");
+      }
+    );
+
+    assert.equal(souvenir.achievements[0].displayName, "ACH_WIN");
+    assert.equal(souvenir.achievements[0].achievementIcon, null);
+  });
+
+  it("keeps the raw name for an achievement the catalogue doesn't list", async () => {
+    const [souvenir] = await enrichSouvenirAchievements(
+      [souvenirOf("s1", ["ACH_WIN", "ACH_SECRET"])],
+      async () => [catalogueEntry("ACH_WIN", 4)]
+    );
+
+    assert.equal(souvenir.achievements[0].displayName, "ACH_WIN pretty");
+    assert.equal(souvenir.achievements[1].displayName, "ACH_SECRET");
   });
 });

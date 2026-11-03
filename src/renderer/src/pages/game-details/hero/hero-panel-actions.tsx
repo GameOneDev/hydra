@@ -346,6 +346,15 @@ export function HeroPanelActions() {
       return;
     }
 
+    if (game.launchThroughSteam && !game.executablePath) {
+      try {
+        await window.electron.openSteamGame(game.shop, game.objectId);
+      } catch {
+        showErrorToast(t("launch_failed_toast"));
+      }
+      return;
+    }
+
     if (game.executablePath) {
       await launchMember(game);
       return;
@@ -679,7 +688,11 @@ export function HeroPanelActions() {
       );
     }
 
-    if (game?.executablePath || isPlayableClassics) {
+    if (
+      game?.executablePath ||
+      game?.launchThroughSteam ||
+      isPlayableClassics
+    ) {
       return (
         <Button
           onClick={openGame}

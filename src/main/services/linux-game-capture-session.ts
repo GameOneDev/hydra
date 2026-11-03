@@ -62,8 +62,11 @@ const isReasonEligible = (
     return resolveScreenshotPreferences(userPreferences).enabled;
   }
 
+  /* Not just "has a subscription": a self-hosted server stands in for it, and
+     capturing screenshots that server has no endpoint for would only fill the
+     retry queue with work that can never finish. */
   return (
-    HydraApi.hasActiveSubscription() &&
+    HydraApi.supportsAchievementSouvenirs() &&
     isAchievementSouvenirsEnabled(
       userPreferences?.enableAchievementSouvenirs,
       process.platform
@@ -294,7 +297,7 @@ export const prepareLinuxGameCaptureSession = async (
   reason: CaptureSessionReason = "souvenir"
 ) => {
   if (!isWaylandCaptureBackend()) return;
-  if (reason === "souvenir" && !HydraApi.hasActiveSubscription()) return;
+  if (reason === "souvenir" && !HydraApi.supportsAchievementSouvenirs()) return;
 
   const failed = sessions.get(gameKey);
   const retriedReasons =

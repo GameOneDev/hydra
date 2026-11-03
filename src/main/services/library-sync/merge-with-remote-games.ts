@@ -31,6 +31,11 @@ import {
 } from "./reconcile-remote-artwork-selection";
 import type { CustomArtworkUrls } from "./reconcile-remote-artwork-selection";
 import {
+  artworkKey,
+  fetchSelfHostedArtwork,
+  type SelfHostedArtworkMap,
+} from "./self-hosted-artwork";
+import {
   mergeImportedProfileGame,
   type ImportedProfileGame,
 } from "./merge-imported-profile-game";
@@ -48,6 +53,8 @@ import { mergePersistedAchievementTotals } from "../achievements/achievement-mem
 import { UnlockedAchievementsCache } from "../achievements/unlocked-achievements-cache";
 import { trackAchievementBatchGame } from "../achievements/achievement-batch-games";
 import { fetchRemoteProfileGames as fetchProfileGames } from "./fetch-remote-profile-games";
+import { reconcileSelfHostedHiddenGames } from "./self-hosted-hidden-games";
+import { syncSelfHostedGameLinks } from "./self-hosted-game-links";
 
 type ProfileGame = {
   id: string;
@@ -87,12 +94,39 @@ const reconcileCustomAsset = (
   return remoteValue;
 };
 
-const getRemoteCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
+const getOfficialCustomAssets = (game: ProfileGame): CustomArtworkUrls => ({
   customIconUrl: game.customIconUrl,
   customLogoImageUrl: game.customLogoImageUrl,
   customHeroImageUrl: game.customLibraryHeroImageUrl,
   customCoverImageUrl: game.customLibraryImageUrl,
 });
+
+/**
+ * Which custom images this game should end up with.
+ *
+ * With a self-hosted server the images it holds win, since that is where
+ * this launcher uploads them. The official values stay as the fallback so a
+ * real Hydra Cloud subscriber keeps seeing images synced before the server
+ * was configured. When neither side has an image the field resolves to
+ * `null` rather than being left undefined — that is how removing an image on
+ * another device reaches this one.
+ */
+const getRemoteCustomAssets = (
+  game: ProfileGame,
+  selfHostedArtwork: SelfHostedArtworkMap | null
+): CustomArtworkUrls => {
+  const official = getOfficialCustomAssets(game);
+  if (!selfHostedArtwork) return official;
+
+  const artwork = selfHostedArtwork.get(artworkKey(game.shop, game.objectId));
+
+  return {
+    customIconUrl: artwork?.icons ?? official.customIconUrl ?? null,
+    customLogoImageUrl: artwork?.logos ?? official.customLogoImageUrl ?? null,
+    customHeroImageUrl: artwork?.heroes ?? official.customHeroImageUrl ?? null,
+    customCoverImageUrl: artwork?.grids ?? official.customCoverImageUrl ?? null,
+  };
+};
 
 const uploadUnsyncedArtworkSelection = async (
   gameKey: string,
@@ -128,9 +162,8 @@ const syncArtworkSelectionWithRemote = async (
   gameKey: string,
   selection: GameArtworkSelection,
   localGame: Game | undefined,
-  remoteGame: ProfileGame
+  remoteAssets: CustomArtworkUrls
 ) => {
-  const remoteAssets = getRemoteCustomAssets(remoteGame);
   const { selected, changed } = reconcileRemoteArtworkSelection(
     selection.selected,
     localGame ?? {},
@@ -219,7 +252,8 @@ const mergeExistingGame = (
   remoteGame: ProfileGame,
   collectionIds: string[],
   remoteAddedToLibraryAt: Date | null,
-  canReconcileCustomArtwork: boolean
+  /** `null` when custom artwork must not be reconciled for this sync. */
+  remoteCustomAssets: CustomArtworkUrls | null
 ): Game => ({
   ...localGame,
   ...mergeLibraryCatalogueMetadata(localGame, remoteGame),
@@ -261,23 +295,23 @@ const mergeExistingGame = (
     remoteGame.hasActiveSteamImport === true,
     remoteGame.hasActiveEpicImport === true
   ),
-  ...(canReconcileCustomArtwork
+  ...(remoteCustomAssets
     ? {
         customIconUrl: reconcileCustomAsset(
           localGame.customIconUrl,
-          remoteGame.customIconUrl
+          remoteCustomAssets.customIconUrl
         ),
         customLogoImageUrl: reconcileCustomAsset(
           localGame.customLogoImageUrl,
-          remoteGame.customLogoImageUrl
+          remoteCustomAssets.customLogoImageUrl
         ),
         customHeroImageUrl: reconcileCustomAsset(
           localGame.customHeroImageUrl,
-          remoteGame.customLibraryHeroImageUrl
+          remoteCustomAssets.customHeroImageUrl
         ),
         customCoverImageUrl: reconcileCustomAsset(
           localGame.customCoverImageUrl,
-          remoteGame.customLibraryImageUrl
+          remoteCustomAssets.customCoverImageUrl
         ),
       }
     : {}),
@@ -286,7 +320,8 @@ const mergeExistingGame = (
 const createLocalGame = (
   remoteGame: ProfileGame,
   collectionIds: string[],
-  addedToLibraryAt: Date | null
+  addedToLibraryAt: Date | null,
+  remoteCustomAssets: CustomArtworkUrls
 ): Game => ({
   ...mergeLibraryCatalogueMetadata(undefined, remoteGame),
   objectId: remoteGame.objectId,
@@ -316,10 +351,10 @@ const createLocalGame = (
   source: resolveLibrarySource(undefined, remoteGame.source),
   hasActiveSteamImport: remoteGame.hasActiveSteamImport === true,
   hasActiveEpicImport: remoteGame.hasActiveEpicImport === true,
-  customIconUrl: remoteGame.customIconUrl ?? null,
-  customLogoImageUrl: remoteGame.customLogoImageUrl ?? null,
-  customHeroImageUrl: remoteGame.customLibraryHeroImageUrl ?? null,
-  customCoverImageUrl: remoteGame.customLibraryImageUrl ?? null,
+  customIconUrl: remoteCustomAssets.customIconUrl ?? null,
+  customLogoImageUrl: remoteCustomAssets.customLogoImageUrl ?? null,
+  customHeroImageUrl: remoteCustomAssets.customHeroImageUrl ?? null,
+  customCoverImageUrl: remoteCustomAssets.customCoverImageUrl ?? null,
 });
 
 const buildRemoteGameShopAssets = (
@@ -353,6 +388,7 @@ const buildRemoteGameShopAssets = (
 const buildMergedGame = (
   remoteGame: ProfileGame,
   localGame: Game | undefined,
+  remoteCustomAssets: CustomArtworkUrls,
   canReconcileCustomArtwork: boolean
 ): Game => {
   const hasRemoteCollectionField =
@@ -371,19 +407,28 @@ const buildMergedGame = (
         remoteGame,
         collectionIds,
         remoteAddedToLibraryAt,
-        canReconcileCustomArtwork
+        canReconcileCustomArtwork ? remoteCustomAssets : null
       )
-    : createLocalGame(remoteGame, collectionIds, remoteAddedToLibraryAt);
+    : createLocalGame(
+        remoteGame,
+        collectionIds,
+        remoteAddedToLibraryAt,
+        remoteCustomAssets
+      );
 };
 
 const mergeRemoteGamesChunk = async (
   remoteGames: ProfileGame[],
+  selfHostedArtwork: SelfHostedArtworkMap | null,
   canReconcileCustomArtwork: boolean,
   context: HydraApiAuthContext | null,
   epicConnectionId: string | undefined,
   hydraRevision: number,
   current: () => boolean
 ) => {
+  const remoteCustomAssets = remoteGames.map((game) =>
+    getRemoteCustomAssets(game, selfHostedArtwork)
+  );
   let achievementTotalsChanged = false;
   const { gameKeys, localGames, artworkSelections } =
     await libraryWriteQueue.run(async () => {
@@ -411,6 +456,7 @@ const mergeRemoteGamesChunk = async (
         const merged = buildMergedGame(
           remoteGame,
           localGame,
+          remoteCustomAssets[index],
           canReconcileCustomArtwork
         );
         if (
@@ -480,7 +526,7 @@ const mergeRemoteGamesChunk = async (
       gameKeys[index],
       selection,
       localGames[index],
-      remoteGames[index]
+      remoteCustomAssets[index]
     );
   }
 };
@@ -603,9 +649,17 @@ const mergeWithRemoteGamesOnce = async (
     revision === getEpicLibraryConnectionRevision();
   try {
     if (!current()) return false;
-    const canReconcileCustomArtwork =
+    const canReconcileOfficialArtwork =
       HydraApi.isLoggedIn() && HydraApi.hasActiveSubscription();
-    const remoteGames = await fetchRemoteGames(context, networkOptions);
+    const [remoteGames, selfHostedArtwork] = await Promise.all([
+      fetchRemoteGames(context, networkOptions),
+      fetchSelfHostedArtwork(),
+    ]);
+    /* A self-hosted server is this launcher's own artwork store, so it never
+       depends on a Hydra Cloud subscription. Without one we fall back to
+       upstream's rule and only reconcile official artwork for subscribers. */
+    const canReconcileCustomArtwork =
+      Boolean(selfHostedArtwork) || canReconcileOfficialArtwork;
     if (!current()) return false;
     let epicConnectionId = expectedEpicConnectionId;
     if (
@@ -641,6 +695,7 @@ const mergeWithRemoteGamesOnce = async (
       if (!current()) return false;
       await mergeRemoteGamesChunk(
         remoteChunk,
+        selfHostedArtwork,
         canReconcileCustomArtwork,
         context,
         epicConnectionId,
@@ -659,6 +714,12 @@ const mergeWithRemoteGamesOnce = async (
     );
 
     if (!current()) return false;
+
+    /* The self-hosted server's hidden list follows the visibility just read.
+       Not awaited: the library is already merged and shouldn't wait on it. */
+    void reconcileSelfHostedHiddenGames(remoteGames).catch(() => {});
+    void syncSelfHostedGameLinks(remoteGames, context);
+
     for (const batch of chunk(candidates, TARGETED_MERGE_CONCURRENCY)) {
       if (!current()) return false;
       const results = await Promise.allSettled(

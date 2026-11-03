@@ -8,21 +8,81 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  push:
-    branches:
-      - release/**
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, must match package.json version (e.g. v4.0.5). Leave empty to only build, without creating a release."
+        required: false
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  # Same gate as the Build workflow: the Linux packages ship this supervisor,
+  # so a release waits for its checks and its run under Wine.
+  epic-prerequisite-supervisor:
     strategy:
       matrix:
         os: [windows-2022, ubuntu-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.21.0
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - name: Install Linux supervisor toolchain
+        if: runner.os == 'Linux'
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64 wine64 msitools wixl xvfb
+      - name: Check and test supervisor source
+        run: |
+          cargo fmt --manifest-path native/epic-prerequisite-runner/Cargo.toml -- --check
+          cargo test --locked --manifest-path native/epic-prerequisite-runner/Cargo.toml
+          node --test scripts/epic-prerequisite-runner.test.mjs
+      - name: Test PE supervisor through Wine
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node scripts/test-epic-prerequisite-wine.cjs
+
+  build:
+    needs: epic-prerequisite-supervisor
+    strategy:
+      matrix:
+        include:
+          - os: windows-2022
+            build-script: build:win
+            artifact-suffix: windows
+          - os: windows-11-arm
+            build-script: build:win-arm64
+            artifact-suffix: windows-arm64
+          - os: ubuntu-latest
+            build-script: build:linux
+            artifact-suffix: linux
+          # macOS arm64 (Apple Silicon)
+          - os: macos-latest
+            build-script: build:mac
+            artifact-suffix: macos
+          # macOS x64 (Intel)
+          - os: macos-15-intel
+            build-script: build:mac
+            artifact-suffix: macos-intel
+      fail-fast: false
 
     runs-on: ${{ matrix.os }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
 
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+
+      - name: Verify tag matches package.json version
+        if: inputs.tag != ''
+        run: node -e "const v = 'v' + require('./package.json').version; const tag = '${{ inputs.tag }}'; if (tag !== v) { console.error('Tag ' + tag + ' does not match package.json version ' + v + '.'); process.exit(1); }"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -70,11 +130,50 @@ jobs:
           restore-keys: |
             ${{ steps.native-cache.outputs.prefix }}-
 
+      # Linux packages bundle a Windows Epic prerequisite supervisor that is
+      # cross-compiled during beforePack.
       - name: Install Linux native build prerequisites
         if: runner.os == 'Linux'
         run: |
           rustup target add x86_64-pc-windows-gnu
           sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar autoconf automake libtool gcc-mingw-w64-x86-64
+
+      # The windows-11-arm image now ships only Visual Studio 2026, which the
+      # node-gyp used by yarn (11.x) and by @electron/rebuild (10.x) cannot
+      # detect. Install the VS 2022 C++ tools and pin every native build to them.
+      - name: Install Visual Studio 2022 C++ build tools
+        if: matrix.os == 'windows-11-arm'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $components = @(
+            "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          )
+          function Find-BuildTools {
+            & $vswhere -products "*" -version "[17.0,18.0)" -requires $components -latest -property installationPath
+          }
+          $installPath = Find-BuildTools
+          if (-not $installPath) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bootstrapper
+            $arguments = @(
+              "--quiet", "--wait", "--norestart", "--nocache",
+              "--add", "Microsoft.VisualStudio.Workload.VCTools",
+              "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+            ) + ($components | ForEach-Object { "--add", $_ })
+            $setup = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            if ($setup.ExitCode -notin 0, 3010) {
+              throw "Visual Studio 2022 Build Tools setup exited with code $($setup.ExitCode)"
+            }
+            $installPath = Find-BuildTools
+          }
+          if (-not $installPath) {
+            throw "Visual Studio 2022 C++ build tools were not found after setup"
+          }
+          "npm_config_msvs_version=2022" >> $env:GITHUB_ENV
+          "CMAKE_GENERATOR=Visual Studio 17 2022" >> $env:GITHUB_ENV
+          "VCPKG_VISUAL_STUDIO_PATH=$installPath" >> $env:GITHUB_ENV
 
       - name: Install dependencies
         run: yarn --frozen-lockfile
@@ -87,10 +186,8 @@ jobs:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-      - name: Build Linux
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          yarn build:linux
+      - name: Build
+        run: yarn ${{ matrix.build-script }}
         env:
           MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
           MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
@@ -104,23 +201,16 @@ jobs:
           RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
           RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
           MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+          # No Apple Developer certificate: skip codesign discovery
+          # (electron-builder ad-hoc signs the app instead)
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
-      - name: Build Windows
-        if: matrix.os == 'windows-2022'
-        run: yarn build:win
-        env:
-          MAIN_VITE_API_URL: ${{ vars.MAIN_VITE_API_URL }}
-          MAIN_VITE_AUTH_URL: ${{ vars.MAIN_VITE_AUTH_URL }}
-          MAIN_VITE_CHECKOUT_URL: ${{ vars.MAIN_VITE_CHECKOUT_URL }}
-          MAIN_VITE_NIMBUS_API_URL: ${{ vars.MAIN_VITE_NIMBUS_API_URL }}
-          RENDERER_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          MAIN_VITE_EXTERNAL_RESOURCES_URL: ${{ vars.EXTERNAL_RESOURCES_URL }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          RENDERER_VITE_SENTRY_DSN: ${{ vars.SENTRY_DSN }}
-          RENDERER_VITE_REAL_DEBRID_REFERRAL_ID: ${{ vars.RENDERER_VITE_REAL_DEBRID_REFERRAL_ID }}
-          RENDERER_VITE_TORBOX_REFERRAL_CODE: ${{ vars.RENDERER_VITE_TORBOX_REFERRAL_CODE }}
-          MAIN_VITE_LAUNCHER_SUBDOMAIN: ${{ vars.MAIN_VITE_LAUNCHER_SUBDOMAIN }}
+      - name: Rename builder debug file per platform
+        shell: bash
+        run: |
+          if [[ -f dist/builder-debug.yml ]]; then
+            cp dist/builder-debug.yml dist/builder-debug-${{ matrix.artifact-suffix }}.yml
+          fi
 
       - name: Create artifact
         uses: actions/upload-artifact@v4
@@ -128,36 +218,8 @@ jobs:
           name: Build-${{ matrix.os }}
           retention-days: ${{ env.RELEASE_ARTIFACT_RETENTION_DAYS }}
           path: |
-            dist/win-unpacked/**
-            dist/*-portable.exe
-            dist/*.zip
-            dist/*.dmg
-            dist/*.deb
-            dist/*.rpm
-            dist/*.tar.gz
-            dist/*.yml
-            dist/*.blockmap
-
-      - name: Upload build
-        env:
-          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT }}
-          S3_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          S3_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          S3_BUILDS_BUCKET_NAME: ${{ secrets.S3_BUILDS_BUCKET_NAME }}
-          BUILDS_URL: ${{ secrets.BUILDS_URL }}
-          BUILD_WEBHOOK_URL: ${{ secrets.BUILD_WEBHOOK_URL }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_ACTOR_ID: ${{ github.actor_id }}
-          BUILD_FLAVOR: release
-        run: node scripts/upload-build.cjs
-
-      - name: Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          files: |
-            dist/*.exe
+            dist/*-portable*.exe
+            dist/*-setup*.exe
             dist/*.zip
             dist/*.dmg
             dist/*.AppImage
@@ -167,5 +229,36 @@ jobs:
             dist/*.tar.gz
             dist/*.yml
             dist/*.blockmap
+            !dist/builder-debug.yml
+
+  release:
+    if: inputs.tag != ''
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Install js-yaml
+        run: npm install --no-save --ignore-scripts --engine-strict=false js-yaml
+
+      - name: Collect release assets
+        run: node scripts/collect-release-assets.cjs artifacts release-assets
+
+      # Creates a draft release; the git tag is created automatically
+      # when the draft is published, pointing at the commit built here
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ inputs.tag }}
+          target_commitish: ${{ github.sha }}
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

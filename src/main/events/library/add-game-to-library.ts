@@ -9,6 +9,7 @@ import {
 } from "@main/level";
 import { clearFinishedDownload } from "@main/helpers";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
+import { getAutomaticCloudSyncDefault } from "@main/helpers";
 
 const lookupCachedPlatform = async (
   shop: GameShop,
@@ -48,6 +49,9 @@ const addGameToLibrary = async (
     platform ??
     (shop === "launchbox" ? await lookupCachedPlatform(shop, objectId) : null);
 
+  const automaticCloudSyncDefault =
+    shop !== "custom" && (await getAutomaticCloudSyncDefault());
+
   if (game) {
     await clearFinishedDownload(shop, objectId);
 
@@ -56,6 +60,7 @@ const addGameToLibrary = async (
     game.source = "hydra";
     if (shop === "epic") game.remoteId = null;
     if (resolvedPlatform && !game.platform) game.platform = resolvedPlatform;
+    game.automaticCloudSync ??= automaticCloudSyncDefault;
 
     await gamesSublevel.put(gameKey, game);
   } else {
@@ -72,6 +77,7 @@ const addGameToLibrary = async (
       lastTimePlayed: null,
       addedToLibraryAt: new Date(),
       platform: resolvedPlatform ?? null,
+      automaticCloudSync: automaticCloudSyncDefault,
       source: "hydra",
     };
 

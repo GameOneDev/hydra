@@ -28,10 +28,16 @@ export const fetchRemoteUserGameAchievements = async (
 
   if (!user?.id) return empty;
 
+  /* Epic unlocks reach Hydra only through the official Epic sync, and this
+     read is their sole source, so it can't go to a self-hosted server that
+     never sees them. Epic games capture no souvenirs either. */
   const remoteAchievements = await HydraApi.get<UserAchievement[]>(
     `/users/${user.id}/games/achievements`,
     { shop, objectId, language },
-    owner ? { authContext: owner } : undefined
+    {
+      ...(owner ? { authContext: owner } : {}),
+      ...(shop === "epic" ? { forceOfficialApi: true } : {}),
+    }
   );
   if (owner && !HydraApi.isAuthContextCurrent(owner))
     throw new Error("achievement-owner-changed");

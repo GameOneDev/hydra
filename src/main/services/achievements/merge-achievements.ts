@@ -6,7 +6,10 @@ import type {
   User,
   UserPreferences,
 } from "@types";
-import { achievementSyncCoordinator } from "./achievement-sync-coordinator";
+import {
+  achievementSyncCoordinator,
+  ACHIEVEMENT_SYNC_REQUEST_TIMEOUT_MS,
+} from "./achievement-sync-coordinator";
 import {
   achievementSyncWorker,
   toAchievementSyncEntry,
@@ -17,7 +20,7 @@ import { WindowManager } from "../window-manager";
 import { HydraApi } from "../hydra-api";
 import { getUnlockedAchievements } from "@main/events/user/get-unlocked-achievements";
 import { achievementsLogger } from "../logger";
-import { db, levelKeys } from "@main/level";
+import { db, gamesSublevel, levelKeys } from "@main/level";
 import { getGameAchievementData } from "./get-game-achievement-data";
 import { AchievementWatcherManager } from "./achievement-watcher-manager";
 import { AchievementMemoryStore } from "./achievement-memory-store";
@@ -29,6 +32,7 @@ import { PendingGroupedSouvenirStore } from "./grouped-souvenir-store";
 import { groupedSouvenirWorker } from "./grouped-souvenir-worker";
 import { launchedGamePids } from "../launched-game-pids";
 import { Wine } from "../wine";
+import { createGame } from "../library-sync/create-game";
 
 const captureAchievementSouvenirs = async (
   game: Game,
@@ -46,7 +50,7 @@ const captureAchievementSouvenirs = async (
       userPreferences.enableAchievementSouvenirs,
       process.platform
     ) ||
-    !HydraApi.hasActiveSubscription()
+    !HydraApi.supportsAchievementSouvenirs()
   ) {
     return null;
   }
@@ -178,6 +182,20 @@ const mergeAchievementsLocally = async (
 ) => {
   const gameKey = levelKeys.game(game.shop, game.objectId);
 
+  const isBaselineMerge = !AchievementMemoryStore.isHydrated(
+    game.shop,
+    game.objectId
+  );
+  const shouldPublish = publishNotification && !isBaselineMerge;
+
+  if (isBaselineMerge && publishNotification) {
+    achievementsLogger.log(
+      "Establishing achievement baseline, suppressing notifications",
+      game.objectId,
+      game.title
+    );
+  }
+
   let localGameAchievement = AchievementMemoryStore.get(
     game.shop,
     game.objectId
@@ -233,12 +251,12 @@ const mergeAchievementsLocally = async (
     newAchievements,
     achievementsData,
     userPreferences,
-    publishNotification,
+    shouldPublish,
     current
   );
 
   if (!current()) throw new Error("achievement-sync-context-changed");
-  if (publishNotification) {
+  if (shouldPublish) {
     publishAchievementUnlockNotifications({
       game,
       achievements: newAchievements
@@ -262,8 +280,27 @@ const mergeAchievementsLocally = async (
 
   const achievementsToSync = mergedLocalAchievements;
 
+  /* The caller's snapshot may predate the remote registration of the game
+     (e.g. one imported from Steam moments ago), so read the latest record
+     and, when the game was never registered remotely, register it now —
+     without a remoteId achievements can't be synced at all. */
+  let syncGame = game;
+
+  if (game.shop !== "custom") {
+    const freshGame = await gamesSublevel.get(gameKey).catch(() => null);
+    if (freshGame && !freshGame.isDeleted) syncGame = freshGame;
+
+    if (!syncGame.remoteId && HydraApi.isLoggedIn()) {
+      await createGame(syncGame).catch(() => {});
+
+      const createdGame = await gamesSublevel.get(gameKey).catch(() => null);
+      if (createdGame) syncGame = createdGame;
+    }
+  }
+
   const shouldSyncWithRemote =
-    Boolean(game.remoteId) && AchievementWatcherManager.hasFinishedPreSearch;
+    Boolean(syncGame.remoteId) &&
+    AchievementWatcherManager.hasFinishedPreSearch;
 
   await saveAchievementsInMemory(
     game.objectId,
@@ -275,11 +312,47 @@ const mergeAchievementsLocally = async (
   if (!current()) throw new Error("achievement-sync-context-changed");
   if (shouldSyncWithRemote) {
     const context = HydraApi.getAuthContext();
+
+    /* Profile stats on a self-hosted cloud server are computed from the
+       achievements stored there, but the sync below goes to the official
+       API whenever there are new achievements — mirror those to the
+       self-hosted server so the profile totals include them. */
+    if (
+      context &&
+      HydraApi.isSelfHostedCloudEnabled() &&
+      newAchievements.length
+    ) {
+      HydraApi.put(
+        "/profile/games/achievements",
+        {
+          id: syncGame.remoteId,
+          objectId: game.objectId,
+          shop: game.shop,
+          /* Lets that server answer a profile filtered to the Steam library:
+             it stores achievements per game and has no other way to know
+             which games the Steam integration brought in. */
+          hasActiveSteamImport: syncGame.hasActiveSteamImport === true,
+          achievements: achievementsToSync,
+        },
+        {
+          needsSubscription: true,
+          authContext: context,
+          timeout: ACHIEVEMENT_SYNC_REQUEST_TIMEOUT_MS,
+        }
+      ).catch((err) => {
+        achievementsLogger.error(
+          "Failed to sync achievements with self-hosted cloud",
+          game.objectId,
+          err
+        );
+      });
+    }
+
     if (context)
       await achievementSyncWorker.enqueue({
         context,
         gameKey,
-        remoteId: game.remoteId!,
+        remoteId: syncGame.remoteId!,
         shop: game.shop,
         objectId: game.objectId,
         achievements: achievementsToSync,
@@ -288,7 +361,9 @@ const mergeAchievementsLocally = async (
 
   if (pendingGroupedSouvenir) void groupedSouvenirWorker.trigger();
 
-  return newAchievements.length;
+  AchievementMemoryStore.markHydrated(game.shop, game.objectId);
+
+  return isBaselineMerge ? 0 : newAchievements.length;
 };
 
 export const mergeAchievements = async (

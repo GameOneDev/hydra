@@ -218,7 +218,7 @@ class ScreenshotUploadWorker {
       screenshot.uploadQuality === "STANDARD";
     const quality = isRetryingStandardFallback
       ? "STANDARD"
-      : resolveScreenshotUploadQuality(HydraApi.hasActiveSubscription());
+      : resolveScreenshotUploadQuality(HydraApi.hasRealActiveSubscription());
     const isQualityChange =
       screenshot.uploadQuality != null && screenshot.uploadQuality !== quality;
     const updated = await LocalScreenshotStore.update(clientId, {
@@ -395,7 +395,7 @@ class ScreenshotUploadWorker {
 
     const quality: ScreenshotQuality =
       screenshot.uploadQuality ??
-      (HydraApi.hasActiveSubscription() ? "CLOUD" : "STANDARD");
+      (HydraApi.hasRealActiveSubscription() ? "CLOUD" : "STANDARD");
     const uploadClientId = screenshot.uploadClientId ?? clientId;
     const attempt = (screenshot.uploadAttempts ?? 0) + 1;
 

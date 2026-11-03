@@ -10,7 +10,10 @@ import { db, gamesSublevel, levelKeys } from "@main/level";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
 import { AchievementMemoryStore } from "@main/services/achievements/achievement-memory-store";
 import { UnlockedAchievementsCache } from "@main/services/achievements/unlocked-achievements-cache";
-import { CombinedAchievementsRequests } from "@main/services/achievements/combined-achievements-requests";
+import {
+  CombinedAchievementsRequests,
+  type CombinedAchievementsSource,
+} from "@main/services/achievements/combined-achievements-requests";
 import { AchievementSouvenirStore } from "@main/services/achievements/achievement-souvenir-store";
 import { fetchRemoteUserGameAchievements } from "@main/services/achievements/get-achievement-souvenirs";
 import { mergeUnlockedAchievementLists } from "@main/services/achievements/merge-unlocked-achievements";
@@ -21,6 +24,9 @@ import {
 } from "@main/services/achievements/combined-achievement-presentation";
 
 const COMBINED_ACHIEVEMENTS_TIMEOUT_MS = 5_000;
+/* What a self-hosted server advertises once it can rebuild the combined
+   Steam/Epic view itself. */
+const COMBINED_ACHIEVEMENTS_FEATURE = "achievements-combined";
 
 const indexByUpperCaseName = <T extends { name: string }>(items: T[]) => {
   const byName = new Map<string, T>();
@@ -122,18 +128,39 @@ export const getUnlockedAchievements = async (
   // The union is a display projection and must never replace that source state.
   if (shop === "steam" || shop === "epic") {
     const language = userPreferences?.language ?? "en";
-    const combined = await CombinedAchievementsRequests.fetch(
-      HydraApi.getAuthContext(),
-      shop,
-      objectId,
-      language,
-      () =>
-        HydraApi.get<CombinedAchievements>(
-          "/profile/achievements/combined",
-          { shop, objectId, language },
-          { timeout: COMBINED_ACHIEVEMENTS_TIMEOUT_MS }
-        )
-    );
+    const fetchCombined = (
+      source: CombinedAchievementsSource,
+      options?: { forceSelfHostedApi: true }
+    ) =>
+      CombinedAchievementsRequests.fetch(
+        HydraApi.getAuthContext(),
+        shop,
+        objectId,
+        language,
+        () =>
+          HydraApi.get<CombinedAchievements>(
+            "/profile/achievements/combined",
+            { shop, objectId, language },
+            { timeout: COMBINED_ACHIEVEMENTS_TIMEOUT_MS, ...options }
+          ),
+        source
+      );
+    let combined = await fetchCombined("official");
+    /* Official Hydra's pairing is the real one, so it goes first. When it
+       has nothing — the view may be for subscribers only — a self-hosted
+       server rebuilds it from the library links the launcher sends it. It
+       backs off on its own: an official failure must not keep us from asking
+       the server that can answer. */
+    if (
+      !combined?.achievements?.length &&
+      HydraApi.isSelfHostedCloudEnabled() &&
+      HydraApi.supportsCloudFeature(COMBINED_ACHIEVEMENTS_FEATURE)
+    ) {
+      assertCurrent();
+      combined = await fetchCombined("self-hosted", {
+        forceSelfHostedApi: true,
+      });
+    }
     const includesRequestedCopy = combined?.achievements.some((achievement) =>
       achievement.variants.some(
         (variant) => variant.shop === shop && variant.objectId === objectId
@@ -161,8 +188,30 @@ export const getUnlockedAchievements = async (
         objectId,
         combined.achievements.flatMap((achievement) => achievement.variants)
       );
+      /* Souvenirs kept on a self-hosted server are unknown to the official
+         combined view, so fill in the requested copy's own pictures. */
+      const withSouvenirs = souvenirs.size
+        ? {
+            ...combined,
+            achievements: combined.achievements.map((achievement) => ({
+              ...achievement,
+              variants: achievement.variants.map((variant) =>
+                variant.imageUrl ||
+                !variant.name ||
+                variant.shop !== shop ||
+                variant.objectId !== objectId
+                  ? variant
+                  : {
+                      ...variant,
+                      imageUrl:
+                        souvenirs.get(variant.name.toUpperCase()) ?? null,
+                    }
+              ),
+            })),
+          }
+        : combined;
       return presentCombinedAchievements(
-        combined,
+        withSouvenirs,
         (sourceShop, sourceObjectId) =>
           AchievementMemoryStore.get(sourceShop, sourceObjectId)
             ?.unlockedAchievements ?? [],

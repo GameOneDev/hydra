@@ -89,6 +89,9 @@ export function Sidebar() {
   const { library, updateLibrary } = useLibrary();
   const isLibraryLoading = useAppSelector(selectIsLibraryLoading);
   const groupedLibrary = useAppSelector(selectGroupedLibrary);
+  const runningGameId = useAppSelector(
+    (state) => state.gameRunning.gameRunning?.id
+  );
   const [deckyPluginInfo, setDeckyPluginInfo] = useState<{
     installed: boolean;
     version: string | null;
@@ -187,9 +190,28 @@ export function Sidebar() {
     [sidebarSortBy, showFavoritesFirst]
   );
 
+  /* A game that is currently running is pinned to the very top, whichever
+     sort and grouping the user picked. Filtering keeps the order, so pinning
+     the ordered list carries through to the filtered list and to search. */
+  const pinRunningGame = useCallback(
+    (games: LibraryGame[]) => {
+      if (!runningGameId) return games;
+
+      const runningIndex = games.findIndex((game) => game.id === runningGameId);
+      if (runningIndex <= 0) return games;
+
+      return [
+        games[runningIndex],
+        ...games.slice(0, runningIndex),
+        ...games.slice(runningIndex + 1),
+      ];
+    },
+    [runningGameId]
+  );
+
   const orderedLibrary = useMemo(
-    () => orderSidebarGames(groupedLibrary),
-    [groupedLibrary, orderSidebarGames]
+    () => pinRunningGame(orderSidebarGames(groupedLibrary)),
+    [groupedLibrary, orderSidebarGames, pinRunningGame]
   );
 
   const sortedLibrary = useMemo(
@@ -378,6 +400,26 @@ export function Sidebar() {
   useEffect(() => {
     updateLibrary();
   }, [lastPacket?.gameId, updateLibrary]);
+
+  const runningGameIdsRef = useRef("");
+
+  useEffect(() => {
+    const unsubscribe = window.electron.onGamesRunning((gamesRunning) => {
+      const runningIds = gamesRunning
+        .map((game) => game.id)
+        .sort((a, b) => a.localeCompare(b))
+        .join(",");
+
+      if (runningIds !== runningGameIdsRef.current) {
+        runningGameIdsRef.current = runningIds;
+        updateLibrary();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [updateLibrary]);
 
   useEffect(() => {
     const handlePinToggled = () => {

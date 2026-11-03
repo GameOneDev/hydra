@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  CLOUD_SAVE_V2_EPIC_FEATURE,
+  CLOUD_SAVE_V2_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
+  getCloudSaveV2FeaturesForShop,
   getNextCloudSaveAutomaticSyncMode,
   resolveCloudSaveAutomaticSyncMode,
   resolveStoredCloudSaveAutomaticSyncMode,
@@ -12,6 +15,19 @@ import {
 } from "./automatic-sync-mode.js";
 
 describe("cloud save automatic sync mode", () => {
+  it("needs the Epic capability on top of V2 for Epic games only", () => {
+    /* A self-hosted server older than 4.2.0 serves V2 but refuses shop=epic. */
+    assert.deepEqual(getCloudSaveV2FeaturesForShop("epic"), [
+      CLOUD_SAVE_V2_FEATURE,
+      CLOUD_SAVE_V2_EPIC_FEATURE,
+    ]);
+    for (const shop of ["steam", "launchbox", null, undefined] as const) {
+      assert.deepEqual(getCloudSaveV2FeaturesForShop(shop), [
+        CLOUD_SAVE_V2_FEATURE,
+      ]);
+    }
+  });
+
   it("prefers V2 when both modes are enabled", () => {
     assert.equal(
       resolveCloudSaveAutomaticSyncMode({
@@ -68,6 +84,76 @@ describe("cloud save automatic sync mode", () => {
     );
     assert.equal(
       resolveStoredCloudSaveAutomaticSyncMode(false, false),
+      "disabled"
+    );
+  });
+
+  it("falls back to legacy when the cloud server has no V2 support", () => {
+    /* A self-hosted server predating the V2 endpoints. Defaulting a Steam
+       game to V2 there would sync against routes that answer 404, so the
+       game stays on the flow the server does implement. */
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(true, undefined, false),
+      "legacy"
+    );
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(false, undefined, false),
+      "disabled"
+    );
+  });
+
+  it("does not honour a stored V2 preference the server cannot serve", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncMode(true, true, false),
+      "legacy"
+    );
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "steam",
+        true,
+        true,
+        null,
+        false
+      ),
+      "legacy"
+    );
+  });
+
+  it("still prefers V2 for Steam once the server supports it", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "steam",
+        true,
+        undefined,
+        null,
+        true
+      ),
+      "v2"
+    );
+  });
+
+  it("leaves emulator saves off when the server cannot serve V2", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "launchbox",
+        true,
+        true,
+        "Sony PlayStation 3",
+        false
+      ),
+      "disabled"
+    );
+  });
+
+  it("leaves Epic saves off when the server cannot serve V2", () => {
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "epic",
+        true,
+        true,
+        null,
+        false
+      ),
       "disabled"
     );
   });

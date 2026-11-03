@@ -186,6 +186,16 @@ function fixture() {
     "../achievements/achievement-batch-games": {
       trackAchievementBatchGame: () => {},
     },
+    "./self-hosted-artwork": {
+      artworkKey: (shop: string, objectId: string) => `${shop}:${objectId}`,
+      fetchSelfHostedArtwork: async () => null,
+    },
+    "./self-hosted-hidden-games": {
+      reconcileSelfHostedHiddenGames: async () => {},
+    },
+    "./self-hosted-game-links": {
+      syncSelfHostedGameLinks: async () => {},
+    },
     "../achievements/unlocked-achievements-cache": {
       UnlockedAchievementsCache: {
         clear: () => {
