@@ -237,6 +237,19 @@ export type LocalScreenshotState =
   | "failed"
   | "deleted";
 
+export type LocalScreenshotHdCopyState = "pending" | "uploaded" | "skipped";
+
+/**
+ * The 1080p copy kept on a self-hosted server for an account with no
+ * subscription, whose official screenshot is only 720p. Absent for every
+ * other screenshot.
+ */
+export interface LocalScreenshotHdCopy {
+  state: LocalScreenshotHdCopyState;
+  attempts: number;
+  nextAttemptAt: number | null;
+}
+
 export interface LocalScreenshot {
   clientId: string;
   ownerId: string | null;
@@ -273,6 +286,7 @@ export interface LocalScreenshot {
   previewPath?: string | null;
   pendingCompleteScreenshotId?: string | null;
   textModeration?: ScreenshotTextModeration | null;
+  hdCopy?: LocalScreenshotHdCopy | null;
 }
 
 export interface LocalScreenshotUploadOptions {

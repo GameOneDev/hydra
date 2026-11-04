@@ -275,6 +275,10 @@ export class HydraApi {
     /* Same-server membership lookup for the profile badge — only exists on
        the self-hosted server */
     "/profile/members",
+    /* 1080p copies of screenshots, kept here for accounts with no
+       subscription. Official Hydra has no such path; the screenshot itself
+       stays on it. */
+    "/profile/hd-screenshots",
   ];
 
   /* Banner uploads are subscription-gated on the official API. With a REAL
