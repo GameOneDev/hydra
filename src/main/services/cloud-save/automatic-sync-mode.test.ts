@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   CLOUD_SAVE_V2_EPIC_FEATURE,
   CLOUD_SAVE_V2_FEATURE,
+  CLOUD_SAVE_V2_RECOMPILATION_FEATURE,
   getCloudSaveAutomaticSyncStateForMode,
   getCloudSaveV2FeaturesForShop,
   getNextCloudSaveAutomaticSyncMode,
@@ -192,6 +193,73 @@ describe("cloud save automatic sync mode", () => {
         "disabled"
       );
     }
+  });
+
+  it("needs the recompilation capability for a port, and only for a port", () => {
+    /* A server that ignores the slug files a port's saves under the plain game,
+       and deletes that game's emulator saves when the port's are deleted. */
+    assert.deepEqual(getCloudSaveV2FeaturesForShop("launchbox", "1234:soh"), [
+      CLOUD_SAVE_V2_FEATURE,
+      CLOUD_SAVE_V2_RECOMPILATION_FEATURE,
+    ]);
+
+    for (const [shop, objectId] of [
+      ["launchbox", "1234"],
+      ["launchbox", undefined],
+      ["launchbox", null],
+      ["launchbox", "1234:not a slug"],
+      ["steam", "1234:soh"],
+    ] as const) {
+      assert.deepEqual(
+        getCloudSaveV2FeaturesForShop(shop, objectId),
+        [CLOUD_SAVE_V2_FEATURE],
+        `${shop} ${objectId}`
+      );
+    }
+
+    assert.deepEqual(getCloudSaveV2FeaturesForShop("epic", "12:soh"), [
+      CLOUD_SAVE_V2_FEATURE,
+      CLOUD_SAVE_V2_EPIC_FEATURE,
+    ]);
+  });
+
+  it("syncs a port through V2 only, and not at all where the server cannot", () => {
+    const portMode = (
+      legacy: boolean,
+      storedV2: boolean | undefined,
+      v2Supported: boolean
+    ) =>
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "launchbox",
+        legacy,
+        storedV2,
+        undefined,
+        v2Supported,
+        "1234:soh"
+      );
+
+    for (const legacy of [false, true]) {
+      assert.equal(portMode(legacy, undefined, true), "v2");
+      assert.equal(portMode(legacy, true, true), "v2");
+      assert.equal(portMode(legacy, false, true), "disabled");
+
+      /* The plain game's legacy flow is not an alternative for a port. */
+      assert.equal(portMode(legacy, undefined, false), "disabled");
+      assert.equal(portMode(legacy, true, false), "disabled");
+    }
+
+    assert.equal(
+      resolveStoredCloudSaveAutomaticSyncModeForShop(
+        "launchbox",
+        true,
+        undefined,
+        undefined,
+        true,
+        "1234"
+      ),
+      "legacy",
+      "a LaunchBox game that is not a port keeps its legacy flow"
+    );
   });
 
   it("defaults supported emulator games to V2 and preserves later opt-outs", () => {

@@ -62,6 +62,7 @@ import {
   gamesPlaytime,
   getGamePlaytimeDeltas,
   getTrackedGamesRunning,
+  recompilationGameSessions,
   setGamePlaytime,
 } from "./game-running-state";
 import {
@@ -150,6 +151,14 @@ export const getGamesRunning = () => {
     gamesRunning.push({
       id: gameKey,
       sessionDurationInMillis: now - session.startedAt,
+    });
+  }
+
+  for (const session of recompilationGameSessions.values()) {
+    gamesRunning.push({
+      id: session.gameKey,
+      sessionDurationInMillis: now - session.startedAt,
+      recompilationSlug: session.recompilationSlug,
     });
   }
 
@@ -250,7 +259,7 @@ const getSystemProcessMap = async () => {
 };
 
 // Do not restore an old import flag or executable after an asynchronous sync.
-const persistGamePlaytime = async (
+export const persistGamePlaytime = async (
   gameKey: string,
   update: Partial<
     Pick<
@@ -664,6 +673,7 @@ function onTickGame(game: Game) {
           method: game.remoteId ? "track" : "create",
           deltaToSync,
         });
+        WindowManager.sendToAppWindows("on-game-playtime-synced");
 
         return persistGamePlaytime(
           levelKeys.game(game.shop, game.objectId),
@@ -787,6 +797,7 @@ const onCloseGame = (game: Game, options: { isShutdown?: boolean } = {}) => {
         logPlaytimeTrace("close-sync-track-success", game, {
           deltaToSync,
         });
+        WindowManager.sendToAppWindows("on-game-session-synced");
 
         return persistGamePlaytime(
           gameKey,
