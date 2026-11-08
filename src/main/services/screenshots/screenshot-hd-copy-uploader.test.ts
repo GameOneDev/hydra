@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  describeHdCopyFailure,
   getHdCopyErrorStatus,
   uploadHdCopy,
+  type HdCopyOutcome,
   type HdCopyUploadDeps,
 } from "./screenshot-hd-copy-uploader.js";
 
@@ -60,6 +62,26 @@ const build = (failAt?: { step: keyof HdCopyUploadDeps; error: unknown }) => {
   return { deps, calls, saved };
 };
 
+/* Which stage each fake step belongs to. */
+const STAGE_OF_STEP = {
+  readOriginal: "read",
+  compress: "compress",
+  requestUploadUrl: "upload-url",
+  putImage: "upload",
+  saveCopy: "save",
+} as const;
+
+const failureOf = (outcome: HdCopyOutcome) => {
+  assert.notEqual(outcome.kind, "uploaded");
+  return (outcome as Exclude<HdCopyOutcome, { kind: "uploaded" }>).failure;
+};
+
+const skippedReason = (outcome: HdCopyOutcome) =>
+  outcome.kind === "skipped" ? outcome.reason : undefined;
+
+const retryError = (outcome: HdCopyOutcome) =>
+  outcome.kind === "retry" ? outcome.error : undefined;
+
 describe("uploading a 1080p copy", () => {
   it("uploads the compressed image, then records it with its size and visibility", async () => {
     const { deps, calls, saved } = build();
@@ -89,10 +111,11 @@ describe("uploading a 1080p copy", () => {
       error: fsError("ENOENT"),
     });
 
-    assert.deepEqual(await uploadHdCopy(source, deps), {
-      kind: "skipped",
-      reason: "original_missing",
-    });
+    const outcome = await uploadHdCopy(source, deps);
+
+    assert.equal(outcome.kind, "skipped");
+    assert.equal(skippedReason(outcome), "original_missing");
+    assert.equal(failureOf(outcome).stage, "read");
     assert.deepEqual(calls, ["readOriginal"]);
   });
 
@@ -100,10 +123,14 @@ describe("uploading a 1080p copy", () => {
     const error = fsError("EBUSY");
     const { deps } = build({ step: "readOriginal", error });
 
-    assert.deepEqual(await uploadHdCopy(source, deps), {
-      kind: "retry",
-      error,
-    });
+    const outcome = await uploadHdCopy(source, deps);
+
+    assert.equal(outcome.kind, "retry");
+    assert.equal(retryError(outcome), error);
+    assert.deepEqual(
+      { stage: failureOf(outcome).stage, code: failureOf(outcome).code },
+      { stage: "read", code: "EBUSY" }
+    );
   });
 
   it("gives up on a capture that cannot be compressed, since it never will", async () => {
@@ -112,10 +139,13 @@ describe("uploading a 1080p copy", () => {
       error: new Error("screenshot_unreadable"),
     });
 
-    assert.deepEqual(await uploadHdCopy(source, deps), {
-      kind: "skipped",
-      reason: "unreadable",
-    });
+    const outcome = await uploadHdCopy(source, deps);
+
+    assert.equal(skippedReason(outcome), "unreadable");
+    assert.deepEqual(
+      { stage: failureOf(outcome).stage, message: failureOf(outcome).message },
+      { stage: "compress", message: "screenshot_unreadable" }
+    );
     assert.deepEqual(calls, ["readOriginal", "compress"]);
   });
 
@@ -124,10 +154,12 @@ describe("uploading a 1080p copy", () => {
       const error = new Error("socket hang up");
       const { deps } = build({ step, error });
 
-      assert.deepEqual(await uploadHdCopy(source, deps), {
-        kind: "retry",
-        error,
-      });
+      const outcome = await uploadHdCopy(source, deps);
+
+      assert.equal(outcome.kind, "retry");
+      assert.equal(retryError(outcome), error);
+      assert.equal(failureOf(outcome).stage, STAGE_OF_STEP[step]);
+      assert.equal(failureOf(outcome).message, "socket hang up");
     });
 
     it(`tries again when ${step} meets a server error`, async () => {
@@ -139,20 +171,21 @@ describe("uploading a 1080p copy", () => {
     it(`gives up when ${step} is refused for good`, async () => {
       const { deps } = build({ step, error: httpError(404) });
 
-      assert.deepEqual(await uploadHdCopy(source, deps), {
-        kind: "skipped",
-        reason: "rejected",
-      });
+      const outcome = await uploadHdCopy(source, deps);
+
+      assert.equal(skippedReason(outcome), "rejected");
+      assert.equal(failureOf(outcome).stage, STAGE_OF_STEP[step]);
+      assert.equal(failureOf(outcome).status, 404);
     });
   }
 
   it("treats a quota refusal as final for this screenshot", async () => {
     const { deps } = build({ step: "requestUploadUrl", error: httpError(413) });
 
-    assert.deepEqual(await uploadHdCopy(source, deps), {
-      kind: "skipped",
-      reason: "rejected",
-    });
+    const outcome = await uploadHdCopy(source, deps);
+
+    assert.equal(skippedReason(outcome), "rejected");
+    assert.equal(failureOf(outcome).status, 413);
   });
 
   it("tries again when the bytes had not landed by the time it was saved", async () => {
@@ -168,10 +201,10 @@ describe("uploading a 1080p copy", () => {
     });
     const { deps } = build({ step: "putImage", error: wrapped });
 
-    assert.deepEqual(await uploadHdCopy(source, deps), {
-      kind: "skipped",
-      reason: "rejected",
-    });
+    const outcome = await uploadHdCopy(source, deps);
+
+    assert.equal(skippedReason(outcome), "rejected");
+    assert.equal(failureOf(outcome).status, 404);
   });
 
   it("never throws, whatever a step throws", async () => {
@@ -198,5 +231,81 @@ describe("reading a status off an error", () => {
 
     assert.equal(getHdCopyErrorStatus(null), undefined);
     assert.equal(getHdCopyErrorStatus(new Error("no response")), undefined);
+  });
+});
+
+describe("saying which step failed, and why", () => {
+  it("names the address the image was being sent to, and only the address", async () => {
+    const error = Object.assign(
+      new Error("connect ECONNREFUSED 10.0.0.9:8788"),
+      {
+        code: "ECONNREFUSED",
+      }
+    );
+    const { deps } = build({ step: "putImage", error });
+
+    const failure = failureOf(await uploadHdCopy(source, deps));
+
+    assert.deepEqual(failure, {
+      stage: "upload",
+      message: "connect ECONNREFUSED 10.0.0.9:8788",
+      code: "ECONNREFUSED",
+      status: undefined,
+      target: "https://mine.test",
+    });
+  });
+
+  it("has no address for a step that comes before one is given", async () => {
+    const { deps } = build({
+      step: "requestUploadUrl",
+      error: new Error("timeout of 30000ms exceeded"),
+    });
+
+    const failure = failureOf(await uploadHdCopy(source, deps));
+
+    assert.equal(failure.stage, "upload-url");
+    assert.equal(failure.target, undefined);
+  });
+
+  it("finds a network code and a status on the error that caused this one", () => {
+    const wrapped = Object.assign(new Error("screenshot_upload_failed"), {
+      cause: Object.assign(new Error("inner"), { code: "ETIMEDOUT" }),
+    });
+
+    assert.equal(describeHdCopyFailure("upload", wrapped).code, "ETIMEDOUT");
+    assert.equal(
+      describeHdCopyFailure("save", { cause: httpError(409) }).status,
+      409
+    );
+  });
+
+  it("never lets the signed path of the upload address into what it reports", () => {
+    const token = "eyJhbGciOiJIUzI1NiJ9.payload.signature";
+    const error = new Error(
+      `getaddrinfo ENOTFOUND for http://mine.test/storage/${token}?x=1 (retrying)`
+    );
+
+    const { message } = describeHdCopyFailure("upload", error);
+
+    assert.equal(message.includes(token), false, message);
+    assert.match(message, /\/storage\/…/);
+    assert.match(message, /ENOTFOUND/);
+  });
+
+  it("keeps the message short, and copes with an error that is not one", () => {
+    assert.equal(
+      describeHdCopyFailure("upload", new Error("x".repeat(5_000))).message
+        .length,
+      300
+    );
+
+    for (const value of [null, undefined, 42, {}, "plain text"]) {
+      const failure = describeHdCopyFailure("save", value);
+      assert.equal(typeof failure.message, "string");
+    }
+    assert.equal(
+      describeHdCopyFailure("save", "plain text").message,
+      "plain text"
+    );
   });
 });

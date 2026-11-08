@@ -52,10 +52,35 @@ export interface HdCopyUploadDeps {
  */
 export type HdCopySkipReason = "original_missing" | "unreadable" | "rejected";
 
+/**
+ * The steps of an upload, in the order they run. A failure names the one it
+ * stopped at, because "could not upload" does not say whether the screenshot
+ * could not be read, the server could not be asked, or the image could not be
+ * sent to the address it gave.
+ */
+export type HdCopyStage =
+  | "read"
+  | "compress"
+  | "upload-url"
+  | "upload"
+  | "save";
+
+/** What went wrong, in a form that is safe to log and to send to the server. */
+export interface HdCopyFailure {
+  stage: HdCopyStage;
+  message: string;
+  /** A network error code such as `ECONNREFUSED`. */
+  code?: string;
+  /** The HTTP status of an answer, when there was one. */
+  status?: number;
+  /** Where the image was being sent: the address, never the signed path. */
+  target?: string;
+}
+
 export type HdCopyOutcome =
   | { kind: "uploaded" }
-  | { kind: "skipped"; reason: HdCopySkipReason }
-  | { kind: "retry"; error: unknown };
+  | { kind: "skipped"; reason: HdCopySkipReason; failure: HdCopyFailure }
+  | { kind: "retry"; error: unknown; failure: HdCopyFailure };
 
 /* An HTTP status from whatever a request threw: the response of an axios
    error, possibly wrapped as the `cause` of an error that names the step. */
@@ -76,6 +101,58 @@ export const getHdCopyErrorStatus = (
     : getHdCopyErrorStatus(cause, depth + 1);
 };
 
+const MAX_FAILURE_MESSAGE = 300;
+
+/* An error's own network code, found through the errors that wrap it. */
+const getErrorCode = (error: unknown, depth = 0): string | undefined => {
+  if (typeof error !== "object" || error === null || depth > 4) {
+    return undefined;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && code) return code;
+
+  const cause = (error as { cause?: unknown }).cause;
+  return cause === undefined || cause === error
+    ? undefined
+    : getErrorCode(cause, depth + 1);
+};
+
+/* The upload address carries a signed token in its path. Whatever an error
+   says about it is cut down to the part that does not. */
+const withoutSignedPath = (text: string) =>
+  text.replace(/\/storage\/[^\s"'<>)]+/g, "/storage/…");
+
+const originOf = (url: string) => {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+/** Turns whatever a step threw into something a person can read. */
+export const describeHdCopyFailure = (
+  stage: HdCopyStage,
+  error: unknown,
+  target?: string
+): HdCopyFailure => {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : "";
+
+  return {
+    stage,
+    message: withoutSignedPath(raw).slice(0, MAX_FAILURE_MESSAGE),
+    code: getErrorCode(error),
+    status: getHdCopyErrorStatus(error),
+    target,
+  };
+};
+
 const isMissingFile = (error: unknown) =>
   typeof error === "object" &&
   error !== null &&
@@ -89,25 +166,43 @@ export const uploadHdCopy = async (
   try {
     original = await deps.readOriginal(source.path);
   } catch (error) {
+    const failure = describeHdCopyFailure("read", error);
+
     return isMissingFile(error)
-      ? { kind: "skipped", reason: "original_missing" }
-      : { kind: "retry", error };
+      ? {
+          kind: "skipped",
+          reason: "original_missing",
+          failure: { ...failure, message: "the screenshot file is gone" },
+        }
+      : { kind: "retry", error, failure };
   }
 
   /* Compression is deterministic: a file that fails here fails every time. */
   let compressed: Awaited<ReturnType<HdCopyUploadDeps["compress"]>>;
   try {
     compressed = await deps.compress(original);
-  } catch {
-    return { kind: "skipped", reason: "unreadable" };
+  } catch (error) {
+    return {
+      kind: "skipped",
+      reason: "unreadable",
+      failure: describeHdCopyFailure("compress", error),
+    };
   }
+
+  let stage: HdCopyStage = "upload-url";
+  let target: string | undefined;
 
   try {
     const slot = await deps.requestUploadUrl(
       source.screenshotId,
       compressed.image.byteLength
     );
+
+    stage = "upload";
+    target = originOf(slot.presignedUrl);
     await deps.putImage(slot.presignedUrl, compressed.image);
+
+    stage = "save";
     await deps.saveCopy(source.screenshotId, {
       imageUrl: slot.imageUrl,
       width: compressed.width,
@@ -117,8 +212,10 @@ export const uploadHdCopy = async (
 
     return { kind: "uploaded" };
   } catch (error) {
+    const failure = describeHdCopyFailure(stage, error, target);
+
     return isRetryableHdCopyStatus(getHdCopyErrorStatus(error))
-      ? { kind: "retry", error }
-      : { kind: "skipped", reason: "rejected" };
+      ? { kind: "retry", error, failure }
+      : { kind: "skipped", reason: "rejected", failure };
   }
 };

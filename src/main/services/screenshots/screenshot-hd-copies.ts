@@ -35,10 +35,15 @@ import {
 import {
   uploadHdCopy,
   type HdCopyUploadDeps,
+  type HdCopyFailure,
 } from "./screenshot-hd-copy-uploader";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+
+/* A report is a courtesy to the server's history; a server that does not
+   answer quickly is not waited for. */
+const REPORT_TIMEOUT_MS = 5_000;
 
 /* A lookup sits in front of every screenshot page, so a server that is slow or
    down must cost a moment once and not on every page: after a failure the
@@ -97,6 +102,28 @@ const uploadDeps: HdCopyUploadDeps = {
   },
 };
 
+/* Tells the server why a copy did not upload. It can only see an upload that
+   reaches it: a launcher that cannot connect to the address it was given, or
+   fails before it asks for one, leaves nothing in the server's history unless
+   it says so. Best effort, and short: the server being down, or too old to
+   take reports, is no reason to fail or hold up anything else. */
+const reportHdCopyFailure = async (
+  screenshotId: string,
+  failure: HdCopyFailure,
+  attempts: number,
+  willRetry: boolean
+) => {
+  try {
+    await HydraApi.post(
+      `${copyPath(screenshotId)}/failure`,
+      { ...failure, attempts, willRetry },
+      serverOnly(REPORT_TIMEOUT_MS)
+    );
+  } catch {
+    /* The cause is in the launcher's own log either way. */
+  }
+};
+
 /* One attempt at a time per screenshot: the fire-and-forget attempt right after
    an upload and the worker's retry pass can otherwise meet. */
 const inFlight = new Set<string>();
@@ -152,20 +179,38 @@ export const attemptHdCopy = async (clientId: string) => {
       logger.info("Gave up on a 1080p screenshot copy", {
         clientId,
         reason: outcome.reason,
+        ...outcome.failure,
       });
       await LocalScreenshotStore.update(clientId, {
         hdCopy: { state: "skipped", attempts, nextAttemptAt: null },
       });
+
+      /* A capture deleted from disk is the owner's doing, not a fault. */
+      if (outcome.reason !== "original_missing") {
+        await reportHdCopyFailure(
+          screenshot.screenshotId,
+          outcome.failure,
+          attempts,
+          false
+        );
+      }
       return;
     }
 
     logger.warn("Could not upload a 1080p screenshot copy, will retry", {
       clientId,
       attempts,
+      ...outcome.failure,
     });
     await LocalScreenshotStore.update(clientId, {
       hdCopy: planHdCopyAfterFailure(attempts, Date.now()),
     });
+    await reportHdCopyFailure(
+      screenshot.screenshotId,
+      outcome.failure,
+      attempts,
+      true
+    );
   } catch (error) {
     logger.error("A 1080p screenshot copy failed unexpectedly", error);
   } finally {
