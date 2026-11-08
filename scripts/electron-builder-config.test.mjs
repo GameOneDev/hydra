@@ -16,4 +16,18 @@ describe("electron-builder.yml", () => {
   test("re-signs the macOS app after flipping fuses", () => {
     assert.equal(config.electronFuses.resetAdHocDarwinSignature, true);
   });
+
+  // electron-builder copies extendInfo into Info.plist with Object.assign, so a
+  // YAML list would add the keys "0", "1", ... instead of the usage descriptions.
+  test("gives macOS its usage descriptions as plain Info.plist keys", () => {
+    const { extendInfo } = config.mac;
+
+    assert.equal(Array.isArray(extendInfo), false);
+    assert.deepEqual(Object.keys(extendInfo).sort(), [
+      "NSCameraUsageDescription",
+      "NSDocumentsFolderUsageDescription",
+      "NSDownloadsFolderUsageDescription",
+      "NSMicrophoneUsageDescription",
+    ]);
+  });
 });
