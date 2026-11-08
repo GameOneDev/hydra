@@ -62,6 +62,13 @@ import type {
   EmulationBackupProgress,
   EmulatorBinary,
   EmulatorInstallProgress,
+  RecompilationActionResult,
+  RecompilationInstallProgress,
+  RecompilationPrepareProgress,
+  RecompilationInstallState,
+  RecompilationRef,
+  RecompilationRomSource,
+  RecompilationRomState,
   EmulatorInstallResult,
   ResolvedInstallOption,
   DetectedRom,
@@ -191,8 +198,15 @@ declare global {
       objectId: string,
       shop: GameShop
     ) => Promise<CloudSaveOverview>;
-    /** False when a self-hosted cloud server has no Cloud Save V2 endpoints. */
-    getCloudSaveV2Supported: (shop?: GameShop | null) => Promise<boolean>;
+    /**
+     * False when a self-hosted cloud server has no Cloud Save V2 endpoints, or
+     * not the ones this game needs: Epic support for an Epic game, or the
+     * per-recompilation key for a recompilation (told apart by `objectId`).
+     */
+    getCloudSaveV2Supported: (
+      shop?: GameShop | null,
+      objectId?: string | null
+    ) => Promise<boolean>;
     /** False when a self-hosted cloud server has no souvenir endpoints. */
     getAchievementSouvenirsSupported: () => Promise<boolean>;
     /**
@@ -648,13 +662,21 @@ declare global {
       objectId: string
     ) => Promise<number>;
     getGamesRunning: () => Promise<
-      Pick<GameRunning, "id" | "sessionDurationInMillis">[]
+      Pick<
+        GameRunning,
+        "id" | "sessionDurationInMillis" | "recompilationSlug"
+      >[]
     >;
     onGamesRunning: (
       cb: (
-        gamesRunning: Pick<GameRunning, "id" | "sessionDurationInMillis">[]
+        gamesRunning: Pick<
+          GameRunning,
+          "id" | "sessionDurationInMillis" | "recompilationSlug"
+        >[]
       ) => void
     ) => () => Electron.IpcRenderer;
+    onGameSessionSynced: (cb: () => void) => () => Electron.IpcRenderer;
+    onGamePlaytimeSynced: (cb: () => void) => () => Electron.IpcRenderer;
     onLibraryBatchComplete: (cb: () => void) => () => Electron.IpcRenderer;
     onRemoteLibrarySyncStateChange: (
       cb: (syncing: boolean) => void
@@ -803,6 +825,41 @@ declare global {
     ) => Promise<EmulatorInstallResult>;
     onEmulatorInstallProgress: (
       cb: (payload: EmulatorInstallProgress) => void
+    ) => () => void;
+    getRecompilationInstallState: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationInstallState | null>;
+    installRecompilation: (
+      ref: RecompilationRef,
+      parentDirectory?: string
+    ) => Promise<RecompilationActionResult>;
+    uninstallRecompilation: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationActionResult>;
+    openRecompilationFolder: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationActionResult>;
+    playRecompilation: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationActionResult>;
+    closeRecompilation: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationActionResult>;
+    getRecompilationRomState: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationRomState | null>;
+    setRecompilationRom: (
+      ref: RecompilationRef,
+      choice: { source: RecompilationRomSource; path?: string }
+    ) => Promise<RecompilationActionResult>;
+    onRecompilationInstallProgress: (
+      cb: (payload: RecompilationInstallProgress) => void
+    ) => () => void;
+    prepareRecompilation: (
+      ref: RecompilationRef
+    ) => Promise<RecompilationActionResult>;
+    onRecompilationPrepareProgress: (
+      cb: (payload: RecompilationPrepareProgress) => void
     ) => () => void;
     /* RetroArch */
     getRetroArchConfig: () => Promise<RetroArchConfig>;
@@ -1346,6 +1403,7 @@ declare global {
     deleteTempFile: (filePath: string) => Promise<void>;
     platform: NodeJS.Platform;
     isWayland: boolean;
+    hasNativeWindowDecorations: boolean;
 
     /* Auto update */
     onAutoUpdaterEvent: (
@@ -1602,12 +1660,14 @@ declare global {
     minimizeChatWindow: () => Promise<void>;
     closeChatWindow: () => Promise<void>;
     openGameInMainWindow: (gamePath: string) => Promise<void>;
+    openChatNotificationSettings: () => Promise<void>;
     consumePendingChatFriends: () => Promise<PendingChatFriend[]>;
     onChatFriendsPending: (cb: () => void) => () => Electron.IpcRenderer;
     setChatWindowState: (state: ChatWindowState) => Promise<void>;
     getChatUnreadState: () => Promise<ChatUnreadState>;
     /** Resolves to false when the read could not be saved. */
     markChatRead: (friendId: string, seq: number) => Promise<boolean>;
+    refreshOfficialChat: () => Promise<void>;
     onChatMessage: (
       cb: (sync: ChatMessageSync) => void
     ) => () => Electron.IpcRenderer;

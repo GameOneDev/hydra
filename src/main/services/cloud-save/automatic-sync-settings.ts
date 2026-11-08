@@ -65,9 +65,10 @@ const readCloudSaveAutomaticSyncMode = async (
     legacyEnabled,
     v2Enabled,
     game?.platform,
-    getCloudSaveV2FeaturesForShop(shop).every((feature) =>
+    getCloudSaveV2FeaturesForShop(shop, objectId).every((feature) =>
       HydraApi.supportsCloudFeature(feature)
-    )
+    ),
+    objectId
   );
 
   return { game, key, mode };
