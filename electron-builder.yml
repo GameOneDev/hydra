@@ -11,6 +11,11 @@ electronFuses:
   enableEmbeddedAsarIntegrityValidation: true
   onlyLoadAppFromAsar: true
   grantFileProtocolExtraPrivileges: true
+  # Flipping a fuse rewrites a page of the Electron Framework that the macOS
+  # code signature hashes. Apple Silicon kills the app on first touch of that
+  # page ("Code Signature Invalid"), so the app is re-signed ad-hoc right after
+  # the flip. CI builds with no signing identity, so nothing signs it later.
+  resetAdHocDarwinSignature: true
 directories:
   buildResources: build
 extraResources:
