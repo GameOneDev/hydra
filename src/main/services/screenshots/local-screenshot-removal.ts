@@ -216,6 +216,9 @@ const UNPUBLISHED_FIELDS: Partial<LocalScreenshot> = {
   nextUploadAttemptAt: null,
   uploadedAt: null,
   lastError: null,
+  /* A screenshot published again is a new one to official Hydra, with a new id
+     and no copy: what was recorded about the old one's copy does not carry over. */
+  hdCopy: undefined,
 };
 
 const forgetPublishedScreenshot = async (screenshot: LocalScreenshot) => {

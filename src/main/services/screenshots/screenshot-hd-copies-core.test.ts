@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 import {
   applyHdScreenshotCopies,
   collectHdScreenshotRefs,
+  getBulkDeletedGame,
   getEditedScreenshotId,
   HD_COPY_RETRY_DELAYS_MS,
+  isAwaitingHdCopy,
   isRetryableHdCopyStatus,
   isScreenshotReadUrl,
   planHdCopyAfterFailure,
@@ -247,6 +249,126 @@ describe("trying a failed copy again", () => {
     }
     for (const status of [400, 401, 403, 404, 405, 413, 422]) {
       assert.equal(isRetryableHdCopyStatus(status), false, String(status));
+    }
+  });
+});
+
+describe("a delete that names no screenshot", () => {
+  it("reads the game out of a bulk delete, and nothing else", () => {
+    assert.deepEqual(
+      getBulkDeletedGame("/profile/screenshots?shop=steam&objectId=570"),
+      { shop: "steam", objectId: "570" }
+    );
+    assert.deepEqual(
+      getBulkDeletedGame("/profile/screenshots?shop=epic&objectId=fn%3Aabc"),
+      { shop: "epic", objectId: "fn:abc" },
+      "an encoded id comes back decoded"
+    );
+
+    for (const url of [
+      "/profile/screenshots",
+      "/profile/screenshots?shop=steam",
+      "/profile/screenshots?objectId=570",
+      "/profile/screenshots/s1",
+      "/users/u1/screenshots?shop=steam&objectId=570",
+    ]) {
+      assert.equal(getBulkDeletedGame(url), null, url);
+    }
+  });
+
+  it("is not the delete of one screenshot, which is read by its id", () => {
+    const url = "/profile/screenshots?shop=steam&objectId=570";
+
+    assert.equal(getEditedScreenshotId(url), null);
+    assert.notEqual(getBulkDeletedGame(url), null);
+  });
+});
+
+describe("what the self-hosted server may tell the launcher to show", () => {
+  const apply = (copies: Record<string, unknown>) => {
+    const item = shot("s1");
+    const replaced = applyHdScreenshotCopies({ items: [item] }, copies);
+    return { replaced, item };
+  };
+
+  it("takes an https image with a real size", () => {
+    const { replaced, item } = apply({ s1: copy("s1") });
+
+    assert.equal(replaced, 1);
+    assert.equal(item.imageUrl, copy("s1").url);
+  });
+
+  it("refuses an address that is not a web address, whatever the size", () => {
+    for (const url of [
+      "javascript:alert(1)",
+      "file:///etc/passwd",
+      "data:image/png;base64,AAAA",
+      "not a url",
+      "",
+    ]) {
+      const { replaced, item } = apply({ s1: { ...copy("s1"), url } });
+
+      assert.equal(replaced, 0, url);
+      assert.equal(item.imageUrl, "https://official.test/s1-720.jpg");
+    }
+  });
+
+  it("refuses a size that is not a positive finite number", () => {
+    for (const size of [0, -1, Number.NaN, Infinity, "1920", null]) {
+      const { replaced } = apply({ s1: { ...copy("s1"), width: size } });
+      assert.equal(replaced, 0, String(size));
+    }
+  });
+
+  it("answers an id only from what the server listed, never from a prototype", () => {
+    /* JSON can carry an own "__proto__" key, and copying it with Object.assign
+       onto a plain object replaces that object's prototype. */
+    const parsed = JSON.parse(
+      '{"__proto__": {"s1": {"url": "https://evil.test/a.jpg", "width": 1, "height": 1}}}'
+    );
+    const copies = Object.assign({}, parsed) as Record<string, unknown>;
+
+    assert.ok(copies.s1, "the prototype now answers for s1");
+
+    const { replaced, item } = apply(copies);
+    assert.equal(replaced, 0);
+    assert.equal(item.imageUrl, "https://official.test/s1-720.jpg");
+  });
+});
+
+describe("whether an attempt's outcome may still be written", () => {
+  const waiting = {
+    state: "uploaded" as const,
+    screenshotId: "s1",
+    hdCopy: { state: "pending" as const, attempts: 0, nextAttemptAt: null },
+  };
+
+  it("is when it is the same screenshot, still published and waiting", () => {
+    assert.equal(isAwaitingHdCopy(waiting, "s1"), true);
+  });
+
+  it("is not once official deleted it and it was published again as another", () => {
+    assert.equal(
+      isAwaitingHdCopy({ ...waiting, screenshotId: "s2" }, "s1"),
+      false
+    );
+    assert.equal(
+      isAwaitingHdCopy(
+        { ...waiting, state: "local", screenshotId: null },
+        "s1"
+      ),
+      false,
+      "unpublished"
+    );
+  });
+
+  it("is not once it was blocked, uploaded by someone else, or had its state reset", () => {
+    for (const hdCopy of [
+      { state: "skipped" as const, attempts: 1, nextAttemptAt: null },
+      { state: "uploaded" as const, attempts: 1, nextAttemptAt: null },
+      undefined,
+    ]) {
+      assert.equal(isAwaitingHdCopy({ ...waiting, hdCopy }, "s1"), false);
     }
   });
 });

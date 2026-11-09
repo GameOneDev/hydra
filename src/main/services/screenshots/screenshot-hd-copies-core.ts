@@ -8,7 +8,7 @@
    copy under the official screenshot's id. Showing a screenshot swaps that copy
    in for official's image where one exists. */
 
-import type { LocalScreenshotHdCopy } from "@types";
+import type { LocalScreenshot, LocalScreenshotHdCopy } from "@types";
 
 /** What a self-hosted server advertises once it stores these copies. */
 export const SCREENSHOT_HD_FEATURE = "screenshots-hd";
@@ -66,6 +66,22 @@ export const getEditedScreenshotId = (url: string) => {
   } catch {
     return null;
   }
+};
+
+/**
+ * The game whose published screenshots a bulk delete removes, from
+ * `DELETE /profile/screenshots?shop=…&objectId=…`. That call names no
+ * screenshot, so it is the one delete the id in the URL cannot cover.
+ */
+export const getBulkDeletedGame = (url: string) => {
+  const match = /^\/profile\/screenshots\?(.*)$/.exec(url);
+  if (!match) return null;
+
+  const query = new URLSearchParams(match[1]);
+  const shop = query.get("shop");
+  const objectId = query.get("objectId");
+
+  return shop && objectId ? { shop, objectId } : null;
 };
 
 const isRecord = (value: unknown): value is Item =>
@@ -126,12 +142,26 @@ export const collectHdScreenshotRefs = (
   return refs;
 };
 
+/* What the self-hosted server says is data, not a promise: this ends up as an
+   image address in the UI and as the size the lightbox lays out around it. */
+const isWebUrl = (value: string) => {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
+};
+
+const isSize = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value > 0;
+
 const isCopy = (value: unknown): value is HdScreenshotCopy =>
   isRecord(value) &&
   typeof value.url === "string" &&
-  value.url !== "" &&
-  typeof value.width === "number" &&
-  typeof value.height === "number";
+  isWebUrl(value.url) &&
+  isSize(value.width) &&
+  isSize(value.height);
 
 /**
  * Puts the copies into `data`, in place, and returns how many it replaced.
@@ -148,6 +178,9 @@ export const applyHdScreenshotCopies = (
 
   for (const item of itemsOf(data)) {
     if (!canTakeCopy(item)) continue;
+
+    /* Own keys only: an id must not be answered from the object's prototype. */
+    if (!Object.hasOwn(copies, item.id as string)) continue;
 
     const copy = copies[item.id as string];
     if (!isCopy(copy)) continue;
@@ -186,6 +219,22 @@ export const planHdCopyAfterFailure = (
 
   return { state: "pending", attempts, nextAttemptAt: now + delay };
 };
+
+/**
+ * Whether the outcome of an attempt may still be written to this record: it is
+ * the screenshot the attempt was made for, still published, and still waiting
+ * for its copy. An attempt takes seconds, and in that time the screenshot may
+ * have been deleted on official Hydra, published again under a new id, or
+ * blocked, each of which leaves the record saying something an unconditional
+ * write would undo.
+ */
+export const isAwaitingHdCopy = (
+  current: Pick<LocalScreenshot, "state" | "screenshotId" | "hdCopy">,
+  screenshotId: string
+) =>
+  current.state === "uploaded" &&
+  current.screenshotId === screenshotId &&
+  current.hdCopy?.state === "pending";
 
 /** Statuses worth another attempt; any other 4xx will answer the same way. */
 const RETRYABLE_STATUSES = new Set([408, 409, 425, 429]);

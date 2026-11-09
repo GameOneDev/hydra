@@ -16,18 +16,26 @@
 
 import axios from "axios";
 import fs from "node:fs";
-import type { ProfileVisibility } from "@types";
+import type {
+  GameShop,
+  LocalScreenshotHdCopy,
+  ProfileVisibility,
+} from "@types";
 
 import { HydraApi } from "../hydra-api";
+import type { HydraApiAuthContext } from "../hydra-auth-context";
 import { logger } from "../logger";
 import { LocalScreenshotStore } from "./local-screenshot-store";
+import { isLocalScreenshotVisibleToOwner } from "./local-screenshot-owner";
 import { compressScreenshotForUpload } from "./screenshot-compression";
 import {
   applyHdScreenshotCopies,
   collectHdScreenshotRefs,
+  getBulkDeletedGame,
   getEditedScreenshotId,
   HD_LOOKUP_BATCH_SIZE,
   HD_SCREENSHOTS_PATH,
+  isAwaitingHdCopy,
   isScreenshotReadUrl,
   planHdCopyAfterFailure,
   SCREENSHOT_HD_FEATURE,
@@ -64,15 +72,21 @@ export const isHdCopyServerAvailable = () =>
 export const shouldKeepHdCopies = () =>
   isHdCopyServerAvailable() && !HydraApi.hasRealActiveSubscription();
 
-const serverOnly = (timeout: number) => ({
+/* `authContext` ties a request to the account that began the work, so one that
+   outlives a sign-out or an account switch is refused rather than sent under
+   whoever is signed in by then. */
+const serverOnly = (timeout: number, authContext?: HydraApiAuthContext) => ({
   forceSelfHostedApi: true as const,
   timeout,
+  ...(authContext ? { authContext } : {}),
 });
 
 const copyPath = (screenshotId: string) =>
   `${HD_SCREENSHOTS_PATH}/${encodeURIComponent(screenshotId)}`;
 
-const uploadDeps: HdCopyUploadDeps = {
+const createUploadDeps = (
+  authContext: HydraApiAuthContext
+): HdCopyUploadDeps => ({
   readOriginal: (path) => fs.promises.readFile(path),
   compress: async (original) => {
     const { image, width, height } = await compressScreenshotForUpload(
@@ -85,7 +99,7 @@ const uploadDeps: HdCopyUploadDeps = {
     HydraApi.post<{ presignedUrl: string; imageUrl: string }>(
       `${copyPath(screenshotId)}/upload-url`,
       { imageExt: "jpg", imageLength },
-      serverOnly(REQUEST_TIMEOUT_MS)
+      serverOnly(REQUEST_TIMEOUT_MS, authContext)
     ),
   putImage: async (presignedUrl, image) => {
     await axios.put(presignedUrl, image, {
@@ -96,11 +110,18 @@ const uploadDeps: HdCopyUploadDeps = {
     });
   },
   saveCopy: async (screenshotId, copy) => {
-    await HydraApi.put(copyPath(screenshotId), copy, {
-      ...serverOnly(REQUEST_TIMEOUT_MS),
-    });
+    /* The upload took a while, and the owner may have changed who can see the
+       screenshot in it. That change was mirrored to the record at once but
+       found no copy to update yet, so the visibility to save is read now. */
+    const current = await LocalScreenshotStore.findByScreenshotId(screenshotId);
+
+    await HydraApi.put(
+      copyPath(screenshotId),
+      { ...copy, visibility: current?.visibility ?? copy.visibility },
+      serverOnly(REQUEST_TIMEOUT_MS, authContext)
+    );
   },
-};
+});
 
 /* Tells the server why a copy did not upload. It can only see an upload that
    reaches it: a launcher that cannot connect to the address it was given, or
@@ -111,17 +132,41 @@ const reportHdCopyFailure = async (
   screenshotId: string,
   failure: HdCopyFailure,
   attempts: number,
-  willRetry: boolean
+  willRetry: boolean,
+  authContext: HydraApiAuthContext
 ) => {
   try {
     await HydraApi.post(
       `${copyPath(screenshotId)}/failure`,
       { ...failure, attempts, willRetry },
-      serverOnly(REPORT_TIMEOUT_MS)
+      serverOnly(REPORT_TIMEOUT_MS, authContext)
     );
   } catch {
     /* The cause is in the launcher's own log either way. */
   }
+};
+
+/* Records how an attempt went, but only on the screenshot it was made for and
+   only while that screenshot is still waiting for its copy. An attempt takes
+   seconds, and in that time the screenshot may have been deleted on official
+   Hydra, published again under a new id, or blocked: a record written
+   unconditionally afterwards would overwrite what those left. Says whether it
+   was written. */
+const settleHdCopy = async (
+  clientId: string,
+  screenshotId: string,
+  next: LocalScreenshotHdCopy
+) => {
+  let written = false;
+
+  await LocalScreenshotStore.update(clientId, (current) => {
+    if (!isAwaitingHdCopy(current, screenshotId)) return {};
+
+    written = true;
+    return { hdCopy: next };
+  });
+
+  return written;
 };
 
 /* One attempt at a time per screenshot: the fire-and-forget attempt right after
@@ -145,10 +190,22 @@ export const attemptHdCopy = async (clientId: string) => {
     if (!screenshot?.screenshotId || screenshot.state !== "uploaded") return;
     if (screenshot.hdCopy?.state !== "pending") return;
 
+    const authContext = HydraApi.getAuthContext();
+    if (!authContext || !HydraApi.isLoggedIn()) return;
+
+    /* Another account's screenshot is not this one's to upload. */
+    if (!isLocalScreenshotVisibleToOwner(screenshot, authContext.userId)) {
+      return;
+    }
+
+    const screenshotId = screenshot.screenshotId;
+
     /* Official's moderation outranks a copy: a blocked screenshot gets none. */
     if (screenshot.moderationStatus === "BLOCKED") {
-      await LocalScreenshotStore.update(clientId, {
-        hdCopy: { ...screenshot.hdCopy, state: "skipped", nextAttemptAt: null },
+      await settleHdCopy(clientId, screenshotId, {
+        ...screenshot.hdCopy,
+        state: "skipped",
+        nextAttemptAt: null,
       });
       return;
     }
@@ -161,17 +218,23 @@ export const attemptHdCopy = async (clientId: string) => {
     const attempts = screenshot.hdCopy.attempts + 1;
     const outcome = await uploadHdCopy(
       {
-        screenshotId: screenshot.screenshotId,
+        screenshotId,
         path: screenshot.path,
         visibility: screenshot.visibility,
       },
-      uploadDeps
+      createUploadDeps(authContext)
     );
 
     if (outcome.kind === "uploaded") {
-      await LocalScreenshotStore.update(clientId, {
-        hdCopy: { state: "uploaded", attempts, nextAttemptAt: null },
+      const recorded = await settleHdCopy(clientId, screenshotId, {
+        state: "uploaded",
+        attempts,
+        nextAttemptAt: null,
       });
+
+      /* The screenshot was deleted on official Hydra, or blocked, while this
+         was uploading, so the copy was made for something that is gone. */
+      if (!recorded) void deleteHdCopy(screenshotId);
       return;
     }
 
@@ -181,17 +244,20 @@ export const attemptHdCopy = async (clientId: string) => {
         reason: outcome.reason,
         ...outcome.failure,
       });
-      await LocalScreenshotStore.update(clientId, {
-        hdCopy: { state: "skipped", attempts, nextAttemptAt: null },
+      await settleHdCopy(clientId, screenshotId, {
+        state: "skipped",
+        attempts,
+        nextAttemptAt: null,
       });
 
       /* A capture deleted from disk is the owner's doing, not a fault. */
       if (outcome.reason !== "original_missing") {
         await reportHdCopyFailure(
-          screenshot.screenshotId,
+          screenshotId,
           outcome.failure,
           attempts,
-          false
+          false,
+          authContext
         );
       }
       return;
@@ -202,14 +268,17 @@ export const attemptHdCopy = async (clientId: string) => {
       attempts,
       ...outcome.failure,
     });
-    await LocalScreenshotStore.update(clientId, {
-      hdCopy: planHdCopyAfterFailure(attempts, Date.now()),
-    });
+    await settleHdCopy(
+      clientId,
+      screenshotId,
+      planHdCopyAfterFailure(attempts, Date.now())
+    );
     await reportHdCopyFailure(
-      screenshot.screenshotId,
+      screenshotId,
       outcome.failure,
       attempts,
-      true
+      true,
+      authContext
     );
   } catch (error) {
     logger.error("A 1080p screenshot copy failed unexpectedly", error);
@@ -274,7 +343,8 @@ export const preferHdScreenshots = async <T>(url: string, data: T) => {
   if (!refs.length) return data;
 
   try {
-    const copies: Record<string, unknown> = {};
+    /* No prototype, so no key the server sends can reach one. */
+    const copies: Record<string, unknown> = Object.create(null);
 
     for (let start = 0; start < refs.length; start += HD_LOOKUP_BATCH_SIZE) {
       const response = await HydraApi.post<{
@@ -316,6 +386,21 @@ export const deleteHdCopy = (screenshotId: string) => {
     "delete",
     HydraApi.delete(copyPath(screenshotId), serverOnly(REQUEST_TIMEOUT_MS))
   );
+};
+
+/** Official deleted every published screenshot of a game; so go their copies. */
+const deleteHdCopiesForGame = async (shop: string, objectId: string) => {
+  if (!isHdCopyServerAvailable()) return;
+
+  const screenshots = await LocalScreenshotStore.listForGame(
+    shop as GameShop,
+    objectId
+  );
+  for (const screenshot of screenshots) {
+    if (screenshot.screenshotId && screenshot.hdCopy) {
+      void deleteHdCopy(screenshot.screenshotId);
+    }
+  }
 };
 
 /**
@@ -386,6 +471,12 @@ const applyScreenshotHooks = async (
     case "delete": {
       const screenshotId = getEditedScreenshotId(url);
       if (screenshotId) void deleteHdCopy(screenshotId);
+
+      /* Deleting a game's published screenshots in one call names none of
+         them. The launcher's records still know which they were: this runs
+         before they are cleaned up, which happens after official has answered. */
+      const game = getBulkDeletedGame(url);
+      if (game) await deleteHdCopiesForGame(game.shop, game.objectId);
       return result;
     }
     default:

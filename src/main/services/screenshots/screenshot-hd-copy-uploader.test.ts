@@ -309,3 +309,41 @@ describe("saying which step failed, and why", () => {
     );
   });
 });
+
+describe("what a report says about the user's own disk", () => {
+  it("keeps the path of an unreadable capture out of what it reports", () => {
+    for (const message of [
+      "EACCES: permission denied, open '/home/alice/Pictures/Hydra/a.png'",
+      "EBUSY: resource busy or locked, open 'C:\\Users\\Alice\\Pictures\\a.png'",
+      "Input file is missing: /Users/alice/Pictures/a.png",
+    ]) {
+      for (const stage of ["read", "compress"] as const) {
+        const { message: reported } = describeHdCopyFailure(
+          stage,
+          new Error(message)
+        );
+
+        assert.equal(/alice|Alice/.test(reported), false, reported);
+        assert.match(reported, /<path>/);
+      }
+    }
+  });
+
+  it("keeps what is left readable", () => {
+    const { message } = describeHdCopyFailure(
+      "read",
+      new Error("EACCES: permission denied, open '/home/alice/a.png'")
+    );
+
+    assert.equal(message, "EACCES: permission denied, open '<path>'");
+  });
+
+  it("does not touch the message of a step that is not about a file", () => {
+    const { message } = describeHdCopyFailure(
+      "upload",
+      new Error("connect ECONNREFUSED 10.0.0.9:8788")
+    );
+
+    assert.equal(message, "connect ECONNREFUSED 10.0.0.9:8788");
+  });
+});

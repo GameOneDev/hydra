@@ -123,6 +123,11 @@ const getErrorCode = (error: unknown, depth = 0): string | undefined => {
 const withoutSignedPath = (text: string) =>
   text.replace(/\/storage\/[^\s"'<>)]+/g, "/storage/…");
 
+/* A file's path says where on the user's disk it is, and what they call their
+   folders. It belongs in their own log; it does not belong in a report sent
+   to a server. */
+const LOCAL_PATH = /(?:[A-Za-z]:\\|\/)[^\s'"<>)]*[\\/][^\s'"<>)]*/g;
+
 const originOf = (url: string) => {
   try {
     return new URL(url).origin;
@@ -146,7 +151,10 @@ export const describeHdCopyFailure = (
 
   return {
     stage,
-    message: withoutSignedPath(raw).slice(0, MAX_FAILURE_MESSAGE),
+    message: (stage === "read" || stage === "compress"
+      ? raw.replace(LOCAL_PATH, "<path>")
+      : withoutSignedPath(raw)
+    ).slice(0, MAX_FAILURE_MESSAGE),
     code: getErrorCode(error),
     status: getHdCopyErrorStatus(error),
     target,

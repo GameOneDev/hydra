@@ -610,3 +610,47 @@ test("a self-hosted server counts as a subscription but not as a real one", asyn
   api.syncRealSubscription({ expiresAt: future });
   assert.equal(api.hasRealActiveSubscription(), true);
 });
+
+test("what only a self-hosted server can answer never goes to official Hydra when there is none", async (t) => {
+  const { api, requests, signIn } = await fixture(t);
+  await signIn("a");
+  const before = requests.length;
+
+  // The server was unconfigured between the caller's check and its request.
+  assert.equal(Reflect.get(api, "cloudInstance"), null);
+
+  await assert.rejects(
+    api.post(
+      "/profile/hd-screenshots/s1/failure",
+      { stage: "upload", message: "connect ECONNREFUSED 10.0.0.9:8788" },
+      { forceSelfHostedApi: true }
+    ),
+    /self-hosted server is not configured/
+  );
+  await assert.rejects(
+    api.post("/profile/hd-screenshots/lookup", { screenshots: [] }),
+    /self-hosted server is not configured/,
+    "the path alone is enough: official has no answer to it"
+  );
+  await assert.rejects(
+    api.get("/profile/anything", {}, { forceSelfHostedApi: true }),
+    /self-hosted server is not configured/
+  );
+
+  assert.deepEqual(
+    requests.slice(before),
+    [],
+    "nothing was sent to the official API"
+  );
+});
+
+test("a request for official Hydra is not affected by there being no self-hosted server", async (t) => {
+  const { api, requests, signIn } = await fixture(t);
+  await signIn("a");
+  const before = requests.length;
+
+  await api.get("/profile/anything", {}, { forceOfficialApi: true });
+  await api.get("/profile/anything");
+
+  assert.equal(requests.length - before, 2);
+});
