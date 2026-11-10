@@ -1,8 +1,16 @@
 import { registerEvent } from "../register-event";
 import { HydraApi } from "@main/services";
+import { afterScreenshotApiCall } from "@main/services/screenshots/screenshot-hd-copies";
 
 interface HydraApiCallPayload {
-  method: "get" | "post" | "postResponse" | "put" | "patch" | "delete";
+  method:
+    | "get"
+    | "getResponse"
+    | "post"
+    | "postResponse"
+    | "put"
+    | "patch"
+    | "delete";
   url: string;
   data?: unknown;
   params?: unknown;
@@ -11,6 +19,7 @@ interface HydraApiCallPayload {
     needsSubscription?: boolean;
     ifModifiedSince?: Date;
     acceptedStatuses?: number[];
+    timeout?: number;
   };
 }
 
@@ -54,6 +63,11 @@ const hydraApiCall = async (
       case "get":
         request = HydraApi.get(url, params, hydraApiOptions);
         break;
+      case "getResponse":
+        request = HydraApi.getResponse(url, params, hydraApiOptions).then(
+          ({ status, data }) => ({ status, data })
+        );
+        break;
       case "post":
         request = HydraApi.post(url, data, hydraApiOptions);
         break;
@@ -73,7 +87,10 @@ const hydraApiCall = async (
         throw new Error(`Unsupported HTTP method: ${method}`);
     }
 
-    return await request;
+    /* The desktop UI and Big Picture both read and edit screenshots through
+       here, so this is the one place a 1080p copy on the self-hosted server is
+       swapped in, and a delete or visibility change is passed on to it. */
+    return await afterScreenshotApiCall(method, url, data, await request);
   } catch (error) {
     const errorMessage = getErrorMessage(error);
     throw new Error(errorMessage ?? "hydra-api-call-failed");

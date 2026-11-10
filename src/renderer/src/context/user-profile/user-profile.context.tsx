@@ -60,6 +60,7 @@ export interface UserProfileContext {
   pinnedGames: UserGame[];
   hasMoreLibraryGames: boolean;
   isLoadingLibraryGames: boolean;
+  hasLoadedLibraryGames: boolean;
   souvenirs: ProfileSouvenir[];
   souvenirsTotal: number;
   hasReachedSouvenirLimit: boolean;
@@ -77,6 +78,18 @@ export interface UserProfileContext {
 }
 
 export const DEFAULT_USER_PROFILE_BACKGROUND = "#151515B3";
+
+const LIBRARY_REQUEST_TIMEOUT_MS = 15_000;
+const PROFILE_LIBRARY_PAGE_SIZE = 48;
+
+const requestLibraryPage = (url: string) =>
+  window.electron.hydraApi.get<{
+    library: UserGame[];
+    pinnedGames: UserGame[];
+  }>(url, { needsAuth: false, timeout: LIBRARY_REQUEST_TIMEOUT_MS });
+
+const fetchLibraryPage = (url: string) =>
+  requestLibraryPage(url).catch(() => requestLibraryPage(url));
 
 export const userProfileContext = createContext<UserProfileContext>({
   userProfile: null,
@@ -101,6 +114,7 @@ export const userProfileContext = createContext<UserProfileContext>({
   pinnedGames: [],
   hasMoreLibraryGames: false,
   isLoadingLibraryGames: false,
+  hasLoadedLibraryGames: false,
   souvenirs: [],
   souvenirsTotal: 0,
   hasReachedSouvenirLimit: false,
@@ -148,6 +162,7 @@ export function UserProfileContextProvider({
   const [libraryPage, setLibraryPage] = useState(0);
   const [hasMoreLibraryGames, setHasMoreLibraryGames] = useState(true);
   const [isLoadingLibraryGames, setIsLoadingLibraryGames] = useState(false);
+  const [hasLoadedLibraryGames, setHasLoadedLibraryGames] = useState(false);
   const [souvenirs, setSouvenirs] = useState<ProfileSouvenir[]>([]);
   const [souvenirsTotal, setSouvenirsTotal] = useState(0);
   const [hasReachedSouvenirLimit, setHasReachedSouvenirLimit] = useState(false);
@@ -160,6 +175,7 @@ export function UserProfileContextProvider({
   );
   const previousUserIdRef = useRef(userId);
   const userStatsRequestIdRef = useRef(0);
+  const libraryRequestIdRef = useRef(0);
 
   /* Custom game images this profile's owner keeps on the self-hosted server.
      Fetched once per profile and shared by every library request below, so
@@ -258,6 +274,11 @@ export function UserProfileContextProvider({
       reset = true,
       filter = DEFAULT_PROFILE_LIBRARY_FILTER
     ) => {
+      const requestId = reset
+        ? ++libraryRequestIdRef.current
+        : libraryRequestIdRef.current;
+      const isCurrentRequest = () => requestId === libraryRequestIdRef.current;
+
       if (reset) {
         setLibraryPage(0);
         setHasMoreLibraryGames(true);
@@ -266,7 +287,7 @@ export function UserProfileContextProvider({
 
       try {
         const params = new URLSearchParams();
-        params.append("take", "12");
+        params.append("take", String(PROFILE_LIBRARY_PAGE_SIZE));
         params.append("skip", "0");
         appendProfileLibraryFilterParams(params, filter);
         if (sortBy) {
@@ -276,12 +297,11 @@ export function UserProfileContextProvider({
         const url = `/users/${userId}/library?${params.toString()}`;
 
         const [response, artwork] = await Promise.all([
-          window.electron.hydraApi.get<{
-            library: UserGame[];
-            pinnedGames: UserGame[];
-          }>(url, { needsAuth: false }),
+          fetchLibraryPage(url),
           getSelfHostedArtwork(),
         ]);
+
+        if (!isCurrentRequest()) return;
 
         if (reset) {
           setLoadedLibrarySortBy(sortBy ?? null);
@@ -290,18 +310,24 @@ export function UserProfileContextProvider({
         if (response) {
           setLibraryGames(applySelfHostedArtwork(response.library, artwork));
           setPinnedGames(applySelfHostedArtwork(response.pinnedGames, artwork));
-          setHasMoreLibraryGames(response.library.length === 12);
+          setHasMoreLibraryGames(
+            response.library.length === PROFILE_LIBRARY_PAGE_SIZE
+          );
         } else {
           setLibraryGames([]);
           setPinnedGames([]);
           setHasMoreLibraryGames(false);
         }
       } catch (error) {
+        if (!isCurrentRequest()) return;
         setLibraryGames([]);
         setPinnedGames([]);
         setHasMoreLibraryGames(false);
       } finally {
-        setIsLoadingLibraryGames(false);
+        if (isCurrentRequest()) {
+          setIsLoadingLibraryGames(false);
+          if (reset) setHasLoadedLibraryGames(true);
+        }
       }
     },
     [userId, getSelfHostedArtwork]
@@ -316,12 +342,15 @@ export function UserProfileContextProvider({
         return false;
       }
 
+      const requestId = libraryRequestIdRef.current;
+      const isCurrentRequest = () => requestId === libraryRequestIdRef.current;
+
       setIsLoadingLibraryGames(true);
       try {
         const nextPage = libraryPage + 1;
         const params = new URLSearchParams();
-        params.append("take", "12");
-        params.append("skip", String(nextPage * 12));
+        params.append("take", String(PROFILE_LIBRARY_PAGE_SIZE));
+        params.append("skip", String(nextPage * PROFILE_LIBRARY_PAGE_SIZE));
         appendProfileLibraryFilterParams(params, filter);
         if (sortBy) {
           params.append("sortBy", sortBy);
@@ -330,12 +359,11 @@ export function UserProfileContextProvider({
         const url = `/users/${userId}/library?${params.toString()}`;
 
         const [response, artwork] = await Promise.all([
-          window.electron.hydraApi.get<{
-            library: UserGame[];
-            pinnedGames: UserGame[];
-          }>(url, { needsAuth: false }),
+          fetchLibraryPage(url),
           getSelfHostedArtwork(),
         ]);
+
+        if (!isCurrentRequest()) return false;
 
         if (response && response.library.length > 0) {
           setLibraryGames((prev) => {
@@ -349,17 +377,19 @@ export function UserProfileContextProvider({
             return [...prev, ...newGames];
           });
           setLibraryPage(nextPage);
-          setHasMoreLibraryGames(response.library.length === 12);
+          setHasMoreLibraryGames(
+            response.library.length === PROFILE_LIBRARY_PAGE_SIZE
+          );
           return true;
         } else {
           setHasMoreLibraryGames(false);
           return false;
         }
       } catch (error) {
-        setHasMoreLibraryGames(false);
+        if (isCurrentRequest()) setHasMoreLibraryGames(false);
         return false;
       } finally {
-        setIsLoadingLibraryGames(false);
+        if (isCurrentRequest()) setIsLoadingLibraryGames(false);
       }
     },
     [
@@ -528,6 +558,8 @@ export function UserProfileContextProvider({
         needsAuth: false,
       })
       .then(async (userProfile) => {
+        if (previousUserIdRef.current !== userId) return;
+
         let profile = userProfile;
 
         /* The official API only stores banners for subscribers; users of a
@@ -561,6 +593,10 @@ export function UserProfileContextProvider({
           };
         }
 
+        /* The banner and artwork lookups above are awaited, so the profile
+           being viewed may have changed while they ran. */
+        if (previousUserIdRef.current !== userId) return;
+
         setUserProfile(profile);
 
         if (profile.profileImageUrl) {
@@ -574,6 +610,8 @@ export function UserProfileContextProvider({
            a bug in the handling reads to the user as a missing profile.
            Record what actually failed. */
         logger.error("Failed to load profile", userId, error);
+
+        if (previousUserIdRef.current !== userId) return;
         showErrorToast(t("user_not_found"));
         navigate(-1);
       });
@@ -603,9 +641,13 @@ export function UserProfileContextProvider({
   useEffect(() => {
     if (previousUserIdRef.current !== userId) {
       previousUserIdRef.current = userId;
+      libraryRequestIdRef.current++;
+      userStatsRequestIdRef.current++;
+      setIsLoadingLibraryGames(false);
       setUserProfile(null);
       setLibraryGames([]);
       setPinnedGames([]);
+      setHasLoadedLibraryGames(false);
       setHeroBackground(DEFAULT_USER_PROFILE_BACKGROUND);
       setLibraryPage(0);
       setHasMoreLibraryGames(true);
@@ -637,6 +679,7 @@ export function UserProfileContextProvider({
         pinnedGames,
         hasMoreLibraryGames,
         isLoadingLibraryGames,
+        hasLoadedLibraryGames,
         souvenirs,
         souvenirsTotal,
         hasReachedSouvenirLimit,

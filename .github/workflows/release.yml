@@ -48,7 +48,6 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a node scripts/test-epic-prerequisite-wine.cjs
 
-
   build:
     needs: epic-prerequisite-supervisor
     strategy:

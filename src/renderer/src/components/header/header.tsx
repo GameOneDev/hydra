@@ -13,6 +13,7 @@ import {
   PlusIcon,
   SearchIcon,
   SyncIcon,
+  VideoIcon,
   XIcon,
 } from "@primer/octicons-react";
 import { Tooltip } from "react-tooltip";
@@ -30,6 +31,7 @@ import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 
 import "./header.scss";
 import { AutoUpdateSubHeader } from "./auto-update-sub-header";
+import { useTitleSelection } from "./use-title-selection";
 import { ScanGamesModal, type ScanResult } from "./scan-games-modal";
 import { setFilters, setLibrarySearchQuery } from "@renderer/features";
 import cn from "classnames";
@@ -44,14 +46,18 @@ const pathTitle: Record<string, string> = {
   "/catalogue": "catalogue",
   "/library": "library",
   "/downloads": "downloads",
+  "/leaderboards": "leaderboards",
   "/settings": "settings",
+  "/shop": "shop",
 };
 
 export function Header() {
   const inputRef = useRef<HTMLInputElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const scanButtonTooltipId = useId();
   const addCustomGameTooltipId = useId();
+  const bigPictureTooltipId = useId();
   const [showAddGameModal, setShowAddGameModal] = useState(false);
 
   const navigate = useNavigate();
@@ -139,6 +145,7 @@ export function Header() {
 
   const title = useMemo(() => {
     if (location.pathname.startsWith("/game")) return headerTitle;
+    if (location.pathname.startsWith("/recompilation")) return headerTitle;
     if (location.pathname.startsWith("/achievements")) return headerTitle;
     if (location.pathname.startsWith("/profile")) return headerTitle;
     if (location.pathname.startsWith("/notifications")) return headerTitle;
@@ -161,6 +168,8 @@ export function Header() {
       debouncedCatalogueSearch.cancel();
     };
   }, [debouncedCatalogueSearch, debouncedLibrarySearch]);
+
+  useTitleSelection(titleRef);
 
   const updateDropdownPosition = () => {
     if (searchContainerRef.current) {
@@ -427,6 +436,7 @@ export function Header() {
           </button>
 
           <h3
+            ref={titleRef}
             className={cn("header__title", {
               "header__title--has-back-button": location.key !== "default",
             })}
@@ -490,6 +500,20 @@ export function Header() {
             </button>
           )}
 
+          {window.electron.hasNativeWindowDecorations && (
+            <button
+              type="button"
+              className="header__action-button header__action-button--outlined"
+              onClick={() => window.electron.openBigPictureWindow()}
+              aria-label={t("big_picture", { ns: "sidebar" })}
+              data-tooltip-id={bigPictureTooltipId}
+              data-tooltip-content={t("big_picture", { ns: "sidebar" })}
+              data-tooltip-place="bottom"
+            >
+              <VideoIcon size={16} />
+            </button>
+          )}
+
           <div
             ref={searchContainerRef}
             className={cn("header__search", {
@@ -539,6 +563,10 @@ export function Header() {
           this tooltip id and renders on every platform. */}
       {isOnLibraryPage && (
         <Tooltip id={scanButtonTooltipId} style={{ zIndex: 1 }} />
+      )}
+
+      {window.electron.hasNativeWindowDecorations && (
+        <Tooltip id={bigPictureTooltipId} style={{ zIndex: 9999 }} />
       )}
 
       <AutoUpdateSubHeader />

@@ -3,6 +3,11 @@ import type { GameShop } from "./game.types";
 import type { DownloadStatus } from "./download.types";
 import type { ClassicsDisc } from "./emulator.types";
 import type {
+  ScreenshotGamepadButton,
+  ScreenshotHotkeyBinding,
+} from "./screenshot.types";
+import type { ProfileVisibility } from "./index";
+import type {
   EpicDownloadMetadata,
   EpicInstallation,
 } from "./epic-managed.types";
@@ -125,6 +130,8 @@ export interface Download {
   shop: GameShop;
   objectId: string;
   uri: string;
+  /** Ordered part URIs of a multi-part hoster download. `uri` is the first part. */
+  parts?: string[];
   folderName: string | null;
   downloadPath: string;
   progress: number;
@@ -138,6 +145,16 @@ export interface Download {
   timestamp: number;
   extracting: boolean;
   extractionProgress?: number;
+  installerLaunched?: boolean;
+  installerRunning?: boolean;
+  installerStartedAt?: number;
+  installerPath?: string;
+  hasInstaller?: boolean;
+  sourceArchiveName?: string;
+  // Archives Hydra started extracting in place, kept until the whole download
+  // is extracted. Only these are resumed, since a progress file next to an
+  // archive may have come with the download.
+  inPlaceArchives?: string[];
   automaticallyExtract: boolean;
   automaticallyDeleteArchiveFiles: boolean;
   fileIndices?: number[];
@@ -194,6 +211,7 @@ export interface UserPreferences {
   retroAchievementsWebApiKey?: string | null;
   retroAchievementsUsername?: string | null;
   preferQuitInsteadOfHiding?: boolean;
+  openFriendsWindowOnStartup?: boolean;
   runAtStartup?: boolean;
   startMinimized?: boolean;
   launchToLibraryPage?: boolean;
@@ -213,6 +231,8 @@ export interface UserPreferences {
   friendRequestNotificationsEnabled?: boolean;
   friendStartGameNotificationsEnabled?: boolean;
   chatMessageNotificationsEnabled?: boolean;
+  leaderboardSlamEnabled?: boolean;
+  leaderboardDropNotificationsEnabled?: boolean;
   showDownloadSpeedInMegabytes?: boolean;
   extractFilesByDefault?: boolean;
   deleteArchiveFilesAfterExtractionByDefault?: boolean;
@@ -221,6 +241,7 @@ export interface UserPreferences {
   achievementScreenshotsPath?: string;
   autoplayGameTrailers?: boolean;
   hideToTrayOnGameStart?: boolean;
+  useNativeWindowDecorations?: boolean;
   enableNewDownloadOptionsBadges?: boolean;
   createStartMenuShortcut?: boolean;
   bigPictureSoundsEnabled?: boolean;
@@ -254,6 +275,16 @@ export interface UserPreferences {
   hideLibraryAchievementProgress?: boolean;
   autoplayAnimatedArtwork?: boolean;
   persistFiltersAndSorting?: boolean;
+  screenshotsEnabled?: boolean;
+  screenshotsFolderPath?: string;
+  screenshotHotkey?: ScreenshotHotkeyBinding;
+  screenshotGamepadEnabled?: boolean;
+  screenshotGamepadCombo?: ScreenshotGamepadButton[];
+  screenshotCaptureSoundEnabled?: boolean;
+  screenshotToastEnabled?: boolean;
+  screenshotDefaultVisibility?: ProfileVisibility;
+  showSensitiveScreenshots?: boolean;
+  hideCommunityScreenshots?: boolean;
 }
 
 export interface NetworkInterface {

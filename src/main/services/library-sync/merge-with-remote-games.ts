@@ -50,6 +50,7 @@ import {
   preserveEpicDefaultArtwork,
 } from "@shared";
 import { mergePersistedAchievementTotals } from "../achievements/achievement-memory-store";
+import { UnlockedAchievementsCache } from "../achievements/unlocked-achievements-cache";
 import { trackAchievementBatchGame } from "../achievements/achievement-batch-games";
 import { fetchRemoteProfileGames as fetchProfileGames } from "./fetch-remote-profile-games";
 import { reconcileSelfHostedHiddenGames } from "./self-hosted-hidden-games";
@@ -376,6 +377,7 @@ const buildRemoteGameShopAssets = (
     iconUrl: remoteGame.iconUrl,
     logoPosition: remoteGame.logoPosition,
     downloadSources: remoteGame.downloadSources,
+    images: { ...localShopAssets?.images, ...remoteGame.images },
   };
   return (remoteGame.catalogueGame ?? localGame?.catalogueGame)?.shop ===
     "steam"
@@ -427,6 +429,7 @@ const mergeRemoteGamesChunk = async (
   const remoteCustomAssets = remoteGames.map((game) =>
     getRemoteCustomAssets(game, selfHostedArtwork)
   );
+  let achievementTotalsChanged = false;
   const { gameKeys, localGames, artworkSelections } =
     await libraryWriteQueue.run(async () => {
       const gameKeys = remoteGames.map((game) =>
@@ -456,6 +459,12 @@ const mergeRemoteGamesChunk = async (
           remoteCustomAssets[index],
           canReconcileCustomArtwork
         );
+        if (
+          merged.achievementCount !== localGame?.achievementCount ||
+          merged.unlockedAchievementCount !==
+            localGame?.unlockedAchievementCount
+        )
+          achievementTotalsChanged = true;
         if (localGame && getHydraPlaytimeRevision(gameKey) > hydraRevision) {
           merged.playTimeInMilliseconds = localGame.playTimeInMilliseconds;
           merged.hasManuallyUpdatedPlaytime =
@@ -496,6 +505,7 @@ const mergeRemoteGamesChunk = async (
                 logoImageUrl: assets.logoImageUrl,
                 logoPosition: assets.logoPosition,
                 downloadSources: assets.downloadSources,
+                images: assets.images,
               },
               { sublevel: gamesShopAssetsSublevel }
             );
@@ -507,6 +517,7 @@ const mergeRemoteGamesChunk = async (
       await batch.write();
       return { gameKeys, localGames, artworkSelections };
     }, current);
+  if (achievementTotalsChanged) UnlockedAchievementsCache.clear();
 
   for (const [index, selection] of artworkSelections.entries()) {
     if (!selection) continue;
@@ -737,7 +748,7 @@ const mergeWithRemoteGamesOnce = async (
 };
 
 // A connection transition invalidates old snapshots even when the Hydra user did not change.
-export const mergeWithRemoteGames: typeof mergeWithRemoteGamesOnce = async (
+const mergeWithRemoteGamesRetrying: typeof mergeWithRemoteGamesOnce = async (
   ...args
 ) => {
   const revision = getEpicLibraryConnectionRevision();
@@ -753,6 +764,65 @@ export const mergeWithRemoteGames: typeof mergeWithRemoteGamesOnce = async (
   )
     return mergeWithRemoteGamesOnce(...args);
   return result;
+};
+
+const plainMerges = new Map<
+  string,
+  { running: Promise<boolean>; next?: Promise<boolean> }
+>();
+const plainMergeCompletedAt = new Map<string, number>();
+
+const getPlainMergeKey = (context: HydraApiAuthContext | undefined) =>
+  context
+    ? JSON.stringify([context.environment, context.userId, context.generation])
+    : "";
+
+const startPlainMerge = (key: string, run: () => Promise<boolean>) => {
+  const merge = { running: run() };
+  plainMerges.set(key, merge);
+  const settle = () => {
+    if (plainMerges.get(key) === merge) plainMerges.delete(key);
+  };
+  void merge.running.then((merged) => {
+    if (merged) plainMergeCompletedAt.set(key, Date.now());
+    settle();
+  }, settle);
+  return merge.running;
+};
+
+export const mergeWithRemoteGames: typeof mergeWithRemoteGamesOnce = (
+  ...args
+) => {
+  const [onProgress, capturedContext, ...options] = args;
+  if (onProgress || options.some((option) => option !== undefined))
+    return mergeWithRemoteGamesRetrying(...args);
+
+  const context = capturedContext ?? HydraApi.getAuthContext() ?? undefined;
+  const key = getPlainMergeKey(context);
+  const run = () => mergeWithRemoteGamesRetrying(undefined, context);
+  const merge = plainMerges.get(key);
+  if (!merge) return startPlainMerge(key, run);
+
+  // A caller arriving mid-run must see data newer than its request, so it waits for one follow-up.
+  merge.next ??= merge.running.then(
+    () => startPlainMerge(key, run),
+    () => startPlainMerge(key, run)
+  );
+  return merge.next;
+};
+
+/** Reuses a full merge for the current account that finished within `maxAgeMs`. */
+export const mergeWithRemoteGamesUnlessFresh = (maxAgeMs: number) => {
+  const key = getPlainMergeKey(HydraApi.getAuthContext() ?? undefined);
+  const completedAt = plainMergeCompletedAt.get(key);
+  if (
+    !plainMerges.has(key) &&
+    completedAt !== undefined &&
+    Date.now() - completedAt < maxAgeMs
+  ) {
+    return Promise.resolve(true);
+  }
+  return mergeWithRemoteGames();
 };
 
 // Emulator imports already have catalogue assets and ROM metadata locally.

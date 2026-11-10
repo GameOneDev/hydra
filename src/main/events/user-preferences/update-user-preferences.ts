@@ -7,7 +7,7 @@ import i18next from "i18next";
 import { defaultDownloadsPath } from "@main/constants";
 import { db, gamesSublevel, levelKeys } from "@main/level";
 import { patchUserProfile } from "../profile/update-profile";
-import { DownloadManager, HydraApi, Wine } from "@main/services";
+import { DownloadManager, ScreenshotInputService, Wine } from "@main/services";
 import { resetSouvenirsVisibilityMirror } from "@main/services/souvenir-visibility-mirror";
 import { WindowManager } from "@main/services/window-manager";
 import { AchievementWatcherManager } from "@main/services/achievements/achievement-watcher-manager";
@@ -16,6 +16,13 @@ import {
   restoreDuckStationFileLogging,
   restoreRetroArchAchievementScreenshots,
 } from "@main/services/emulators/emulator-souvenir-config";
+import {
+  isEmulatorAchievementTrackingActive,
+  resolveEmulatorAchievementTracking,
+} from "@main/services/emulators/emulator-achievement-tracking";
+import { HydraApi } from "@main/services/hydra-api";
+import { UnlockedAchievementsCache } from "@main/services/achievements/unlocked-achievements-cache";
+import { deleteRetroAchievementsEmulatorAccount } from "@main/services/retro-achievements/retro-achievements-emulator-account";
 import {
   prepareLinuxGameCaptureSession,
   stopAllLinuxGameCaptureSessions,
@@ -72,14 +79,15 @@ const prepareRunningLinuxCaptureSessions = async () => {
   const runningGameKeys = new Set(gamesPlaytime.keys());
 
   for (const [gameKey, session] of emulatorSessions) {
-    if (session.system === "ps1" || session.system === "ps2") {
+    if (session.system !== "ps3") {
       runningGameKeys.add(gameKey);
     }
   }
 
   for (const gameKey of runningGameKeys) {
     const game = await gamesSublevel.get(gameKey).catch(() => null);
-    if (game?.remoteId) void prepareLinuxGameCaptureSession(gameKey);
+    if (game?.remoteId)
+      void prepareLinuxGameCaptureSession(gameKey, "souvenir");
   }
 };
 
@@ -88,17 +96,45 @@ const enableAchievementSouvenirs = async () => {
   await prepareRunningLinuxCaptureSessions();
 };
 
-const updateAchievementSouvenirPreference = async (
-  preferences: Partial<UserPreferences>
+const ACHIEVEMENT_VIEW_PREFERENCE_KEYS = [
+  "language",
+  "showHiddenAchievementsDescription",
+] as const;
+
+const EMULATOR_ACHIEVEMENT_TRACKING_PREFERENCE_KEYS = [
+  "enableAchievementSouvenirs",
+  "retroAchievementsWebApiKey",
+  "retroAchievementsUsername",
+] as const;
+
+const updateEmulatorAchievementTracking = async (
+  preferences: Partial<UserPreferences>,
+  updatedPreferences: UserPreferences
 ) => {
-  if (!Object.hasOwn(preferences, "enableAchievementSouvenirs")) return;
+  if (
+    !EMULATOR_ACHIEVEMENT_TRACKING_PREFERENCE_KEYS.some((key) =>
+      Object.hasOwn(preferences, key)
+    )
+  ) {
+    return;
+  }
 
   if (preferences.enableAchievementSouvenirs === true) {
     await enableAchievementSouvenirs();
     return;
   }
 
-  stopAllLinuxGameCaptureSessions();
+  if (Object.hasOwn(preferences, "enableAchievementSouvenirs")) {
+    stopAllLinuxGameCaptureSessions("souvenir");
+  }
+
+  const tracking = resolveEmulatorAchievementTracking(
+    updatedPreferences,
+    HydraApi.supportsAchievementSouvenirs(),
+    process.platform
+  );
+  if (isEmulatorAchievementTrackingActive(tracking)) return;
+
   const { stopAllEmulatorSouvenirCaptureSessions } = await import(
     "@main/services/emulators/emulator-session-tracker"
   );
@@ -107,6 +143,30 @@ const updateAchievementSouvenirPreference = async (
     restoreRetroArchAchievementScreenshots(),
     restoreDuckStationFileLogging(),
   ]);
+};
+
+const unlinkRetroAchievementsEmulatorAccount = async (
+  preferences: Partial<UserPreferences>
+) => {
+  if (
+    !Object.hasOwn(preferences, "retroAchievementsWebApiKey") ||
+    preferences.retroAchievementsWebApiKey
+  ) {
+    return;
+  }
+
+  await deleteRetroAchievementsEmulatorAccount();
+};
+
+const updateScreenshotsPreference = async (
+  preferences: Partial<UserPreferences>
+) => {
+  if (!Object.hasOwn(preferences, "screenshotsEnabled")) return;
+
+  const { applyScreenshotsEnabledPreference } = await import(
+    "@main/services/screenshots"
+  );
+  await applyScreenshotsEnabledPreference(preferences.screenshotsEnabled);
 };
 
 const applyDownloadManagerPreferences = async (
@@ -164,9 +224,22 @@ const updateUserPreferences = async (
     AchievementWatcherManager.rebaselineAchievementFiles();
   }
 
-  Wine.syncUserPreferences(updatedPreferences);
+  if (
+    ACHIEVEMENT_VIEW_PREFERENCE_KEYS.some(
+      (key) =>
+        Object.hasOwn(preferences, key) &&
+        preferences[key] !== userPreferences?.[key]
+    )
+  ) {
+    UnlockedAchievementsCache.clear();
+  }
 
-  await updateAchievementSouvenirPreference(preferences);
+  Wine.syncUserPreferences(updatedPreferences);
+  ScreenshotInputService.syncUserPreferences(updatedPreferences);
+
+  await updateEmulatorAchievementTracking(preferences, updatedPreferences);
+  await unlinkRetroAchievementsEmulatorAccount(preferences);
+  await updateScreenshotsPreference(preferences);
 
   WindowManager.sendToAppWindows(
     "on-user-preferences-updated",

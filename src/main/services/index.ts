@@ -30,6 +30,7 @@ export * from "./souvenir-routes";
 export * from "./souvenir-visibility-mirror";
 export * from "./sse";
 export * from "./screenshot";
+export * from "./screenshot-input";
 export * from "./system-path";
 export * from "./disk-usage";
 export * from "./library-sync";

@@ -21,6 +21,7 @@ import type {
 } from "@types";
 import { SSEClient } from "./sse";
 import { FriendsSnapshotCache } from "./friends-snapshot";
+import { ChatOfficialMessages } from "./chat/chat-official-messages";
 import { ChatUnreadStore } from "./chat/chat-unread-store";
 import { clearChatSenderProfiles } from "./chat/chat-sender-profiles";
 import { closeChatNotifications } from "./notifications";
@@ -275,6 +276,10 @@ export class HydraApi {
     /* Same-server membership lookup for the profile badge — only exists on
        the self-hosted server */
     "/profile/members",
+    /* 1080p copies of screenshots, kept here for accounts with no
+       subscription. Official Hydra has no such path; the screenshot itself
+       stays on it. */
+    "/profile/hd-screenshots",
   ];
 
   /* Banner uploads are subscription-gated on the official API. With a REAL
@@ -309,7 +314,20 @@ export class HydraApi {
       : null;
   }
 
-  private static hasRealActiveSubscription() {
+  /**
+   * Whether the account itself has Hydra Cloud, as opposed to
+   * `hasActiveSubscription()`, which is also true while a self-hosted server
+   * stands in for one. For features only official Hydra provides — a
+   * self-hosted server can't store a higher-quality screenshot for it — the
+   * synthetic answer would ask official Hydra for something it then refuses.
+   *
+   * Without a self-hosted server the two are the same question, so this is
+   * exactly upstream's answer there, and doesn't depend on the in-memory
+   * record below having been filled yet.
+   */
+  public static hasRealActiveSubscription() {
+    if (!this.isSelfHostedCloudEnabled()) return this.hasActiveSubscription();
+
     return (
       this.realSubscriptionExpiresAt !== null &&
       this.realSubscriptionExpiresAt > new Date()
@@ -505,7 +523,30 @@ export class HydraApi {
     };
   }
 
+  /* Paths official Hydra has no answer to. */
+  private static readonly SELF_HOSTED_ONLY_PREFIXES = [
+    "/profile/hd-screenshots",
+  ];
+
   private static resolveInstance(url: string, options?: HydraApiOptions) {
+    /* What only a self-hosted server can answer must not fall back to the
+       official API when there is none: the request would carry the user's
+       screenshot ids, and whatever a failure report says about their own
+       server, to a service that cannot do anything with them. This is how
+       the server going away, or being unconfigured, between a check and a
+       request looks — so it fails here, and the caller treats it as any
+       other failed request. */
+    if (
+      !this.cloudInstance &&
+      !options?.forceOfficialApi &&
+      (options?.forceSelfHostedApi ||
+        this.SELF_HOSTED_ONLY_PREFIXES.some((prefix) => url.startsWith(prefix)))
+    ) {
+      throw new Error(
+        "A self-hosted server is not configured for this request"
+      );
+    }
+
     if (!this.cloudInstance || options?.forceOfficialApi) return this.instance;
     if (options?.forceSelfHostedApi) return this.cloudInstance;
 
@@ -577,7 +618,7 @@ export class HydraApi {
       void import("./linux-game-capture-session").then(
         ({ stopAllLinuxGameCaptureSessions }) => {
           if (!this.hasActiveSubscription()) {
-            stopAllLinuxGameCaptureSessions();
+            stopAllLinuxGameCaptureSessions("souvenir");
           }
         }
       );
@@ -787,7 +828,7 @@ export class HydraApi {
         "./linux-game-capture-session"
       );
       if (generation !== this.authContexts.generation) return;
-      stopAllLinuxGameCaptureSessions();
+      stopAllLinuxGameCaptureSessions("souvenir");
       const { groupedSouvenirWorker } = await import(
         "./achievements/grouped-souvenir-worker"
       );
@@ -919,9 +960,13 @@ export class HydraApi {
           if (error.request) {
             const errorData = error.toJSON();
             logger.error("Request error:", summarizeNetworkError(error));
+            // Keep the code so callers can tell a timeout from going offline.
             return Promise.reject(
-              new Error(
-                `Request failed with ${errorData.code} ${errorData.message}`
+              Object.assign(
+                new Error(
+                  `Request failed with ${errorData.code} ${errorData.message}`
+                ),
+                { code: errorData.code }
               )
             );
           }
@@ -974,6 +1019,7 @@ export class HydraApi {
   private static sendSignOutEvent() {
     FriendsSnapshotCache.clear();
     ChatUnreadStore.clear();
+    ChatOfficialMessages.stop();
     clearChatSenderProfiles();
     closeChatNotifications();
     // Covers the 401 path too, which never goes through the sign-out event.
@@ -1108,7 +1154,7 @@ export class HydraApi {
           "./linux-game-capture-session"
         );
         if (signedOutGeneration !== this.authContexts.generation) throw err;
-        stopAllLinuxGameCaptureSessions();
+        stopAllLinuxGameCaptureSessions("souvenir");
         const { groupedSouvenirWorker } = await import(
           "./achievements/grouped-souvenir-worker"
         );

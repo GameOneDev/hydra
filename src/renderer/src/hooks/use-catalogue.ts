@@ -72,17 +72,21 @@ export function useCatalogue() {
   }, [dispatch, i18n.language]);
 
   const getSteamPublishers = useCallback(() => {
-    window.electron.hydraApi
-      .get<string[]>("/catalogue/steam/publishers", { needsAuth: false })
+    window.electron
+      .getCatalogueNames("publishers")
       .then(setSteamPublishers)
-      .catch(logCatalogueError("/catalogue/steam/publishers"));
+      .catch((error) => {
+        logger.error("Failed to load Steam publishers", error);
+      });
   }, []);
 
   const getSteamDevelopers = useCallback(() => {
-    window.electron.hydraApi
-      .get<string[]>("/catalogue/steam/developers", { needsAuth: false })
+    window.electron
+      .getCatalogueNames("developers")
       .then(setSteamDevelopers)
-      .catch(logCatalogueError("/catalogue/steam/developers"));
+      .catch((error) => {
+        logger.error("Failed to load Steam developers", error);
+      });
   }, []);
 
   const getDownloadSources = useCallback(() => {

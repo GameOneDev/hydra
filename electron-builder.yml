@@ -3,6 +3,19 @@ productName: Hydra
 beforePack: scripts/legendary-before-pack.cjs
 afterPack: scripts/legendary-after-pack.cjs
 afterSign: scripts/legendary-after-pack.cjs
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableCookieEncryption: true
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: true
+  # Flipping a fuse rewrites a page of the Electron Framework that the macOS
+  # code signature hashes. Apple Silicon kills the app on first touch of that
+  # page ("Code Signature Invalid"), so the app is re-signed ad-hoc right after
+  # the flip. CI builds with no signing identity, so nothing signs it later.
+  resetAdHocDarwinSignature: true
 directories:
   buildResources: build
 extraResources:
@@ -83,10 +96,10 @@ mac:
         - NOTICE.md
     - from: binaries/7zz
   extendInfo:
-    - NSCameraUsageDescription: Application requests access to the device's camera.
-    - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
-    - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
-    - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    NSCameraUsageDescription: Application requests access to the device's camera.
+    NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   notarize: false
 dmg:
   artifactName: ${name}-${version}-macos-${arch}.${ext}

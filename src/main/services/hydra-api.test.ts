@@ -161,6 +161,8 @@ async function fixture(t: TestContext, apiUrl = "http://localhost:3000") {
     "./friends-snapshot": "export const FriendsSnapshotCache = { clear() {} };",
     "./chat/chat-unread-store":
       "export const ChatUnreadStore = { clear() {} };",
+    "./chat/chat-official-messages":
+      "export const ChatOfficialMessages = { stop() {} };",
     "./chat/chat-sender-profiles":
       "export const clearChatSenderProfiles = () => {};",
     "./notifications": "export const closeChatNotifications = () => {};",
@@ -563,4 +565,92 @@ test("existing HTTP contracts and optional integration failures preserve Hydra l
   assert.equal(f.api.isLoggedIn(), true);
   await assert.rejects(f.api.get(endpoint));
   assert.equal(f.api.isLoggedIn(), false);
+});
+
+test("errors without a response keep their code", async (t) => {
+  const f = await fixture(t);
+  await f.signIn("A");
+  f.hooks.request = async (request) => {
+    throw new AxiosError(
+      "timeout of 5000ms exceeded",
+      "ECONNABORTED",
+      request.config,
+      {}
+    );
+  };
+  await assert.rejects(f.api.get(endpoint), {
+    message: "Request failed with ECONNABORTED timeout of 5000ms exceeded",
+    code: "ECONNABORTED",
+  });
+  assert.equal(f.api.isLoggedIn(), true);
+});
+
+test("a self-hosted server counts as a subscription but not as a real one", async (t) => {
+  const { api } = await fixture(t);
+  const userAuth = Reflect.get(api, "userAuth");
+  const future = new Date(Date.now() + 86_400_000);
+  const past = new Date(Date.now() - 86_400_000);
+
+  // Without a self-hosted server the two questions are one: upstream's answer,
+  // whether or not anything has been recorded about the real subscription yet.
+  userAuth.subscription = { expiresAt: future.toISOString() };
+  assert.equal(api.hasActiveSubscription(), true);
+  assert.equal(api.hasRealActiveSubscription(), true);
+  userAuth.subscription = null;
+  assert.equal(api.hasActiveSubscription(), false);
+  assert.equal(api.hasRealActiveSubscription(), false);
+
+  // With one configured the launcher is subscribed, but only an account that
+  // really has Hydra Cloud may ask official Hydra for what it reserves to it.
+  Reflect.set(api, "selfHostedCloudUrl", "http://self-hosted.test");
+  assert.equal(api.hasActiveSubscription(), true);
+  assert.equal(api.hasRealActiveSubscription(), false);
+  api.syncRealSubscription({ expiresAt: past });
+  assert.equal(api.hasRealActiveSubscription(), false);
+  api.syncRealSubscription({ expiresAt: future });
+  assert.equal(api.hasRealActiveSubscription(), true);
+});
+
+test("what only a self-hosted server can answer never goes to official Hydra when there is none", async (t) => {
+  const { api, requests, signIn } = await fixture(t);
+  await signIn("a");
+  const before = requests.length;
+
+  // The server was unconfigured between the caller's check and its request.
+  assert.equal(Reflect.get(api, "cloudInstance"), null);
+
+  await assert.rejects(
+    api.post(
+      "/profile/hd-screenshots/s1/failure",
+      { stage: "upload", message: "connect ECONNREFUSED 10.0.0.9:8788" },
+      { forceSelfHostedApi: true }
+    ),
+    /self-hosted server is not configured/
+  );
+  await assert.rejects(
+    api.post("/profile/hd-screenshots/lookup", { screenshots: [] }),
+    /self-hosted server is not configured/,
+    "the path alone is enough: official has no answer to it"
+  );
+  await assert.rejects(
+    api.get("/profile/anything", {}, { forceSelfHostedApi: true }),
+    /self-hosted server is not configured/
+  );
+
+  assert.deepEqual(
+    requests.slice(before),
+    [],
+    "nothing was sent to the official API"
+  );
+});
+
+test("a request for official Hydra is not affected by there being no self-hosted server", async (t) => {
+  const { api, requests, signIn } = await fixture(t);
+  await signIn("a");
+  const before = requests.length;
+
+  await api.get("/profile/anything", {}, { forceOfficialApi: true });
+  await api.get("/profile/anything");
+
+  assert.equal(requests.length - before, 2);
 });
