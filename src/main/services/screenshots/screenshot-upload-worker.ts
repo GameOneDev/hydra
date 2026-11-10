@@ -24,6 +24,13 @@ import { logger } from "../logger";
 import { WindowManager } from "../window-manager";
 import { LocalScreenshotStore } from "./local-screenshot-store";
 import { compressScreenshotForUpload } from "./screenshot-compression";
+import {
+  attemptHdCopy,
+  deleteHdCopy,
+  getNextHdCopyAttemptAt,
+  retryPendingHdCopies,
+  shouldKeepHdCopies,
+} from "./screenshot-hd-copies";
 import { ScreenshotTelemetry } from "./screenshot-telemetry";
 import { ScreenshotUploadNotifier } from "./screenshot-upload-notifier";
 import {
@@ -43,6 +50,10 @@ const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 const IMAGE_PROGRESS_SHARE = 0.9;
 const THUMBNAIL_PROGRESS_SHARE = 0.07;
 const MIN_SCHEDULED_RUN_DELAY_MS = 1_000;
+/* A 1080p copy that is waiting is retried on its own, slower clock, and never
+   faster than this: nothing about one is urgent, and a copy that keeps failing
+   in a way that records nothing must not turn into a busy loop. */
+const MIN_HD_COPY_RUN_DELAY_MS = 60_000;
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 class UploadPutError extends Error {
@@ -302,7 +313,19 @@ class ScreenshotUploadWorker {
     await LocalScreenshotStore.update(screenshot.clientId, {
       moderationStatus: result.moderationStatus,
       moderationReason: result.moderationReason ?? null,
+      ...(result.moderationStatus === "BLOCKED" && screenshot.hdCopy
+        ? {
+            hdCopy: {
+              ...screenshot.hdCopy,
+              state: "skipped" as const,
+              nextAttemptAt: null,
+            },
+          }
+        : {}),
     });
+
+    /* Official Hydra's moderation outranks a copy it knows nothing about. */
+    if (result.moderationStatus === "BLOCKED") void deleteHdCopy(result.id);
   }
 
   private handleAuthContextChange() {
@@ -381,6 +404,10 @@ class ScreenshotUploadWorker {
 
     await this.processQueue(queued, ownerId, authContext);
     if (!HydraApi.isAuthContextCurrent(authContext)) return;
+
+    /* Not awaited: copies are a nicety, and a slow server must not hold up the
+       next screenshot's official upload. */
+    void retryPendingHdCopies(ownerId);
 
     await ScreenshotUploadNotifier.refresh();
   }
@@ -567,9 +594,25 @@ class ScreenshotUploadWorker {
         nextUploadAttemptAt: null,
         pendingCompleteScreenshotId: null,
         lastError: null,
+        /* An account with no subscription gets 720p from official Hydra; the
+           self-hosted server is asked to keep a 1080p copy. Recorded here, on
+           the screenshot, so a copy that could not be made now still is later,
+           even across a restart. */
+        ...(shouldKeepHdCopies() && !current.hdCopy
+          ? {
+              hdCopy: {
+                state: "pending" as const,
+                attempts: 0,
+                nextAttemptAt: null,
+              },
+            }
+          : {}),
       };
     });
     emitProgress({ clientId, state: "uploaded", progress: 1 });
+
+    /* Not awaited, for the same reason as the retries. */
+    void attemptHdCopy(clientId);
   }
 
   private async updateInState(
@@ -744,12 +787,25 @@ class ScreenshotUploadWorker {
       .filter((screenshot) => screenshot.state === "queued")
       .map((screenshot) => screenshot.nextUploadAttemptAt ?? now)
       .toSorted((a, b) => a - b)[0];
-    if (nextRetryAt === undefined) return;
 
-    const delay = Math.min(
-      Math.max(MIN_SCHEDULED_RUN_DELAY_MS, nextRetryAt - now),
-      MAX_TIMER_DELAY_MS
-    );
+    /* Only worth waking for while a self-hosted server is configured: the
+       copies are made there, and until it has answered its probe a pass finds
+       nothing it may do yet. */
+    const nextHdCopyAt = HydraApi.isSelfHostedCloudEnabled()
+      ? getNextHdCopyAttemptAt(owned, ownerId, now)
+      : undefined;
+
+    const delays = [
+      nextRetryAt === undefined
+        ? null
+        : Math.max(MIN_SCHEDULED_RUN_DELAY_MS, nextRetryAt - now),
+      nextHdCopyAt === undefined
+        ? null
+        : Math.max(MIN_HD_COPY_RUN_DELAY_MS, nextHdCopyAt - now),
+    ].filter((delay): delay is number => delay !== null);
+    if (!delays.length) return;
+
+    const delay = Math.min(Math.min(...delays), MAX_TIMER_DELAY_MS);
     this.retryTimer = setTimeout(() => void this.trigger(), delay);
     this.retryTimer.unref?.();
   }

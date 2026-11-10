@@ -276,6 +276,10 @@ export class HydraApi {
     /* Same-server membership lookup for the profile badge — only exists on
        the self-hosted server */
     "/profile/members",
+    /* 1080p copies of screenshots, kept here for accounts with no
+       subscription. Official Hydra has no such path; the screenshot itself
+       stays on it. */
+    "/profile/hd-screenshots",
   ];
 
   /* Banner uploads are subscription-gated on the official API. With a REAL
@@ -519,7 +523,30 @@ export class HydraApi {
     };
   }
 
+  /* Paths official Hydra has no answer to. */
+  private static readonly SELF_HOSTED_ONLY_PREFIXES = [
+    "/profile/hd-screenshots",
+  ];
+
   private static resolveInstance(url: string, options?: HydraApiOptions) {
+    /* What only a self-hosted server can answer must not fall back to the
+       official API when there is none: the request would carry the user's
+       screenshot ids, and whatever a failure report says about their own
+       server, to a service that cannot do anything with them. This is how
+       the server going away, or being unconfigured, between a check and a
+       request looks — so it fails here, and the caller treats it as any
+       other failed request. */
+    if (
+      !this.cloudInstance &&
+      !options?.forceOfficialApi &&
+      (options?.forceSelfHostedApi ||
+        this.SELF_HOSTED_ONLY_PREFIXES.some((prefix) => url.startsWith(prefix)))
+    ) {
+      throw new Error(
+        "A self-hosted server is not configured for this request"
+      );
+    }
+
     if (!this.cloudInstance || options?.forceOfficialApi) return this.instance;
     if (options?.forceSelfHostedApi) return this.cloudInstance;
 
