@@ -49,7 +49,14 @@ jobs:
 
     strategy:
       matrix:
-        os: [windows-2022, ubuntu-latest]
+        # One runner per bundle: windows-2022, ubuntu-latest and macos-15-intel
+        # build x64; windows-11-arm and macos-latest build arm64.
+        os:
+          - windows-2022
+          - windows-11-arm
+          - ubuntu-latest
+          - macos-latest
+          - macos-15-intel
       fail-fast: false
 
     runs-on: ${{ matrix.os }}
@@ -89,6 +96,42 @@ jobs:
       - name: Install Linux native build prerequisites
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build pkg-config curl zip unzip tar autoconf automake libtool
+
+      # The windows-11-arm image now ships only Visual Studio 2026, which the
+      # bridge's CMake and vcpkg setup cannot use yet. Install the VS 2022 C++
+      # tools and pin the build to them, as the Build workflow does.
+      - name: Install Visual Studio 2022 C++ build tools
+        if: matrix.os == 'windows-11-arm'
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $components = @(
+            "Microsoft.VisualStudio.Component.VC.Tools.ARM64",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+          )
+          function Find-BuildTools {
+            & $vswhere -products "*" -version "[17.0,18.0)" -requires $components -latest -property installationPath
+          }
+          $installPath = Find-BuildTools
+          if (-not $installPath) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP "vs_buildtools.exe"
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $bootstrapper
+            $arguments = @(
+              "--quiet", "--wait", "--norestart", "--nocache",
+              "--add", "Microsoft.VisualStudio.Workload.VCTools",
+              "--add", "Microsoft.VisualStudio.Component.Windows11SDK.26100"
+            ) + ($components | ForEach-Object { "--add", $_ })
+            $setup = Start-Process -FilePath $bootstrapper -ArgumentList $arguments -Wait -PassThru
+            if ($setup.ExitCode -notin 0, 3010) {
+              throw "Visual Studio 2022 Build Tools setup exited with code $($setup.ExitCode)"
+            }
+            $installPath = Find-BuildTools
+          }
+          if (-not $installPath) {
+            throw "Visual Studio 2022 C++ build tools were not found after setup"
+          }
+          "CMAKE_GENERATOR=Visual Studio 17 2022" >> $env:GITHUB_ENV
+          "VCPKG_VISUAL_STUDIO_PATH=$installPath" >> $env:GITHUB_ENV
 
       # The checkout carries every platform's committed bundle; drop them so
       # this job's artifact holds only the one it builds.
