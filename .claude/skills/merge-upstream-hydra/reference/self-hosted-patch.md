@@ -51,6 +51,7 @@ These are where a text merge succeeded and the feature quietly stopped working.
 | `automatic-sync-mode.ts`, `automatic-sync-settings.ts`, `get-cloud-save-v2-supported.ts` | Capability list per shop and object id (`cloud-saves-v2`, `-epic`, `-recompilation`) | Both sides add parameters; keep the fork's order |
 | `hydra-api-call.ts` + `screenshot-hd-copies.ts` | The bridge hook that swaps in the self-hosted 1080p copy and mirrors deletes | A new screenshot endpoint the hook does not know about |
 | `electron-builder.yml` | `electronFuses.resetAdHocDarwinSignature: true`, `mac.extendInfo` as a **map** | Upstream edits the same block; losing the first crashes macOS arm64 at launch ("Code Signature Invalid"). `scripts/electron-builder-config.test.mjs` pins both |
+| Renderer host components: `header.tsx` and `bottom-panel.tsx` (both deleted by upstream in 4.4.1) | Where the fork's UI is mounted: `SelfHostedStatusIndicator`, the Steam import button (`importSteamGames`) | Upstream redesigns or deletes the host component (4.4.1 removed the header and bottom panel); the fork's component still compiles but nothing renders it. After a merge, `git grep` each fork component for a caller |
 | `.github/workflows/release.yml`, `build.yml` | The fork's Windows ARM build step and artifact settings | Conflicts on every merge |
 
 Fork-only files (new, so they cannot conflict, but check they still compile):
@@ -59,6 +60,11 @@ Fork-only files (new, so they cannot conflict, but check they still compile):
 `self-hosted-artwork*.ts`, `settings-context-cloud-saves.tsx`,
 `src/shared/self-hosted-url.ts`, `src/types/self-hosted.types.ts`,
 `src/shared/souvenirs.ts`, `screenshot-hd-copies*.ts`.
+
+The fork also has features that are not part of the self-hosted layer, so the
+marker check in `merge_integrity.py` does not watch them: the Steam library
+import (`import-steam-games.ts`), the Windows ARM build
+(`electron-builder-win-arm64.yml`). List them all with the first command under "Verify this map".
 
 ## What stays on official Hydra (so a new one is not a server task)
 

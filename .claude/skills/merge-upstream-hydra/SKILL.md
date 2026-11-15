@@ -42,16 +42,21 @@ back in a rewrite passes silently. Read `reference/self-hosted-patch.md` before 
 ## 0. Orient
 
 ```bash
-git remote -v                                   # origin = the fork, upstream = hydralauncher/hydra
+git remote get-url upstream 2>/dev/null || git remote add upstream https://github.com/hydralauncher/hydra
+[ "$(git rev-parse --is-shallow-repository)" = true ] && git fetch --unshallow origin main
 git fetch origin main && git fetch upstream --tags
 SEMVER='^v[0-9]+\.[0-9]+\.[0-9]+$'               # upstream has stray tags (v.2.1.5, v1.0.0+steamdb-rotation)
 OLD=$(git tag -l --merged origin/main | grep -E "$SEMVER" | sort -V | tail -1)   # the release the fork has
 git tag -l | grep -E "$SEMVER" | sort -V | awk -v o="$OLD" 'f{print} $0==o{f=1}'  # releases after it
 NEW=${ARGUMENTS:-<the newest of those>}
 git rev-list --count $OLD..$NEW; git diff --shortstat $OLD $NEW
-git log --merges --format=%s $OLD..$NEW | grep 'Merge pull request'   # the changelog
+git log --merges --format='%s: %b' $OLD..$NEW | grep 'Merge pull request'   # the changelog (%b is the PR title)
 git -C ../hydra-server log -1 --format='%h %s' origin/main            # the server's state
 ```
+
+A fresh cloud checkout has no `upstream` remote and is a shallow clone (50 commits); the
+first two lines fix both. On a shallow clone the merge base in step 1 can be wrong or
+missing, so do not skip the unshallow (about 15 seconds).
 
 An upstream tag is not always an ancestor of the fork's `main` even when its content is in
 (`v4.3.0` is a merge commit on upstream's release branch, so `--no-merged` lists it as
@@ -70,10 +75,11 @@ git merge-base --all origin/main $NEW           # one base = easy; several = cri
 git merge-tree --write-tree --name-only origin/main $NEW   # exit 0 clean, 1 conflicts
 ```
 
-- **One merge base** (normally OLD itself): merge `$NEW` into a branch made from
+- **One merge base** (OLD, or the upstream commit OLD's release branch came from): merge `$NEW` into a branch made from
   `origin/main`. Expect a handful of conflicts (4.4.0 had four; 4.4.1 would have eight).
 - **Several bases, or a conflict count in the hundreds:** git picked a bad base. Try each
-  candidate with `git merge-tree --write-tree --name-only --merge-base=<c> origin/main $NEW`
+  candidate with
+  `git merge-tree --write-tree --name-only --merge-base=<c> origin/main $NEW`
   and take the upstream commit with the fewest conflicts (for 4.3.0, git's own base gave
   about 100 conflicts and the last upstream commit before the changelog, `1b900e1`, gave 25).
   Then merge with that base explicitly (step 3).
@@ -139,11 +145,27 @@ In the conflict markers the first side is the fork's and the second is upstream'
 labels are temporary file names, not branch names. A commit with one parent is not a
 merge: do not push it.
 
+`git status --short` shows two kinds of conflict. `UU` has markers in the file. `UD` (the
+fork changed a file upstream deleted) and `DU` have **no markers**, so the marker grep
+below does not see them, and they are the ones that lose a fork feature silently:
+upstream moved or removed the code, the fork's addition has nowhere to live, and deleting
+the file still compiles. For each one:
+
+```bash
+git diff $(git merge-base origin/main $NEW) origin/main -- <file>   # what the fork had added there
+git log --format='%h %s' --diff-filter=D $OLD..$NEW -- <file>       # the upstream commit that removed it, and why
+```
+
+Put the fork's addition where upstream moved that code (4.4.1 deleted `header.tsx` and
+`bottom-panel.tsx` for a single title bar; the fork's Steam import button and self-hosted
+status indicator were only reachable from them), then `git rm <file>`. If the feature has
+no natural new home, that is a decision for the user, not a silent drop.
+
 Resolve each conflict by understanding both sides: why the fork changed it
 (`git log -S'<line>' origin/main -- <file>`) and what upstream changed (its PR title in
 the changelog). Keep both intents. The usual conflict files are listed in
 `reference/self-hosted-patch.md`. Before committing, `git diff --check` and
-`git grep -n -E '^(<<<<<<<|>>>>>>>)'` find nothing.
+`git grep -n -E '^(<<<<<<<|>>>>>>>)'` find nothing and `git ls-files -u` is empty.
 
 Do not hand-edit a conflict you do not understand to make it compile. A text merge hides
 compile errors (a dropped declaration, a duplicate import), which step 5 finds.
@@ -156,14 +178,19 @@ python3 -I .claude/skills/merge-upstream-hydra/scripts/merge_integrity.py \
     [--known-edit <file> ...]
 ```
 
-It classifies every file by who changed it since the common base. Read the output in this order:
+Run it on the **committed** merge: with conflicts still open HEAD is still `main`, and the
+script stops (exit 2) rather than report every upstream file as a violation. It classifies
+every file by who changed it since the common base. Read the output in this order:
 
 1. **VIOLATIONS**: a file only upstream changed that no longer matches upstream's, or
    one only the fork changed that no longer matches the fork's. Each is either a patch
    point re-applied on purpose (name it with `--known-edit` once you have checked it)
    or a mistake. The goal is zero unexplained.
 2. **TOOK UPSTREAM'S VERSION of a file the fork also changed**: the fork's change is gone
-   from that file. Confirm it was re-applied at the callers, or is obsolete.
+   from that file. Confirm it was re-applied at the callers, or is obsolete. A line marked
+   `[DELETED in HEAD]` is a file upstream removed that the fork had patched: check that
+   what the fork added is reachable from somewhere else (`git grep` the component or
+   handler name; an unused component still typechecks).
 3. **SELF-HOSTED MARKERS that went down**: calls into the fork's layer that vanished. This
    is the check that catches a patch point a clean-looking merge dropped.
 4. **REAL MERGES**: the review surface; skim the ones in the map.
@@ -177,7 +204,7 @@ pins the macOS signing settings). Re-run until step 1 is empty.
 
 ```bash
 yarn install --frozen-lockfile --ignore-scripts
-yarn typecheck                     # node and web; the text merge hides errors here
+yarn typecheck                     # node and web, under a minute; the text merge hides errors here
 (timeout 570 yarn -s test > /tmp/test.log 2>&1; echo "EXIT:$?" >> /tmp/test.log)   # several minutes
 grep -E '^# (tests|pass|fail|skipped)|EXIT:' /tmp/test.log
 npx eslint <changed files>; npx prettier --check <changed files>; npx commitlint --last

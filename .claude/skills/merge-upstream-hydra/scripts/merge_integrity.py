@@ -16,7 +16,7 @@ Every file is classified by who changed it since BASE:
 A file that breaks the first two rules is a VIOLATION unless it is named with
 --known-edit (a file the merge was meant to change: a build fix, a patch point
 re-applied where upstream rewrote the code). The exit status is 1 when there
-are violations, so an unexpected one fails loudly.
+are violations, so an unexpected one fails loudly (2: nothing was checked).
 
 It also looks for the self-hosted patch itself: files where the number of
 MARKERS (calls into the fork's self-hosted layer) is lower in HEAD than in MAIN.
@@ -27,6 +27,10 @@ feature quietly stops working with a self-hosted server.
 MAIN is the fork's main as it was BEFORE the merge, not after: pass the commit
 the merge branch was created from (for example `origin/main` while the branch
 is unmerged, or `<merge-commit>^1` afterwards).
+
+HEAD has to be the COMMITTED merge. While conflicts are still open HEAD is
+still MAIN, and every file upstream changed would be reported as a violation,
+so the script stops with exit status 2 instead.
 """
 import argparse
 import fnmatch
@@ -101,6 +105,17 @@ def main():
     args = ap.parse_args()
 
     repo = args.repo
+    contains_upstream = subprocess.run(
+        ["git", "-C", repo, "merge-base", "--is-ancestor", args.upstream, args.head]
+    ).returncode == 0
+    if not contains_upstream:
+        print(
+            f"{args.head} does not contain {args.upstream}: the merge is not committed yet "
+            "(or was committed with one parent).\nResolve the conflicts and commit the merge, "
+            "then run this again. Nothing was checked.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
     base = resolve_base(repo, args.main, args.upstream, args.base)
     print(f"BASE     {base[:12]}\nMAIN     {args.main}\nUPSTREAM {args.upstream}\nHEAD     {args.head}\n")
 
@@ -149,7 +164,11 @@ def main():
     def show(title, group, why):
         print(f"\n{title}: {len(group)}\n  ({why})")
         for path in group:
-            print(f"  {path}")
+            note = ""
+            if path not in h:
+                # One side deleted it and HEAD followed: the other side's edits went with it.
+                note = "   [DELETED in HEAD: the other side's edits to it are gone; re-home them]"
+            print(f"  {path}{note}")
 
     show("TOOK MAIN'S VERSION of a file upstream also changed", took_main,
          "upstream's change to it is NOT in HEAD; confirm that was intended")
