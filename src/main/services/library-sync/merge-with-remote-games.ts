@@ -3,6 +3,7 @@ import {
   hasPendingHydraClaim,
   getEpicLibraryConnectionRevision,
   getHydraPlaytimeRevision,
+  getCollectionOrderRevision,
 } from "./library-write-queue";
 import type { HydraApiAuthContext } from "../hydra-auth-context";
 import type { EpicConnection } from "../../../types/epic-integration.types";
@@ -36,6 +37,7 @@ import {
   type SelfHostedArtworkMap,
 } from "./self-hosted-artwork";
 import {
+  keepNewerLocalCollectionOrders,
   mergeImportedProfileGame,
   type ImportedProfileGame,
 } from "./merge-imported-profile-game";
@@ -47,6 +49,7 @@ import {
 import {
   mergeLocalAndRemotePlayTime,
   mergeLibraryCatalogueMetadata,
+  pickLibraryCollectionPositions,
   preserveEpicDefaultArtwork,
 } from "@shared";
 import { mergePersistedAchievementTotals } from "../achievements/achievement-memory-store";
@@ -61,6 +64,7 @@ type ProfileGame = {
   createdAt?: string | null;
   collectionIds?: string[];
   collectionId?: string | null;
+  collectionPositions?: Record<string, number>;
   lastTimePlayed: Date | null;
   playTimeInMilliseconds: number;
   playTimeInSeconds?: number;
@@ -397,11 +401,17 @@ const buildMergedGame = (
   const collectionIds = hasRemoteCollectionField
     ? getCollectionIds(remoteGame)
     : getCollectionIds(localGame);
+  const collectionPositions = pickLibraryCollectionPositions(
+    Object.hasOwn(remoteGame, "collectionPositions")
+      ? remoteGame.collectionPositions
+      : localGame?.collectionPositions,
+    collectionIds
+  );
   const remoteAddedToLibraryAt = remoteGame.createdAt
     ? new Date(remoteGame.createdAt)
     : null;
 
-  return localGame
+  const mergedGame = localGame
     ? mergeExistingGame(
         localGame,
         remoteGame,
@@ -415,6 +425,8 @@ const buildMergedGame = (
         remoteAddedToLibraryAt,
         remoteCustomAssets
       );
+
+  return { ...mergedGame, collectionPositions };
 };
 
 const mergeRemoteGamesChunk = async (
@@ -424,6 +436,7 @@ const mergeRemoteGamesChunk = async (
   context: HydraApiAuthContext | null,
   epicConnectionId: string | undefined,
   hydraRevision: number,
+  collectionOrderRevision: number,
   current: () => boolean
 ) => {
   const remoteCustomAssets = remoteGames.map((game) =>
@@ -471,6 +484,12 @@ const mergeRemoteGamesChunk = async (
             localGame.hasManuallyUpdatedPlaytime;
           merged.lastTimePlayed = localGame.lastTimePlayed;
         }
+        if (localGame)
+          merged.collectionPositions = keepNewerLocalCollectionOrders(
+            merged,
+            localGame,
+            collectionOrderRevision
+          );
         if (remoteGame.hasActiveEpicImport && context && epicConnectionId)
           merged.epicImportScope = {
             environment: context.environment,
@@ -640,6 +659,7 @@ const mergeWithRemoteGamesOnce = async (
   const context = capturedContext ?? HydraApi.getAuthContext();
   const revision = getEpicLibraryConnectionRevision();
   const hydraRevision = getHydraPlaytimeRevision();
+  const collectionOrderRevision = getCollectionOrderRevision();
   const current = () =>
     (context
       ? HydraApi.isAuthContextCurrent(context)
@@ -700,6 +720,7 @@ const mergeWithRemoteGamesOnce = async (
         context,
         epicConnectionId,
         hydraRevision,
+        collectionOrderRevision,
         current
       );
       if (!current()) return false;
@@ -827,43 +848,76 @@ export const mergeWithRemoteGamesUnlessFresh = (maxAgeMs: number) => {
 
 // Emulator imports already have catalogue assets and ROM metadata locally.
 // Fetch only the profile-owned fields for the games touched by the import.
+const mergeImportedProfileGameChunk = async (
+  shop: Game["shop"],
+  objectIds: string[],
+  collectionOrderRevision: number
+) => {
+  const remoteGames = await Promise.all(
+    objectIds.map(async (objectId) => {
+      try {
+        const remoteGame = await HydraApi.get<ImportedProfileGame>(
+          `/profile/games/${encodeURIComponent(shop)}/${encodeURIComponent(objectId)}`
+        );
+
+        if (remoteGame.shop !== shop || remoteGame.objectId !== objectId) {
+          return null;
+        }
+
+        return remoteGame;
+      } catch {
+        return null;
+      }
+    })
+  );
+  const fetchedGames = remoteGames.filter(
+    (remoteGame): remoteGame is ImportedProfileGame => remoteGame !== null
+  );
+  if (fetchedGames.length === 0) return;
+
+  await libraryWriteQueue.run(async () => {
+    const gameKeys = fetchedGames.map((remoteGame) =>
+      levelKeys.game(remoteGame.shop, remoteGame.objectId)
+    );
+    const localGames = await gamesSublevel.getMany(gameKeys);
+    const updates = fetchedGames.flatMap((remoteGame, index) => {
+      const localGame = localGames[index];
+      return localGame
+        ? [
+            {
+              type: "put" as const,
+              key: gameKeys[index],
+              value: mergeImportedProfileGame(
+                localGame,
+                remoteGame,
+                collectionOrderRevision
+              ),
+            },
+          ]
+        : [];
+    });
+    if (updates.length) await gamesSublevel.batch(updates);
+  });
+};
+
 export const mergeImportedProfileGames = async (
   shop: Game["shop"],
   objectIds: string[]
 ) => {
-  const uniqueObjectIds = Array.from(new Set(objectIds));
+  const collectionOrderRevision = getCollectionOrderRevision();
 
-  for (const objectIdChunk of chunk(
-    uniqueObjectIds,
+  await chunk(
+    Array.from(new Set(objectIds)),
     TARGETED_MERGE_CONCURRENCY
-  )) {
-    const remoteGames = await Promise.all(
-      objectIdChunk.map(async (objectId) => {
-        try {
-          const remoteGame = await HydraApi.get<ImportedProfileGame>(
-            `/profile/games/${encodeURIComponent(shop)}/${encodeURIComponent(objectId)}`
-          );
-
-          if (remoteGame.shop !== shop || remoteGame.objectId !== objectId) {
-            return null;
-          }
-
-          return remoteGame;
-        } catch {
-          return null;
-        }
-      })
-    );
-
-    for (const remoteGame of remoteGames) {
-      if (!remoteGame) continue;
-      const gameKey = levelKeys.game(remoteGame.shop, remoteGame.objectId);
-      const localGame = await gamesSublevel.get(gameKey);
-      if (!localGame) continue;
-      await gamesSublevel.put(
-        gameKey,
-        mergeImportedProfileGame(localGame, remoteGame)
-      );
-    }
-  }
+  ).reduce(
+    (previous, objectIdChunk) =>
+      previous.then(() =>
+        mergeImportedProfileGameChunk(
+          shop,
+          objectIdChunk,
+          collectionOrderRevision
+        )
+      ),
+    Promise.resolve()
+  );
 };

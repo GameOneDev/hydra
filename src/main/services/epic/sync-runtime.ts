@@ -19,6 +19,7 @@ import {
 } from "../library-sync/merge-imported-profile-game";
 import {
   getHydraPlaytimeRevision,
+  getCollectionOrderRevision,
   libraryWriteQueue,
 } from "../library-sync/library-write-queue";
 import {
@@ -570,6 +571,7 @@ export class EpicSyncRuntime {
           }
         );
       const hydraRevision = getHydraPlaytimeRevision(key);
+      const collectionOrderRevision = getCollectionOrderRevision();
       const remote = await this.ownGame(context, objectId, controller.signal);
       if (!remote) return null;
       await libraryWriteQueue.run(
@@ -585,7 +587,11 @@ export class EpicSyncRuntime {
             )
           )
             return;
-          const merged = mergeImportedProfileGame(latest, remote);
+          const merged = mergeImportedProfileGame(
+            latest,
+            remote,
+            collectionOrderRevision
+          );
           if (getHydraPlaytimeRevision(key) !== hydraRevision) {
             merged.playTimeInMilliseconds = latest.playTimeInMilliseconds;
             merged.lastTimePlayed = latest.lastTimePlayed;

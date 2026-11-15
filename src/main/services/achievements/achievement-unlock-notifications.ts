@@ -105,13 +105,17 @@ export const publishAchievementUnlockNotifications = ({
     return;
   }
 
-  const publishOsNotification = () =>
+  const publishOsNotification = (
+    achievements: AchievementNotificationInfo[],
+    suppressSound = false
+  ) =>
     publishNewAchievementNotification({
-      achievements: achievementsInfo,
+      achievements,
       unlockedAchievementCount,
       totalAchievementCount,
       gameTitle: game.title,
       gameIcon: game.iconUrl,
+      suppressSound,
     });
 
   if (process.platform === "linux") {
@@ -120,14 +124,21 @@ export const publishAchievementUnlockNotifications = ({
       WindowManager.sendAchievementToFocusedWindow(position, achievementsInfo);
 
     if (!shownInApp) {
-      void publishOsNotification();
+      void publishOsNotification(achievementsInfo);
     }
   } else if (customNotificationsOnly) {
     achievementNotificationPresenter.enqueueAchievements(
       position,
-      achievementsInfo
+      achievementsInfo,
+      (requests, soundPlayed) =>
+        publishOsNotification(
+          requests.flatMap((request) =>
+            request.type === "achievement" ? [request.achievement] : []
+          ),
+          soundPlayed
+        )
     );
   } else {
-    void publishOsNotification();
+    void publishOsNotification(achievementsInfo);
   }
 };
