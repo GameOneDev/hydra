@@ -45,7 +45,6 @@ import {
   GameContextMenu,
 } from "@renderer/components";
 import { SidebarAddingCustomGameModal } from "@renderer/components/sidebar/sidebar-adding-custom-game-modal";
-import SteamLogo from "@renderer/assets/steam-logo.svg?react";
 import { useCollectionContextMenu, useScanGames } from "@renderer/context";
 import {
   getGameCollectionIds,
@@ -63,6 +62,7 @@ import {
 import { CategoryFilter, LibraryCategory } from "./category-filter";
 import { LibraryFiltersMenu } from "./library-filters-menu";
 import { LibraryGamesSkeleton } from "./library-games-skeleton";
+import { LibrarySteamImportButton } from "./library-steam-import-button";
 import {
   getLibraryGameOrderKey,
   moveLibraryGameInCustomOrder,
@@ -178,7 +178,7 @@ const SORT_OPTIONS: SortOption[] = [
 
 export default function Library() {
   const { library, updateLibrary } = useLibrary();
-  const { showErrorToast, showSuccessToast, showWarningToast } = useToast();
+  const { showErrorToast, showSuccessToast } = useToast();
   const { userDetails } = useUserDetails();
   const accountId = userDetails?.id ?? null;
   const activeAccountIdRef = useRef(accountId);
@@ -279,7 +279,6 @@ export default function Library() {
     useState(false);
   const [showAddGameModal, setShowAddGameModal] = useState(false);
   const { isScanSupported, isScanning, openScanModal } = useScanGames();
-  const [isImportingSteamGames, setIsImportingSteamGames] = useState(false);
 
   const [storedFilters] = useState(() =>
     readStoredLibraryFilters(
@@ -407,37 +406,6 @@ export default function Library() {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const dispatch = useAppDispatch();
   const { t } = useTranslation(["library", "sidebar"]);
-
-  /* The fork's one-click Steam import. It lived in the page header, which
-     upstream removed in 4.4.1, so it sits with the other library actions. */
-  const handleImportSteamGames = async () => {
-    if (isImportingSteamGames) return;
-
-    setIsImportingSteamGames(true);
-
-    try {
-      const result = await window.electron.importSteamGames();
-
-      updateLibrary();
-
-      if (result.importedGames.length > 0) {
-        showSuccessToast(
-          t("import_steam_games_success", {
-            ns: "header",
-            count: result.importedGames.length,
-          })
-        );
-      } else if (result.totalInstalled > 0) {
-        showSuccessToast(t("import_steam_games_up_to_date", { ns: "header" }));
-      } else {
-        showWarningToast(t("import_steam_games_none_found", { ns: "header" }));
-      }
-    } catch {
-      showErrorToast(t("import_steam_games_error", { ns: "header" }));
-    } finally {
-      setIsImportingSteamGames(false);
-    }
-  };
 
   const selectedCollectionId = searchParams.get("collection");
 
@@ -1316,22 +1284,7 @@ export default function Library() {
               />
             )}
 
-            <Button
-              theme="outline"
-              className={`library__action library__action--icon${isImportingSteamGames ? " library__action--scanning" : ""}`}
-              onClick={handleImportSteamGames}
-              disabled={isImportingSteamGames}
-              aria-label={t("import_steam_games_tooltip", { ns: "header" })}
-              tooltip={t("import_steam_games_tooltip", { ns: "header" })}
-              tooltipPlace="bottom"
-              tooltipInPortal
-            >
-              {isImportingSteamGames ? (
-                <SyncIcon size={16} />
-              ) : (
-                <SteamLogo width={16} height={16} />
-              )}
-            </Button>
+            <LibrarySteamImportButton />
 
             {isScanSupported ? (
               <>

@@ -217,6 +217,7 @@ async function renderLibrary(
     "./category-filter": { CategoryFilter: () => null },
     "./library-filters-menu": { LibraryFiltersMenu: () => null },
     "./library-games-skeleton": { LibraryGamesSkeleton: () => null },
+    "./library-steam-import-button": { LibrarySteamImportButton: () => null },
     "./library-custom-order": customOrder,
     "./library-collection-order": {
       buildLibraryCollectionOrder: () => [],
