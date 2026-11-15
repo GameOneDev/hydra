@@ -34,6 +34,8 @@ import { useTranslation } from "react-i18next";
 import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import cn from "classnames";
 import { CatalogueModeToggle } from "./catalogue-mode-toggle";
+// Imported directly: as a lazy chunk it popped in above the other filters.
+import { ReleaseYearSection } from "./release-year-section";
 import {
   RECOMPILATION_FILTER_COLOR,
   RecompilationFilterToggle,
@@ -56,11 +58,6 @@ import {
 const ProtonCompatibilitySection = lazy(async () => {
   const mod = await import("./proton-compatibility-section");
   return { default: mod.ProtonCompatibilitySection };
-});
-
-const ReleaseYearSection = lazy(async () => {
-  const mod = await import("./release-year-section");
-  return { default: mod.ReleaseYearSection };
 });
 
 const MIN_RELEASE_YEAR = 1970;
@@ -149,7 +146,8 @@ export default function Catalogue() {
   const hasResultsRef = useRef(false);
   const cataloguePageRef = useRef<HTMLDivElement>(null);
 
-  const { steamDevelopers, steamPublishers, downloadSources } = useCatalogue();
+  const { steamDevelopers, steamPublishers, downloadSources, loadingLists } =
+    useCatalogue();
 
   const { steamGenres, steamUserTags, filters, page, mode } = useAppSelector(
     (state) => state.catalogueSearch
@@ -591,11 +589,13 @@ export default function Catalogue() {
         title: t("genres"),
         items: steamGenresFilterItems,
         key: "genres",
+        isLoading: !steamGenres[language],
       },
       {
         title: t("tags"),
         items: steamUserTagsFilterItems,
         key: "tags",
+        isLoading: !steamUserTags[language],
       },
       {
         title: t("download_sources"),
@@ -609,6 +609,7 @@ export default function Catalogue() {
             ),
           })),
         key: "downloadSourceFingerprints",
+        isLoading: loadingLists.downloadSources,
       },
       {
         title: t("developers"),
@@ -618,6 +619,7 @@ export default function Catalogue() {
           checked: filters.developers.includes(developer),
         })),
         key: "developers",
+        isLoading: loadingLists.developers,
       },
       {
         title: t("publishers"),
@@ -627,9 +629,16 @@ export default function Catalogue() {
           checked: filters.publishers.includes(publisher),
         })),
         key: "publishers",
+        isLoading: loadingLists.publishers,
       },
     ];
   }, [
+    language,
+    loadingLists.developers,
+    loadingLists.downloadSources,
+    loadingLists.publishers,
+    steamGenres,
+    steamUserTags,
     downloadSources,
     filters.developers,
     filters.downloadSourceFingerprints,
@@ -917,16 +926,14 @@ export default function Catalogue() {
             )}
 
             {mode === "modern" && (
-              <Suspense fallback={null}>
-                <ReleaseYearSection
-                  title={t("release_year")}
-                  color={filterCategoryColors.releaseYear}
-                  value={filters.releaseYear}
-                  onChange={(value) =>
-                    dispatch(setFilters({ releaseYear: value }))
-                  }
-                />
-              </Suspense>
+              <ReleaseYearSection
+                title={t("release_year")}
+                color={filterCategoryColors.releaseYear}
+                value={filters.releaseYear}
+                onChange={(value) =>
+                  dispatch(setFilters({ releaseYear: value }))
+                }
+              />
             )}
 
             {mode === "modern" &&
@@ -961,6 +968,7 @@ export default function Catalogue() {
                     }
                   }}
                   items={section.items}
+                  isLoading={section.isLoading}
                 />
               ))}
 

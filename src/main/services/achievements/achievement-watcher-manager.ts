@@ -29,6 +29,17 @@ import { AchievementMemoryStore } from "./achievement-memory-store";
 import { UnlockedAchievementsCache } from "./unlocked-achievements-cache";
 import { CombinedAchievementsRequests } from "./combined-achievements-requests";
 import { achievementNotificationPresenter } from "../achievement-notification-presenter-electron";
+import { readRpcs3TrophyUnlocks } from "../emulators/rpcs3-trophy-sources";
+
+const readEmulatorTrophyUnlocks = (game: Game) =>
+  readRpcs3TrophyUnlocks(game).catch((error) => {
+    achievementsLogger.error(
+      "Failed to read emulator trophies",
+      game.objectId,
+      error
+    );
+    return [];
+  });
 
 const fileStats: Map<string, number> = new Map();
 const fltFiles: Map<string, Set<string>> = new Map();
@@ -305,6 +316,8 @@ export class AchievementWatcherManager {
       }
     }
 
+    unlockedAchievements.push(...(await readEmulatorTrophyUnlocks(game)));
+
     let newAchievements: number;
     try {
       newAchievements = await mergeAchievements(
@@ -501,6 +514,8 @@ export class AchievementWatcherManager {
       }
     }
 
+    unlockedAchievements.push(...(await readEmulatorTrophyUnlocks(game)));
+
     if (!unlockedAchievements.length) {
       if (gameAchievementFiles.length > 0) {
         AchievementMemoryStore.markHydrated(game.shop, game.objectId);
@@ -611,7 +626,12 @@ export class AchievementWatcherManager {
       achievementNotificationPresenter.enqueueCombined(
         userPreferences.achievementCustomNotificationPosition ?? "top-left",
         totalNewGamesWithAchievements,
-        totalNewAchievements
+        totalNewAchievements,
+        () =>
+          publishCombinedNewAchievementNotification(
+            totalNewAchievements,
+            totalNewGamesWithAchievements
+          )
       );
     } else {
       publishCombinedNewAchievementNotification(
