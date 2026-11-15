@@ -6,6 +6,7 @@
   gap: calc(globals.$spacing-unit / 2);
   margin: 0 calc(globals.$spacing-unit * 2) 0 auto;
   padding: 0;
+  min-width: 0;
   max-width: 50vw;
   list-style: none;
   overflow-x: auto;
@@ -14,6 +15,26 @@
 
   &::-webkit-scrollbar {
     display: none;
+  }
+
+  // The scrollbar is hidden, so a fade on the clipped edge shows there are
+  // more friends to scroll to.
+  &--fade-start {
+    mask-image: linear-gradient(to right, transparent, #000 32px);
+  }
+
+  &--fade-end {
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  &--fade-start#{&}--fade-end {
+    mask-image: linear-gradient(
+      to right,
+      transparent,
+      #000 32px,
+      #000 calc(100% - 32px),
+      transparent
+    );
   }
 
   &__item {

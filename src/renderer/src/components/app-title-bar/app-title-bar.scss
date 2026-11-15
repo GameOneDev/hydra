@@ -81,11 +81,13 @@
   }
 
   // Centers the search in the room between the arrows and the buttons.
+  // The fork's online friends bar sits beside it: the search keeps enough room
+  // to type in, and the friends give way and scroll.
   &__search {
     display: flex;
     justify-content: center;
     flex: 1;
-    min-width: 0;
+    min-width: 260px;
     padding: 0 calc(globals.$spacing-unit * 2);
   }
 
