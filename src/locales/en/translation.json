@@ -234,6 +234,7 @@
     "installation_complete_message": "Common redistributables installed successfully",
     "self_hosted_checking": "Checking server…",
     "self_hosted_online": "Server online · {{latency}} ms",
+    "self_hosted_online_compact": "{{latency}} ms",
     "self_hosted_online_version": "Server online · {{latency}} ms · v{{version}}",
     "self_hosted_degraded": "Server unhealthy",
     "self_hosted_offline": "Server offline",
