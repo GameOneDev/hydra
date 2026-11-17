@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import cn from "classnames";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
@@ -17,6 +18,35 @@ export function OnlineFriendsBar() {
   const { userDetails } = useUserDetails();
 
   const [onlineFriends, setOnlineFriends] = useState<UserFriend[]>([]);
+
+  /* In the title bar the search keeps its room, so with many friends online
+     the list is clipped: fade the clipped edges and let the wheel scroll it. */
+  const listRef = useRef<HTMLUListElement>(null);
+  const [fade, setFade] = useState({ start: false, end: false });
+
+  const updateFade = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const start = list.scrollLeft > 1;
+    const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+
+    setFade((current) =>
+      current.start === start && current.end === end ? current : { start, end }
+    );
+  }, []);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    updateFade();
+
+    const observer = new ResizeObserver(updateFade);
+    observer.observe(list);
+
+    return () => observer.disconnect();
+  }, [onlineFriends, updateFade]);
 
   const fetchOnlineFriends = useCallback(async () => {
     if (!userDetails) {
@@ -94,7 +124,19 @@ export function OnlineFriendsBar() {
   if (!userDetails || onlineFriends.length === 0) return null;
 
   return (
-    <ul className="online-friends-bar">
+    <ul
+      ref={listRef}
+      className={cn("online-friends-bar", {
+        "online-friends-bar--fade-start": fade.start,
+        "online-friends-bar--fade-end": fade.end,
+      })}
+      onScroll={updateFade}
+      onWheel={(event) => {
+        if (event.deltaY && !event.deltaX) {
+          event.currentTarget.scrollLeft += event.deltaY;
+        }
+      }}
+    >
       {onlineFriends.map((friend) => (
         <li key={friend.id} className="online-friends-bar__item">
           <button

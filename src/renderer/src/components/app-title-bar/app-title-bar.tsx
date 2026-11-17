@@ -90,7 +90,7 @@ export function AppTitleBar({
       {/* Self-hosted server health; renders nothing without a server. It sat
           by the version in the bottom panel, which upstream removed in 4.4.1. */}
       <div className="title-bar__self-hosted-status">
-        <SelfHostedStatusIndicator />
+        <SelfHostedStatusIndicator compact />
       </div>
 
       <button
